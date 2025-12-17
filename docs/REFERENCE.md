@@ -2,23 +2,23 @@
 
 ## Local Access URLs
 
-| Service | URL | Default Credentials |
-|---------|-----|---------------------|
-| Jellyfin | http://HOST_IP:8096 | (create during setup) |
-| Jellyseerr | http://HOST_IP:5055 | (use Jellyfin login) |
-| qBittorrent | http://HOST_IP:8085 | admin / adminadmin |
-| Sonarr | http://HOST_IP:8989 | (none by default) |
-| Radarr | http://HOST_IP:7878 | (none by default) |
-| Prowlarr | http://HOST_IP:9696 | (none by default) |
-| Bazarr | http://HOST_IP:6767 | (none by default) |
-| Pi-hole | http://HOST_IP/admin | (from PIHOLE_UI_PASS) |
+| Service | URL |
+|---------|-----|
+| Jellyfin | http://HOST_IP:8096 |
+| Jellyseerr | http://HOST_IP:5055 |
+| qBittorrent | http://HOST_IP:8085 |
+| Sonarr | http://HOST_IP:8989 |
+| Radarr | http://HOST_IP:7878 |
+| Prowlarr | http://HOST_IP:9696 |
+| Bazarr | http://HOST_IP:6767 |
+| Pi-hole | http://HOST_IP/admin |
 
-**Optional utilities** (if deployed with `docker-compose.utilities.yml`):
+**Optional utilities** (deploy with `docker-compose.utilities.yml`):
 
-| Service | URL | Default Credentials |
-|---------|-----|---------------------|
-| Uptime Kuma | http://HOST_IP:3001 | (create during setup) |
-| duc | http://HOST_IP:8838 | (none) |
+| Service | URL |
+|---------|-----|
+| Uptime Kuma | http://HOST_IP:3001 |
+| duc | http://HOST_IP:8838 |
 
 ## Common Commands
 
