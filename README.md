@@ -39,13 +39,26 @@ Ask Claude to help deploy the stack - it reads [`.claude/instructions.md`](.clau
 
 ## Features
 
+**Core Stack**
 - **VPN-protected networking** via Gluetun (supports 30+ providers)
 - **Automated SSL/TLS** certificates via Traefik + Cloudflare
 - **Media library management** with Sonarr, Radarr, Prowlarr, Bazarr
-- **Media streaming** with Jellyfin (or Plex - see below)
+- **Media streaming** with Jellyfin (or Plex variant available)
 - **Request management** with Jellyseerr (or Overseerr for Plex)
-- **Remote access** via WireGuard VPN
+- **Remote access** via WireGuard VPN server
 - **Ad-blocking DNS** with Pi-hole
+
+**Operational**
+- **Backup script** for essential configs (~13MB) - auto-detects setup variant
+- **Auto-recovery** restarts services when VPN reconnects (deunhealth)
+- **Service monitoring** with Uptime Kuma dashboard
+- **Torrent scheduler** pauses downloads overnight for NAS disk spin-down
+- **Docker named volumes** for portable, self-contained configs
+
+**For Contributors**
+- **Pre-commit hooks** validate secrets, YAML syntax, port conflicts, and more
+- **Claude Code ready** - includes instructions for AI-assisted deployment and troubleshooting
+- See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup
 
 ## Services
 
