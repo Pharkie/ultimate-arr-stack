@@ -165,7 +165,7 @@ This project separates public documentation from private configuration:
 | **Private config** | `.claude/config.local.md` | ❌ No (gitignored) | Actual hostnames, IPs, usernames for your deployment |
 | **Credentials** | `.env` | ❌ No (gitignored) | Passwords, API tokens, private keys |
 
-**Why?** This allows sharing the project publicly while keeping your specific configuration private. If using Claude Code, it reads `config.local.md` to understand your environment.
+**Why?** This allows sharing the project publicly while keeping your specific configuration private. If using Claude Code, your `config.local.md` provides your environment details.
 
 **Setup**: Copy `.claude/config.local.md.example` to `.claude/config.local.md` and fill in your values.
 
