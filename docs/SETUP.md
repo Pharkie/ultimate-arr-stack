@@ -266,12 +266,12 @@ Cloudflare Tunnel connects outbound from your server, bypassing port forwarding 
 
 | Step | Screenshot |
 |------|------------|
-| 1. Go to [one.dash.cloudflare.com](https://one.dash.cloudflare.com/) | |
-| 2. Networks → Overview → **Manage Tunnels** | <img src="images/Cloudflare tunnel/1.png" width="500"> |
-| 3. Click **Add a tunnel** | <img src="images/Cloudflare tunnel/2.png" width="500"> |
-| 4. Name your tunnel (e.g., `Ugreen NAS`) → **Save** | <img src="images/Cloudflare tunnel/3.png" width="500"> |
-| 5. Choose **Docker**, copy the command containing your token | <img src="images/Cloudflare tunnel/4.png" width="500"> |
-| 6. Copy the token from the command | <img src="images/Cloudflare tunnel/5.png" width="500"> |
+| 1. Go to [one.dash.cloudflare.com](https://one.dash.cloudflare.com/) → Networks → Overview → **Manage Tunnels** | |
+| 2. Click **Add a tunnel** | <img src="images/Cloudflare tunnel/1.png" width="500"> |
+| 3. Name your tunnel (e.g., `Ugreen NAS`) → **Save** | <img src="images/Cloudflare tunnel/2.png" width="500"> |
+| 4. Choose **Docker** | <img src="images/Cloudflare tunnel/3.png" width="500"> |
+| 5. Copy the command containing your token | <img src="images/Cloudflare tunnel/4.png" width="500"> |
+| 6. Extract the token (the long string after `--token`) | <img src="images/Cloudflare tunnel/5.png" width="500"> |
 
 7. Add the token to `.env`:
    ```bash
