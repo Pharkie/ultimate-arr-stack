@@ -41,9 +41,9 @@ check_uptime_monitors() {
         return 0
     fi
 
-    # Get actual monitors from Uptime Kuma
+    # Get actual monitors from Uptime Kuma (|| true prevents set -e from exiting on SSH failure)
     local actual
-    actual=$(ssh_to_nas "docker exec uptime-kuma sqlite3 /app/data/kuma.db \"SELECT name FROM monitor ORDER BY name;\"")
+    actual=$(ssh_to_nas "docker exec uptime-kuma sqlite3 /app/data/kuma.db \"SELECT name FROM monitor ORDER BY name;\"") || true
 
     if [[ -z "$actual" ]]; then
         echo "    SKIP: Could not query Uptime Kuma (docker access failed)"

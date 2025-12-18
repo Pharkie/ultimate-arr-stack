@@ -34,9 +34,9 @@ check_env_backup() {
         return 0
     fi
 
-    # Get NAS .env via SSH
+    # Get NAS .env via SSH (|| true prevents set -e from exiting on SSH failure)
     local nas_env
-    nas_env=$(ssh_to_nas "cat /volume1/docker/arr-stack/.env")
+    nas_env=$(ssh_to_nas "cat /volume1/docker/arr-stack/.env") || true
 
     # Skip if SSH failed
     if [[ -z "$nas_env" ]]; then

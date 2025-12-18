@@ -426,7 +426,7 @@ docker exec gluetun wget -qO- ifconfig.me
 
 ## Step 5: Configure Services
 
-> **Hostname vs IP:** When connecting services (e.g., Sonarr → qBittorrent), use the container hostname (e.g., `gluetun`). If hostname resolution fails, use the static IP instead (see [Quick Reference](REFERENCE.md) for IPs).
+> **VPN Network Sharing:** Sonarr, Radarr, Prowlarr, and qBittorrent share Gluetun's network (for VPN protection). They reach each other via `localhost`. Services outside gluetun (Jellyseerr, Bazarr) reach them via `gluetun` hostname or `192.168.100.3`. See [Quick Reference](REFERENCE.md) for details.
 
 ### 5.1 qBittorrent
 
@@ -504,15 +504,15 @@ docker exec gluetun wget -qO- ifconfig.me
    - Jellyfin URL: `http://jellyfin:8096`
    - Enter Jellyfin credentials
 3. **Configure Services:**
-   - Settings → Services → Add Sonarr: `http://sonarr:8989`
-   - Settings → Services → Add Radarr: `http://radarr:7878`
+   - Settings → Services → Add Sonarr: `http://gluetun:8989` (Sonarr runs via gluetun)
+   - Settings → Services → Add Radarr: `http://gluetun:7878` (Radarr runs via gluetun)
 
 ### 5.7 Bazarr (Subtitles)
 
 1. **Access:** `http://HOST_IP:6767`
 2. **Enable Authentication:** Settings → General → Security → Forms
-3. **Connect to Sonarr:** Settings → Sonarr → `http://sonarr:8989`
-4. **Connect to Radarr:** Settings → Radarr → `http://radarr:7878`
+3. **Connect to Sonarr:** Settings → Sonarr → `http://gluetun:8989` (Sonarr runs via gluetun)
+4. **Connect to Radarr:** Settings → Radarr → `http://gluetun:7878` (Radarr runs via gluetun)
 5. **Add Providers:** Settings → Providers (OpenSubtitles, etc.)
 
 ### 5.8 Pi-hole (DNS/Ad-blocking)
