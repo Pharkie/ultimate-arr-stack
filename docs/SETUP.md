@@ -35,7 +35,7 @@ Complete setup guide for the media automation stack. Works on any Docker host wi
 ### Required Services
 - **VPN Subscription** - Any provider supported by [Gluetun](https://github.com/qdm12/gluetun-wiki/tree/main/setup/providers) (Surfshark, NordVPN, PIA, Mullvad, ProtonVPN, etc.)
 
-### For Usenet downloads (optional but recommended)
+### For Usenet downloads (optional)
 - **Usenet Provider** (~$4-6/month) - Frugal Usenet, Newshosting, Eweka, etc.
 - **Usenet Indexer** - NZBGeek (~$12/year) or DrunkenSlug (free tier)
 
