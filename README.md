@@ -4,14 +4,14 @@
 
 <table>
 <tr>
-<td valign="top">
+<td width="50%" valign="top">
 
 A Docker Compose stack for automated media management. Request a show or movie, it downloads and appears in Jellyfin—ready to watch, VPN-protected.
 
 Works on Ugreen, Synology, QNAP, or any Docker host.
 
 </td>
-<td>
+<td width="50%">
 
 ![Demo](docs/images/demo/demo.gif)
 
