@@ -102,33 +102,6 @@ services:
     logging: *default-logging
 
   # ═══════════════════════════════════════════════════════════════════════════
-  # CLOUDFLARED-WATCHDOG - Ensures cloudflared tunnel stays running.
-  # Checks every 30s and restarts immediately if cloudflared exits (bypasses
-  # Docker's exponential backoff which can leave tunnels down for minutes).
-  # No web UI. Runs silently in background.
-  # ═══════════════════════════════════════════════════════════════════════════
-  cloudflared-watchdog:
-    image: docker:cli
-    container_name: cloudflared-watchdog
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-    environment:
-      - TZ=${TZ:-Europe/London}
-    entrypoint: /bin/sh
-    command:
-      - -c
-      - |
-        while true; do
-          if ! docker ps --format '{{.Names}}' | grep -q '^cloudflared$$'; then
-            echo "$$(date): cloudflared not running, starting..."
-            docker start cloudflared 2>/dev/null || echo "Failed to start"
-          fi
-          sleep 30
-        done
-    restart: always
-    logging: *default-logging
-
-  # ═══════════════════════════════════════════════════════════════════════════
   # QBIT-SCHEDULER - Pauses torrents overnight to let disks spin down.
   # Default: pause at 20:00, resume at 06:00. No web UI.
   # ═══════════════════════════════════════════════════════════════════════════

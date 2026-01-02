@@ -145,7 +145,6 @@ See [Quick Reference](REFERENCE.md) for .lan URLs and network details.
 | **deunhealth** | Auto-restart on VPN reconnect |
 | **Uptime Kuma** | Monitoring dashboard |
 | **duc** | Disk usage treemap |
-| **cloudflared-watchdog** | Fast tunnel recovery (bypasses Docker backoff) |
 | **qbit-scheduler** | Pause torrents overnight |
 
 ---
@@ -923,7 +922,6 @@ docker compose -f docker-compose.utilities.yml up -d
 | **deunhealth** | Auto-restarts services when VPN recovers | Internal |
 | **Uptime Kuma** | Service monitoring dashboard | http://uptime.lan |
 | **duc** | Disk usage analyzer (treemap UI) | http://duc.lan |
-| **cloudflared-watchdog** | Restarts tunnel immediately if it exits (bypasses Docker's exponential backoff) | Internal |
 | **qbit-scheduler** | Pauses torrents overnight for disk spin-down | Internal |
 
 ### qbit-scheduler Setup
