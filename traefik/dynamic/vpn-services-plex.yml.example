@@ -29,7 +29,7 @@ http:
       entryPoints:
         - web
       middlewares:
-        - overseer-redirect
+        - overseer-redirect-external
       service: overseerr
 
     wg:
@@ -39,7 +39,7 @@ http:
       service: wg
 
   middlewares:
-    overseer-redirect:
+    overseer-redirect-external:
       redirectRegex:
         regex: "^https?://overseer[.](.+)"
         replacement: "https://overseerr.${1}"

@@ -28,7 +28,7 @@ http:
       entryPoints:
         - web
       middlewares:
-        - jellyseer-redirect
+        - jellyseer-redirect-external
       service: jellyseerr
 
     wg:
@@ -38,7 +38,7 @@ http:
       service: wg
 
   middlewares:
-    jellyseer-redirect:
+    jellyseer-redirect-external:
       redirectRegex:
         regex: "^https?://jellyseer[.](.+)"
         replacement: "https://jellyseerr.${1}"
