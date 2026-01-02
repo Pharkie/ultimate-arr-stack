@@ -67,7 +67,7 @@ Before diving in, decide how you'll access your media stack:
 
 | Component | What it does | Which setup? |
 |-----------|--------------|--------------|
-| **Jellyseerr** | Request portal - users request shows/movies here | Core (recommended) |
+| **Jellyseerr** | Request portal - users request shows/movies here | Core |
 | **Jellyfin** | Media player - like Netflix but for your own content | Core |
 | **Sonarr** | TV show monitor - watches for new episodes, sends to download | Core |
 | **Radarr** | Movie monitor - watches for new movies, sends to download | Core |
