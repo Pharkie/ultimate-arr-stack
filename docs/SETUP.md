@@ -278,8 +278,6 @@ MEDIA_ROOT=/share/Media       # QNAP
 MEDIA_ROOT=/srv/media         # Linux server
 ```
 
-This path should contain (or will contain) your `downloads`, `tv`, and `movies` subfolders.
-
 ### 2.3 Configure VPN
 
 **Why VPN for downloads?** Your ISP can see what you download via BitTorrent. A VPN encrypts this traffic and routes it through another server, so your ISP only sees "encrypted traffic to VPN provider".
