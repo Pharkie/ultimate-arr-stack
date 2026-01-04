@@ -261,7 +261,7 @@ sudo chmod 600 /path/to/arr-stack/traefik/acme.json
 
 > **Note:** From this point forward, all commands run **on your NAS via SSH**. If you closed your terminal, reconnect with `ssh your-username@nas-ip` and `cd /volume1/docker/arr-stack` (or your clone location). **UGOS users:** SSH may time out—re-enable in Control Panel → Terminal if needed.
 
-### 2.1 Copy the main configuration file
+### 2.1 Copy the Main Configuration File
 
 ```bash
 cp .env.example .env
