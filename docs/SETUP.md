@@ -149,7 +149,7 @@ See [Quick Reference](REFERENCE.md) for .lan URLs and network details.
 
 ## Step 1: Create Directories and Clone/Fork Repository
 
-Create media folders and get the repository onto your Docker host.
+First, set up the folder structure for your media and download the stack files to your NAS.
 
 **Clone or Fork?**
 - **Clone** (simpler): Just want to use the stack, pull updates occasionally
@@ -258,6 +258,8 @@ sudo chmod 600 /path/to/arr-stack/traefik/acme.json
 ---
 
 ## Step 2: Edit Your Settings
+
+The stack needs your VPN credentials, media folder paths, and a few passwords. Everything goes in one `.env` file.
 
 > **Note:** From this point forward, all commands run **on your NAS via SSH**. If you closed your terminal, reconnect with `ssh your-username@nas-ip` and `cd /volume1/docker/arr-stack` (or your clone location). **UGOS users:** SSH may time out—re-enable in Control Panel → Terminal if needed.
 
