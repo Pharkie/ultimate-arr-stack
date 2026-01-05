@@ -4,8 +4,8 @@ Everything you need to go from zero to streaming. Works on any NAS or Docker hos
 
 ## Table of Contents
 
-- [Requirements](#requirements)
 - [Choose Your Setup](#choose-your-setup)
+- [Requirements](#requirements)
 - [Stack Overview](#stack-overview)
 - [Step 1: Create Directories](#step-1-create-directories-and-clonefork-repository)
 - [Step 2: Edit Your Settings](#step-2-edit-your-settings)
@@ -27,6 +27,20 @@ Everything you need to go from zero to streaming. Works on any NAS or Docker hos
 | [Backup & Restore](BACKUP.md) | Backup your configs, restore after disaster |
 | [Home Assistant](HOME-ASSISTANT.md) | Get notifications when downloads complete |
 | [Legal](LEGAL.md) | What this software is for, disclaimer |
+
+---
+
+## Choose Your Setup
+
+Decide how you'll access your media stack:
+
+| Setup | How you access | What to configure | Good for |
+|-------|----------------|-------------------|----------|
+| **Core** | `192.168.1.50:8096` | Just `.env` + VPN credentials | Testing, single user |
+| **+ local DNS** | `jellyfin.lan` | Add Pi-hole + Traefik | Home/family use |
+| **+ remote access** | `jellyfin.yourdomain.com` | Add Cloudflare Tunnel | Access from anywhere |
+
+**You can start simple and add features later.** The guide has checkpoints so you can stop at any level.
 
 ---
 
@@ -70,17 +84,7 @@ If you use Tailscale: skip the WireGuard *service* (the `WG_PASSWORD_HASH` stuff
 
 ---
 
-## Choose Your Setup
-
-Before diving in, decide how you'll access your media stack:
-
-| Setup | How you access | What to configure | Good for |
-|-------|----------------|-------------------|----------|
-| **Core** | `192.168.1.50:8096` | Just `.env` + VPN credentials | Testing, single user |
-| **+ local DNS** | `jellyfin.lan` | Add Pi-hole + Traefik | Home/family use |
-| **+ remote access** | `jellyfin.yourdomain.com` | Add Cloudflare Tunnel | Access from anywhere |
-
-**You can start simple and add features later.** The guide has checkpoints so you can stop at any level.
+## Stack Overview
 
 ### What Each Component Does
 
@@ -116,11 +120,7 @@ Before diving in, decide how you'll access your media stack:
 - `traefik/dynamic/tls.yml` - Security defaults
 - `traefik/dynamic/local-services.yml` - Auto-generates from `.env`
 
----
-
-## Stack Overview
-
-The stack is split into Docker Compose files so you can deploy only what you need:
+### Docker Compose Files
 
 | File | Purpose | Which setup? |
 |------|---------|--------------|
@@ -132,25 +132,6 @@ The stack is split into Docker Compose files so you can deploy only what you nee
 See [Quick Reference](REFERENCE.md) for .lan URLs and network details.
 
 > **Prefer Plex?** Use `docker-compose.plex-arr-stack.yml` instead of `arr-stack` (untested).
-
-### `docker-compose.arr-stack.yml`
-
-| Service | Description |
-|---------|-------------|
-| **Jellyfin** | Media streaming |
-| **Jellyseerr** | Request system |
-| **Sonarr** | TV management |
-| **Radarr** | Movie management |
-| **Prowlarr** | Indexer manager |
-| **qBittorrent** | Torrent client |
-| **SABnzbd** | Usenet client |
-| **Bazarr** | Subtitles |
-| **Gluetun** | VPN gateway |
-| **Pi-hole** | DNS/ad-blocking |
-| **WireGuard** | VPN server for remote access |
-| **FlareSolverr** | CAPTCHA bypass |
-
-> **Don't need all these?** Remove any service from the compose file. Core dependency: Gluetun.
 
 ### `docker-compose.utilities.yml`
 
