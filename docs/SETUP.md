@@ -97,10 +97,10 @@ If you use Tailscale: skip the WireGuard *service* (the `WG_PASSWORD_HASH` stuff
 | **Prowlarr** | Indexer manager - finds download sources for Sonarr/Radarr | Core |
 | **qBittorrent** | Torrent client - downloads files (through VPN) | Core |
 | **Gluetun** | VPN container - routes download traffic through VPN so your ISP can't see what you download | Core |
-| **Pi-hole** | DNS server - enables `.lan` domains, blocks ads | + local DNS |
-| **Traefik** | Reverse proxy - enables `.lan` domains and `yourdomain.com` URLs | + local DNS |
+| **Pi-hole** | DNS server - blocks ads, provides Docker DNS | Core |
+| **WireGuard** | VPN server - access your stack when away from home | Core |
+| **Traefik** | Reverse proxy - enables `.lan` domains | + local DNS |
 | **Cloudflared** | Tunnel to Cloudflare - secure remote access without port forwarding | + remote access |
-| **WireGuard** | VPN server - access your stack when away from home | + remote access |
 
 ### Files You Need To Edit
 
