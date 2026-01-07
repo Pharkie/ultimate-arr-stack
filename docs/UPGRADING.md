@@ -38,32 +38,6 @@ docker compose -f docker-compose.arr-stack.yml up -d  # Restarts containers with
 
 When upgrading across versions, check below for any action required.
 
-### v1.4.3 → v1.4.4
-
-**Breaking changes:** None
-
-**What changed:**
-
-| Change | Details |
-|--------|---------|
-| SSL simplified | Removed Let's Encrypt DNS challenge. Cloudflare Tunnel handles HTTPS at the edge. |
-| `traefik.yml.example` | Now HTTP-only (simpler). Old config still works. |
-| `CF_DNS_API_TOKEN` | Removed from `.env.example` (was unused) |
-| `acme.json` | No longer needed. Can delete if you have one. |
-| `.env.example` reorganized | Now ordered by setup level: Core → + local DNS → + remote access |
-| MEDIA_ROOT, TZ, PUID/PGID | Moved to top of Core section in `.env.example` |
-
-**For existing users:** No action required. Your existing `.env` and `traefik/traefik.yml` continue to work.
-
-**Optional cleanup** (if you deployed Traefik before v1.4.4):
-
-```bash
-# Remove unused certificate file (if it exists)
-rm -f traefik/acme.json
-```
-
----
-
 ### v1.4 → v1.5
 
 **Breaking change:** Removed all env var fallbacks from compose files.
@@ -78,6 +52,23 @@ diff <(grep -oP '^\$\{[A-Z_]+\}' docker-compose.arr-stack.yml | sort -u) <(grep 
 ```
 
 Or just copy the latest `.env.example` and fill in your values.
+
+**Also in v1.5** (non-breaking):
+
+| Change | Details |
+|--------|---------|
+| SSL simplified | Removed Let's Encrypt DNS challenge. Cloudflare Tunnel handles HTTPS at the edge. |
+| `traefik.yml.example` | Now HTTP-only (simpler). Old config still works. |
+| `CF_DNS_API_TOKEN` | Removed from `.env.example` (was unused) |
+| `acme.json` | No longer needed. Can delete if you have one. |
+| `.env.example` reorganized | Now ordered by setup level: Core → + local DNS → + remote access |
+
+**Optional cleanup:**
+
+```bash
+# Remove unused certificate file (if it exists)
+rm -f traefik/acme.json
+```
 
 ---
 
