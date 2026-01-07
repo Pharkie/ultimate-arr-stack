@@ -257,11 +257,15 @@ Set your timezone (used for scheduling, logs, and UI times):
 TZ=Europe/London              # Find yours: https://en.wikipedia.org/wiki/List_of_tz_database_time_zones
 ```
 
-Verify PUID/PGID match your NAS user (usually 1000/1000):
+Containers run as the user specified by PUID/PGID. This must match who owns your media folders:
 
 ```bash
-id -u && id -g                # Run on NAS to check
+# SSH to NAS, then run:
+ls -ln /volume1/       # Shows folder owners as numbers (UID/GID)
+id                     # Shows YOUR user's UID/GID - these should match
 ```
+
+Usually 1000/1000 on Ugreen. If wrong, you'll see errors like "Folder '/tv/' is not writable by user 'abc'" in Sonarr/Radarr
 
 ### 2.4 Configure VPN
 
