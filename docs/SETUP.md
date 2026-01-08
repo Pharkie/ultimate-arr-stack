@@ -575,7 +575,7 @@ Manages torrent/Usenet indexers and syncs them to Sonarr/Radarr.
    - Settings → Indexers → Add FlareSolverr
    - Host: `http://172.20.0.10:8191`
    - Tag: `flaresolverr`
-   - **Note:** FlareSolverr doesn't bypass all Cloudflare protections - some indexers may still fail. Non-protected indexers are more reliable.
+   - **Note:** FlareSolverr doesn't bypass all Cloudflare protections - some indexers may still fail. If you have issues, [Byparr](https://github.com/ThePhaseless/Byparr) is a drop-in alternative using different browser tech.
 5. **Connect to Sonarr:**
    - Settings → Apps → Add → Sonarr
    - Sonarr Server: `http://localhost:8989` (they share gluetun's network)
@@ -913,6 +913,8 @@ docker compose -f docker-compose.utilities.yml up -d
 | **Uptime Kuma** | Service monitoring dashboard | http://uptime.lan |
 | **duc** | Disk usage analyzer (treemap UI) | http://duc.lan |
 | **qbit-scheduler** | Pauses torrents overnight for disk spin-down | Internal |
+
+> **Want Docker log viewing?** [Dozzle](https://dozzle.dev/) is a lightweight web UI for viewing container logs in real-time. Not included in the stack, but easy to add if you want it.
 
 ### qbit-scheduler Setup
 
