@@ -452,6 +452,8 @@ Receives download requests from Sonarr and Radarr and downloads files via torren
    - `sonarr` → Save path: `/downloads/sonarr`
    - `radarr` → Save path: `/downloads/radarr`
 
+   > **Why categories matter:** Sonarr/Radarr tell qBittorrent which category to use when requesting downloads. qBittorrent puts files in the category's save path. After download completes, Sonarr/Radarr move files from `/downloads/sonarr` or `/downloads/radarr` to your library (`/tv` or `/movies`). If categories don't match, downloads won't be found.
+
 > **Mobile access?** The default UI is poor on mobile. This stack includes [VueTorrent](https://github.com/VueTorrent/VueTorrent)—enable it at Tools → Options → Web UI → Use alternative WebUI → `/vuetorrent`.
 
 ### 4.3 SABnzbd (Usenet Downloads)
@@ -640,11 +642,19 @@ Time to verify everything is connected and protected before you start adding con
 
 ### VPN Test
 
+> **⚠️ Do this before downloading anything.** If your VPN isn't working, your real IP will be exposed to trackers.
+
 Run on NAS via SSH:
 ```bash
 docker exec gluetun wget -qO- ifconfig.me       # Should show VPN IP, not your home IP
 docker exec qbittorrent wget -qO- ifconfig.me   # Same - confirms qBit uses VPN
 ```
+
+**Thorough test:** Visit [ipleak.net](https://ipleak.net) from your browser, then run the same test from inside qBittorrent:
+```bash
+docker exec qbittorrent wget -qO- https://ipleak.net/json
+```
+Compare the IPs — qBittorrent should show your VPN's IP, not your home IP.
 
 ### Service Integration Test
 1. Sonarr/Radarr: Settings → Download Clients → Test
