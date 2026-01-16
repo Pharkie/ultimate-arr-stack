@@ -43,17 +43,10 @@ Here's what you'll need to get started.
 - Storage for media files
 
 ### Software & Services
-- **Docker Engine 20.10+ and Docker Compose v2.0+** (see below - often preinstalled on NAS)
-- Git (for cloning this repo)
-- SSH access to your host
+- **Docker** - Preinstalled on UGOS; one-click install from app store on Synology/QNAP
+- **Git** - Install via SSH (shown in Step 1)
+- **SSH access** to your NAS
 - **VPN Subscription** - Any provider supported by [Gluetun](https://github.com/qdm12/gluetun-wiki/tree/main/setup/providers) (Surfshark, NordVPN, PIA, Mullvad, ProtonVPN, etc.)
-
-> **NAS Users - Docker is probably already installed:**
-> - **Ugreen (UGOS):** Docker comes preinstalled - nothing to install!
-> - **Synology:** Install "Container Manager" from Package Center (one click)
-> - **QNAP:** Install "Container Station" from App Center (one click)
->
-> Just install Git via SSH (shown in Step 1) and you're ready to go.
 
 <details>
 <summary><strong>Already using Tailscale?</strong></summary>
