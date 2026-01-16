@@ -44,8 +44,8 @@ Here's what you'll need to get started.
 
 ### Software & Services
 - **Docker** - Preinstalled on UGOS; one-click install from app store on Synology/QNAP
-- **Git** - Install via SSH (shown in Step 1)
 - **SSH access** to your NAS
+- **Git** - Install via SSH (shown in Step 1)
 - **VPN Subscription** - Any provider supported by [Gluetun](https://github.com/qdm12/gluetun-wiki/tree/main/setup/providers) (Surfshark, NordVPN, PIA, Mullvad, ProtonVPN, etc.)
 
 <details>
