@@ -924,10 +924,35 @@ docker compose -f docker-compose.utilities.yml up -d
 |---------|-------------|--------|
 | **deunhealth** | Auto-restarts services when VPN recovers | Internal |
 | **Uptime Kuma** | Service monitoring dashboard | http://uptime.lan |
+| **Beszel** | System metrics (CPU, RAM, disk, containers) | http://beszel.lan |
 | **duc** | Disk usage analyzer (treemap UI) | http://duc.lan |
 | **qbit-scheduler** | Pauses torrents overnight for disk spin-down | Internal |
 
 > **Want Docker log viewing?** [Dozzle](https://dozzle.dev/) is a lightweight web UI for viewing container logs in real-time. Not included in the stack, but easy to add if you want it.
+
+### Beszel Setup
+
+Beszel has two components: the hub (web UI) and the agent (metrics collector). The agent needs a key from the hub.
+
+**First deploy (hub only):**
+```bash
+docker compose -f docker-compose.utilities.yml up -d beszel
+```
+
+**Get the agent key:**
+1. Open http://NAS_IP:8090 (or http://beszel.lan)
+2. Create an admin account
+3. Click "Add System" → copy the `KEY` value
+
+**Add to `.env`:**
+```bash
+BESZEL_KEY=ssh-ed25519 AAAA...your-key-here
+```
+
+**Deploy the agent:**
+```bash
+docker compose -f docker-compose.utilities.yml up -d beszel-agent
+```
 
 ### qbit-scheduler Setup
 
