@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.5.5] - 2026-01-23
+
+### Changed
+- **Removed unused traefik labels**: Services had `traefik.enable=true` labels that did nothing (routing uses file config, not Docker labels). Cleaned up to avoid confusion for users adding their own services.
+
+---
+
 ## [1.5.4] - 2026-01-22
 
 ### Removed
