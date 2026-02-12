@@ -64,7 +64,12 @@ services:
 
 networks:
   arr-stack:
-    external: true
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/24
+          ip_range: 172.20.0.128/25
+          gateway: 172.20.0.1
   # macvlan network gives Traefik its own IP on your physical LAN
   # This allows Traefik to own port 80/443 (which NAS can't give up)
   traefik-lan:

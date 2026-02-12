@@ -557,7 +557,7 @@ echo 4096 > /sys/block/md1/md/stripe_cache_size
 '
 ```
 
-Add the same lines to `/etc/rc.local` to persist across reboots. See [Troubleshooting: Jellyfin Video Stutters](TROUBLESHOOTING.md#jellyfin-video-stuttersfreezes-every-few-minutes) for full details.
+Add a root crontab `@reboot` job to persist across reboots (do **not** use `/etc/rc.local` — UGOS overwrites it on firmware updates). See [Troubleshooting: Jellyfin Video Stutters](TROUBLESHOOTING.md#jellyfin-video-stuttersfreezes-every-few-minutes) for full details.
 
 ### 4.2 qBittorrent (Torrent Downloads)
 

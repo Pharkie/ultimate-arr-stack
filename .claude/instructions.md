@@ -199,7 +199,7 @@ If Pi-hole is down and you've lost DNS:
 1. **Connect to mobile hotspot** (different network, uses mobile DNS)
 2. **SSH to NAS using IP address** (not hostname):
    ```bash
-   ssh <user>@<NAS_IP>  # e.g., ssh mooseadmin@192.168.0.136
+   ssh <user>@<NAS_IP>  # e.g., ssh mooseadmin@10.10.0.10
    ```
 3. **Start the stack**:
    ```bash

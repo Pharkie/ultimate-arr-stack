@@ -127,13 +127,15 @@ echo 4096 > /sys/block/md1/md/stripe_cache_size
 '
 ```
 
-**Make permanent:** Add to `/etc/rc.local` (before any `exit 0`):
+**Make permanent:** Add a `@reboot` cron job for root (**not** `/etc/rc.local` — UGOS overwrites it on firmware updates):
 ```bash
-# RAID5 streaming tuning - increase read-ahead and stripe cache for large file playback
-echo 4096 > /sys/block/md1/queue/read_ahead_kb
-echo 4096 > /sys/block/dm-0/queue/read_ahead_kb
-echo 4096 > /sys/block/md1/md/stripe_cache_size
+# Add to root crontab (sleep 30 lets RAID finish initialising)
+sudo crontab -e
+# Add this line:
+@reboot sleep 30 && echo 4096 > /sys/block/md1/queue/read_ahead_kb && echo 4096 > /sys/block/dm-0/queue/read_ahead_kb && echo 4096 > /sys/block/md1/md/stripe_cache_size
 ```
+
+> **Warning:** Do NOT use `/etc/rc.local` for custom tuning on UGOS — firmware updates silently overwrite it. Use root crontab `@reboot` instead.
 
 **Result:** Disk utilization drops from ~96% to ~8-15% during 4K playback. Read latency drops from 20ms to 3-7ms. Stalls eliminated.
 
