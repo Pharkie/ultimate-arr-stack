@@ -172,7 +172,7 @@ services:
   # No web UI. Configure DIUN_WEBHOOK_URL in .env to receive alerts.
   # ═══════════════════════════════════════════════════════════════════════════
   diun:
-    image: crazymax/diun:v4.31.0
+    image: crazymax/diun:4.31.0
     container_name: diun
     restart: always
     volumes:

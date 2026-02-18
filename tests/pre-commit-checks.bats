@@ -10,19 +10,26 @@ setup() {
 @test "check_secrets catches a known WireGuard key pattern" {
     source "$REPO_ROOT/scripts/lib/check-secrets.sh"
 
-    # Override get_files_to_scan to return our fixture
+    # Copy fixture to a temp path that won't match the tests/fixtures/* skip rule
+    local tmpdir
+    tmpdir=$(mktemp -d)
+    cp "$REPO_ROOT/tests/fixtures/compose-with-secrets.yml" "$tmpdir/docker-compose.secrets.yml"
+
+    # Override get_files_to_scan to return the temp copy
     get_files_to_scan() {
-        echo "tests/fixtures/compose-with-secrets.yml"
+        echo "docker-compose.secrets.yml"
     }
 
-    # Override read_file_content to read from repo root
+    # Override read_file_content to read from the temp dir
     read_file_content() {
-        cat "$REPO_ROOT/$1" 2>/dev/null
+        cat "$tmpdir/$1" 2>/dev/null
     }
 
     run check_secrets
     assert_failure
     assert_output --partial "WireGuard private key"
+
+    rm -rf "$tmpdir"
 }
 
 @test "check_env_vars catches an undocumented variable" {

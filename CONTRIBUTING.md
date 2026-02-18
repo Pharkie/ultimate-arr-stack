@@ -196,6 +196,35 @@ The last two checks require SSH access to your NAS. They gracefully skip when:
 
 ## Releases
 
+### Pre-release Checklist
+
+**Every release MUST pass these checks before tagging. No exceptions.**
+
+1. **Run all BATS tests** (includes image tag validation):
+   ```bash
+   tests/bats-core/bin/bats tests/
+   ```
+
+2. **Verify all image tags are pullable on the NAS** — a full tear-down and pull:
+   ```bash
+   # SSH to the NAS, then for each compose file being released:
+   cd /volume1/docker/arr-stack
+   docker compose -f docker-compose.arr-stack.yml pull
+   docker compose -f docker-compose.traefik.yml pull
+   docker compose -f docker-compose.utilities.yml pull
+   ```
+   Every image must pull successfully. Cached images mask bad tags — a fresh `pull` is the only way to be sure.
+
+3. **Bring the stack up** and verify services start:
+   ```bash
+   docker compose -f docker-compose.traefik.yml up -d
+   docker compose -f docker-compose.arr-stack.yml up -d
+   # Check all containers are healthy
+   docker ps --format 'table {{.Names}}\t{{.Status}}'
+   ```
+
+### Tagging and Publishing
+
 **Force-pushing a tag resets the GitHub release to Draft status.** After moving a tag to a new commit:
 
 ```bash

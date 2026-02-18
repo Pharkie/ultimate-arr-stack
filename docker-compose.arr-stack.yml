@@ -354,7 +354,7 @@ services:
   # Access: bazarr.lan | bazarr.yourdomain.com | NAS_IP:6767
   # ═══════════════════════════════════════════════════════════════════════════
   bazarr:
-    image: lscr.io/linuxserver/bazarr:v1.5.5
+    image: lscr.io/linuxserver/bazarr:1.5.5
     container_name: bazarr
     depends_on:
       gluetun:

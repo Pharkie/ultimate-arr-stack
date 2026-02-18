@@ -265,7 +265,7 @@ services:
   # Access: plex.lan | plex.yourdomain.com | NAS_IP:32400
   # ═══════════════════════════════════════════════════════════════════════════
   plex:
-    image: lscr.io/linuxserver/plex:1.41
+    image: lscr.io/linuxserver/plex:1.43.0
     container_name: plex
     ports:
       - "32400:32400"  # Local network access
@@ -332,7 +332,7 @@ services:
   # Access: overseerr.lan | overseerr.yourdomain.com | NAS_IP:5055
   # ═══════════════════════════════════════════════════════════════════════════
   overseerr:
-    image: lscr.io/linuxserver/overseerr:1.33
+    image: lscr.io/linuxserver/overseerr:1.35.0
     container_name: overseerr
     depends_on:
       gluetun:
@@ -362,7 +362,7 @@ services:
   # Access: bazarr.lan | bazarr.yourdomain.com | NAS_IP:6767
   # ═══════════════════════════════════════════════════════════════════════════
   bazarr:
-    image: lscr.io/linuxserver/bazarr:v1.5.5
+    image: lscr.io/linuxserver/bazarr:1.5.5
     container_name: bazarr
     depends_on:
       gluetun:

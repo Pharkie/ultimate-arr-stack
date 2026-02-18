@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.6.3] - 2026-02-18
+
+### Fixed
+- **Bazarr, Overseerr, Plex, DIUN images fail to pull** (fixes #4): Five image tags were wrong — `bazarr:v1.5.5` (should be `1.5.5`), `overseerr:1.33` (should be `1.35.0`), `plex:1.41` (should be `1.43.0`), `diun:v4.31.0` (should be `4.31.0`). Containers kept running from cached `:latest` pulls so the bad tags were never caught
+- **WireGuard secret detection test was always passing**: Test fixture path matched the `tests/fixtures/*` skip rule in `check_secrets`, so the test never actually ran the detection logic
+
+### Added
+- **Image tag registry validation test**: New BATS test checks every `image:tag` in all compose files actually exists on its registry (Docker Hub, GHCR, LSCR) via HTTP API. No Docker CLI or pull required — would have caught all five bad tags instantly
+- **Pre-release checklist**: `CONTRIBUTING.md` now documents mandatory steps before any release — run BATS tests, full `docker compose pull` on the NAS, bring stack up and verify
+
+---
+
 ## [1.6.2] - 2026-02-13
 
 ### Added
