@@ -346,9 +346,12 @@ Edit `.env`: `PIHOLE_UI_PASS=your_password`
 
 Invent a password for the Traefik dashboard and note it down, then generate the auth string:
 ```bash
-docker run --rm httpd:alpine htpasswd -nbB admin 'your_chosen_password' | sed -e s/\\$/\\$\\$/g
+docker run --rm httpd:alpine htpasswd -nbB admin 'your_chosen_password'
 ```
-Copy the output to `.env`: `TRAEFIK_DASHBOARD_AUTH=admin:$2y$05$...`
+Copy the output to `.env`, wrapping in single quotes to protect the `$` characters:
+```
+TRAEFIK_DASHBOARD_AUTH='admin:$2y$05$...'
+```
 
 ---
 
