@@ -359,33 +359,7 @@ TRAEFIK_DASHBOARD_AUTH='admin:$2y$05$...'
 
 Time to launch your containers and verify everything connects properly.
 
-### 3.1 Create Docker Network
-
-All services need to talk to each other. This creates a private network with fixed IP addresses so containers can always find each other.
-
-<details>
-<summary><strong>Retrying after a failed deployment?</strong></summary>
-
-Clean up orphaned networks first:
-```bash
-# Check for orphaned networks
-./scripts/check-network.sh
-
-# Or clean all unused networks
-docker network prune
-```
-
-</details>
-
-```bash
-docker network create \
-  --driver=bridge \
-  --subnet=172.20.0.0/24 \
-  --gateway=172.20.0.1 \
-  arr-stack
-```
-
-### 3.2 Deploy
+### 3.1 Deploy
 
 ```bash
 # Create empty config file (+ local DNS users will overwrite this later)
@@ -396,7 +370,7 @@ docker compose -f docker-compose.arr-stack.yml up -d
 
 > **Port 1900 conflict?** If you get "address already in use" for port 1900, your NAS's built-in media server is using it. Comment out `- "1900:1900/udp"` in the Jellyfin section of the compose file. Jellyfin works fine without it (only affects smart TV auto-discovery).
 
-### 3.3 Verify Deployment
+### 3.2 Verify Deployment
 
 ```bash
 # Check all containers are running

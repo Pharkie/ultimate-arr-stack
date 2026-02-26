@@ -34,7 +34,13 @@ networks:
       config:
         - subnet: 10.8.1.0/24
   arr-stack:
-    external: true
+    name: arr-stack
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/24
+          ip_range: 172.20.0.128/25
+          gateway: 172.20.0.1
 
 #########################
 # Logging               #

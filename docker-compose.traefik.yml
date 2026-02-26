@@ -64,6 +64,7 @@ services:
 
 networks:
   arr-stack:
+    name: arr-stack
     driver: bridge
     ipam:
       config:
