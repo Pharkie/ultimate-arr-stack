@@ -137,7 +137,7 @@ echo "Migration complete"
 - SETUP.md restructured with Stack Overview section
 - Section headings now action-oriented
 - Consistent `flaresolverr.lan` usage throughout
-- TROUBLESHOOTING.md removed (notes consolidated into SETUP.md)
+- TROUBLESHOOTING.md simplified (common issues consolidated into SETUP.md)
 
 ---
 
