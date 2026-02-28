@@ -146,15 +146,20 @@ Docker comes preinstalled on UGOS - no installation needed! Folders created via 
 
 1. Open UGOS web interface → **Files** app
 2. Create shared folders: **Media**, **docker**
-3. Inside **Media**, create subfolders: **downloads**, **tv**, **movies**
+3. Inside **Media**, create subfolders: **tv**, **movies**
 4. Enable SSH: **Control Panel** → **Terminal** → toggle SSH on
-5. SSH into your NAS and install git:
+5. SSH into your NAS and create download directories + install git:
 
 ```bash
 ssh your-username@nas-ip
 
 # Install git (Ugreen NAS uses Debian)
 sudo apt-get update && sudo apt-get install -y git
+
+# Create download directories (hardlink-compatible structure)
+mkdir -p /volume1/Media/torrents/{tv,movies}
+mkdir -p /volume1/Media/usenet/{incomplete,complete/{tv,movies}}
+chown -R 1000:1000 /volume1/Media/torrents /volume1/Media/usenet
 
 # Clone the repo
 cd /volume1/docker
@@ -178,7 +183,7 @@ Scanning media files for viruses is unnecessary - video/audio files can't contai
 <summary><strong>Synology / QNAP</strong></summary>
 
 Use File Station to create:
-- **Media** shared folder with subfolders: downloads, tv, movies
+- **Media** shared folder with subfolders: tv, movies
 - **docker** shared folder
 
 Then via SSH:
@@ -187,6 +192,11 @@ ssh your-username@nas-ip
 
 # Install git if not present (Synology)
 sudo synopkg install Git
+
+# Create download directories (hardlink-compatible structure)
+mkdir -p /volume1/Media/torrents/{tv,movies}
+mkdir -p /volume1/Media/usenet/{incomplete,complete/{tv,movies}}
+chown -R 1000:1000 /volume1/Media/torrents /volume1/Media/usenet
 
 # Clone the repo
 cd /volume1/docker
@@ -204,7 +214,9 @@ sudo chown -R 1000:1000 /volume1/docker/arr-stack
 sudo apt-get update && sudo apt-get install -y git
 
 # Create media directories
-sudo mkdir -p /srv/media/{downloads,tv,movies}
+sudo mkdir -p /srv/media/{tv,movies}
+sudo mkdir -p /srv/media/torrents/{tv,movies}
+sudo mkdir -p /srv/media/usenet/{incomplete,complete/{tv,movies}}
 sudo chown -R 1000:1000 /srv/media
 
 # Clone the repo
@@ -222,9 +234,16 @@ sudo chown -R 1000:1000 /srv/docker/arr-stack
 ```
 /volume1/  (or /srv/)
 ├── Media/
-│   ├── downloads/    # qBittorrent downloads
-│   ├── tv/           # TV shows (Sonarr → Jellyfin)
-│   └── movies/       # Movies (Radarr → Jellyfin)
+│   ├── movies/               # Movie library (Radarr → Jellyfin)
+│   ├── tv/                   # TV show library (Sonarr → Jellyfin)
+│   ├── torrents/             # qBittorrent downloads
+│   │   ├── tv/               #   Sonarr category
+│   │   └── movies/           #   Radarr category
+│   └── usenet/               # SABnzbd downloads
+│       ├── incomplete/       #   In-progress downloads
+│       └── complete/         #   Completed downloads
+│           ├── tv/           #   Sonarr category
+│           └── movies/       #   Radarr category
 └── docker/
     └── arr-stack/
         ├── traefik/              # + local DNS / + remote access only
@@ -236,6 +255,8 @@ sudo chown -R 1000:1000 /srv/docker/arr-stack
 ```
 
 > Only `traefik/` and `cloudflared/` appear as folders on your NAS. Everything else is managed by Docker internally.
+>
+> **Why this structure?** All media directories live under one `MEDIA_ROOT`, mounted as a single `/data` volume in containers that need both downloads and library access (qBittorrent, SABnzbd, Sonarr, Radarr). This enables **hardlinks** — when Sonarr/Radarr import a file, they create a hardlink instead of copying, making imports instant and using zero extra disk space. See [TRaSH Guides: Hardlinks](https://trash-guides.info/Hardlinks/Hardlinks-and-Instant-Moves/).
 
 ---
 
@@ -516,8 +537,7 @@ Other *arr apps you can add to your Core stack:
        - TZ=${TZ}
      volumes:
        - lidarr-config:/config
-       - ${MEDIA_ROOT}/music:/music
-       - ${MEDIA_ROOT}/downloads:/downloads
+       - ${MEDIA_ROOT}:/data
      restart: unless-stopped
    ```
 

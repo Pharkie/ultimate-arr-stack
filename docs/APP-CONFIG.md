@@ -13,8 +13,8 @@ Streams your media library to any device.
 1. **Access:** `http://NAS_IP:8096`
 2. **Initial Setup:** Create admin account
 3. **Add Libraries:**
-   - Movies: Content type "Movies", Folder `/media/movies`
-   - TV Shows: Content type "Shows", Folder `/media/tv`
+   - Movies: Content type "Movies", Folder `/data/movies`
+   - TV Shows: Content type "Shows", Folder `/data/tv`
 
 <details>
 <summary><strong>Hardware Transcoding (Intel Quick Sync) - Recommended for Ugreen</strong></summary>
@@ -190,11 +190,27 @@ Receives download requests from Sonarr and Radarr and downloads files via torren
 
 3. **Login:** Username `admin`, password from step 2
 4. **Change password immediately:** Tools → Options → Web UI → Authentication
-5. **Create categories:** Right-click categories → Add
-   - `sonarr` → Save path: `/downloads/sonarr`
-   - `radarr` → Save path: `/downloads/radarr`
+5. **Set Torrent Management Mode:** Tools → Options → Downloads → **Default Torrent Management Mode: Automatic**
+   - This tells qBittorrent to use the category save path, enabling hardlinks between download and library directories
+6. **Create categories:** Right-click categories → Add
+   - `tv` → Save path: `/data/torrents/tv`
+   - `movies` → Save path: `/data/torrents/movies`
 
-   > **Why categories matter:** Sonarr/Radarr tell qBittorrent which category to use when requesting downloads. qBittorrent puts files in the category's save path. After download completes, Sonarr/Radarr move files from `/downloads/sonarr` or `/downloads/radarr` to your library (`/tv` or `/movies`). If categories don't match, downloads won't be found.
+   > **Why categories matter:** Sonarr/Radarr tell qBittorrent which category to use when requesting downloads. qBittorrent puts files in the category's save path. After download completes, Sonarr/Radarr create hardlinks from `/data/torrents/tv` or `/data/torrents/movies` to your library (`/data/tv` or `/data/movies`). If categories don't match, downloads won't be found.
+
+### qBittorrent Tuning (TRaSH Recommended)
+
+Tools → Options → BitTorrent:
+- **Enable UPnP / NAT-PMP:** ❌ (unnecessary behind VPN, potential security risk)
+
+Tools → Options → Speed:
+- **Apply rate limit to µTP protocol:** ✅
+- **Apply rate limit to peers on LAN:** ✅
+
+Tools → Options → BitTorrent:
+- **Encryption mode:** Allow encryption
+
+> These follow [TRaSH Guides qBittorrent recommendations](https://trash-guides.info/Downloaders/qBittorrent/Basic-Setup/). Speed limits are left at unlimited since the VPN is the bottleneck.
 
 > **Mobile access?** The default UI is poor on mobile. This stack includes [VueTorrent](https://github.com/VueTorrent/VueTorrent)—enable it at Tools → Options → Web UI → Use alternative WebUI → `/vuetorrent`.
 
@@ -225,11 +241,30 @@ SABnzbd provides Usenet downloads as an alternative/complement to qBittorrent.
    - Click **Test Server** → **Next**
 
 3. **Configure Folders:** Config (⚙️) → Folders → set **absolute paths**:
-   - **Temporary Download Folder:** `/incomplete-downloads`
-   - **Completed Download Folder:** `/downloads`
+   - **Temporary Download Folder:** `/data/usenet/incomplete`
+   - **Completed Download Folder:** `/data/usenet/complete`
    - Save Changes
 
    > **Important:** Don't use relative paths like `Downloads/complete` - Sonarr/Radarr won't find them.
+
+### SABnzbd Hardening (TRaSH Recommended)
+
+These settings follow [TRaSH Guides SABnzbd recommendations](https://trash-guides.info/Downloaders/SABnzbd/Basic-Setup/):
+
+**Config (⚙️) → Sorting:**
+- **Enable TV Sorting:** ❌
+- **Enable Movie Sorting:** ❌
+- **Enable Date Sorting:** ❌
+
+> Sorting must be disabled — Sonarr/Radarr handle all file organization. SABnzbd sorting causes files to end up in unexpected paths.
+
+**Config (⚙️) → Switches:**
+- **Propagation delay:** `5` minutes (waits for Usenet propagation before downloading)
+- **Check result of unpacking:** ✅ (only processes successfully unpacked jobs)
+- **Deobfuscate final filenames:** ✅ (cleans up obfuscated filenames)
+
+**Config (⚙️) → Special:**
+- **Unwanted extensions:** Add common junk file extensions. See [TRaSH's full list](https://trash-guides.info/Downloaders/SABnzbd/Basic-Setup/#unwanted-extensions) for the recommended blacklist.
 
 4. **Get API Key:** Config (⚙️) → General → Copy **API Key**
 
@@ -252,28 +287,39 @@ SABnzbd provides Usenet downloads as an alternative/complement to qBittorrent.
 Searches for TV shows, sends download links to qBittorrent/SABnzbd, and organizes completed files.
 
 1. **Access:** `http://NAS_IP:8989`
-2. **Add Root Folder:** Settings → Media Management → `/tv`
+2. **Add Root Folder:** Settings → Media Management → `/data/tv`
 3. **Add Download Client(s):** Settings → Download Clients
 
    **qBittorrent (torrents):**
    - Add → qBittorrent
    - Host: `localhost` (Sonarr & qBittorrent share gluetun's network)
    - Port: `8085`
-   - Category: `sonarr`
+   - Category: `tv`
 
    **SABnzbd (Usenet):** *(if configured)*
    - Add → SABnzbd
    - Host: `localhost` (SABnzbd also runs via gluetun)
    - Port: `8080`
    - API Key: (from SABnzbd Config → General)
-   - Category: `tv` (default category in SABnzbd)
+   - Category: `tv`
 
 4. **Enable NFO metadata:** Settings → Metadata → Kodi (XBMC) / Emby → **Enable** (see [why this matters](#nfo-metadata))
    - Series Metadata: ✅
    - Episode Metadata: ✅
    - All image options: ❌ (Jellyfin handles its own artwork)
 
-5. **Block ISOs:** Some indexers serve disc images that Jellyfin can't play.
+5. **Configure naming (TRaSH recommended):** Settings → Media Management → Episode Naming
+   - **Rename Episodes:** ✅
+   - **Standard Episode Format:** `{Series TitleYear} - S{season:00}E{episode:00} - {Episode CleanTitle} [{Custom Formats }{Quality Full}]{[MediaInfo AudioCodec}{ MediaInfo AudioChannels]}{[MediaInfo VideoDynamicRangeType]}{[Mediainfo VideoCodec]}{-Release Group}`
+   - **Daily Episode Format:** `{Series TitleYear} - {Air-Date} - {Episode CleanTitle} [{Custom Formats }{Quality Full}]{[MediaInfo AudioCodec}{ MediaInfo AudioChannels]}{[MediaInfo VideoDynamicRangeType]}{[Mediainfo VideoCodec]}{-Release Group}`
+   - **Anime Episode Format:** `{Series TitleYear} - S{season:00}E{episode:00} - {absolute:000} - {Episode CleanTitle} [{Custom Formats }{Quality Full}]{[MediaInfo AudioCodec}{ MediaInfo AudioChannels}{MediaInfo AudioLanguages}]{[MediaInfo VideoDynamicRangeType]}{[Mediainfo VideoCodec][ Mediainfo VideoBitDepth]bit}{-Release Group}`
+   - **Season Folder Format:** `Season {season:00}`
+   - **Series Folder Format:** `{Series TitleYear} [tvdbid-{TvdbId}]`
+   - **Multi-Episode Style:** Prefixed Range
+
+   > These follow [TRaSH Guides Sonarr naming](https://trash-guides.info/Sonarr/Sonarr-recommended-naming-scheme/). After saving, rename existing files: Series → Select All → Organize.
+
+6. **Block ISOs:** Some indexers serve disc images that Jellyfin can't play.
    - Settings → Custom Formats → + → Name: `Reject ISO`
    - Add condition: Release Title, value `\.iso$`, check **Regex**
    - Settings → Profiles → your quality profile → set `Reject ISO` to `-10000`
@@ -283,27 +329,34 @@ Searches for TV shows, sends download links to qBittorrent/SABnzbd, and organize
 Searches for movies, sends download links to qBittorrent/SABnzbd, and organizes completed files.
 
 1. **Access:** `http://NAS_IP:7878`
-2. **Add Root Folder:** Settings → Media Management → `/movies`
+2. **Add Root Folder:** Settings → Media Management → `/data/movies`
 3. **Add Download Client(s):** Settings → Download Clients
 
    **qBittorrent (torrents):**
    - Add → qBittorrent
    - Host: `localhost` (Radarr & qBittorrent share gluetun's network)
    - Port: `8085`
-   - Category: `radarr`
+   - Category: `movies`
 
    **SABnzbd (Usenet):** *(if configured)*
    - Add → SABnzbd
    - Host: `localhost` (SABnzbd also runs via gluetun)
    - Port: `8080`
    - API Key: (from SABnzbd Config → General)
-   - Category: `movies` (default category in SABnzbd)
+   - Category: `movies`
 
 4. **Enable NFO metadata:** Settings → Metadata → Kodi (XBMC) / Emby → **Enable** (see [why this matters](#nfo-metadata))
    - Movie Metadata: ✅
    - Movie Images: ❌ (Jellyfin handles its own artwork)
 
-5. **Block ISOs:** Some indexers serve disc images that Jellyfin can't play.
+5. **Configure naming (TRaSH recommended):** Settings → Media Management → Movie Naming
+   - **Rename Movies:** ✅
+   - **Standard Movie Format:** `{Movie CleanTitle} {(Release Year)} {imdb-{ImdbId}} - {Edition Tags }{[Custom Formats]}{[Quality Full]}{[MediaInfo AudioCodec}{ MediaInfo AudioChannels]}{[MediaInfo VideoDynamicRangeType]}{[Mediainfo VideoCodec]}{-Release Group}`
+   - **Movie Folder Format:** `{Movie CleanTitle} ({Release Year})`
+
+   > These follow [TRaSH Guides Radarr naming](https://trash-guides.info/Radarr/Radarr-recommended-naming-scheme/). After saving, rename existing files: Movies → Select All → Organize.
+
+6. **Block ISOs:** Some indexers serve disc images that Jellyfin can't play.
    - Settings → Custom Formats → + → Name: `Reject ISO`
    - Add condition: Release Title, value `\.iso$`, check **Regex**
    - Settings → Profiles → your quality profile → set `Reject ISO` to `-10000`
@@ -371,6 +424,12 @@ Automatically downloads subtitles for your media.
 3. **Connect to Sonarr:** Settings → Sonarr → `http://gluetun:8989` (Sonarr runs via gluetun)
 4. **Connect to Radarr:** Settings → Radarr → `http://gluetun:7878` (Radarr runs via gluetun)
 5. **Add Providers:** Settings → Providers (OpenSubtitles, etc.)
+6. **Enable Subtitle Sync:** Settings → Subtitles → Subtitle Synchronization:
+   - **Subtitle Synchronization:** On — enables `ffsubsync` to re-time subtitles against the audio track
+   - **Series Score Threshold:** On (default 90) — auto-syncs series subs scoring below this
+   - **Movies Score Threshold:** On (default 70) — auto-syncs movie subs scoring below this
+
+   > **Why:** Jellyfin's web player has no manual subtitle delay control. If subs are out of sync, the only fix is re-timing the subtitle file itself — which is exactly what this does.
 
 ## 4.9 Prefer Usenet over Torrents (Optional)
 

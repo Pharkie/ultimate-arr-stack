@@ -5,16 +5,31 @@ All notable changes to this project will be documented in this file.
 ## [1.7.0] - 2026-02-28
 
 ### Added
+- **Hardlinks and instant moves**: All download services (qBittorrent, SABnzbd, Sonarr, Radarr) now share a single `/data` volume mount instead of separate `/downloads`, `/tv`, `/movies` mounts. This enables hardlinks — imports are instant and use zero extra disk space. Follows [TRaSH Guides hardlink recommendations](https://trash-guides.info/Hardlinks/Hardlinks-and-Instant-Moves/)
+- **TRaSH naming schemes**: Radarr and Sonarr now use TRaSH-recommended file naming with quality, codec, HDR, and release group info. Existing files mass-renamed on upgrade
+- **Separated download directories**: Torrents and Usenet downloads now go to separate directories (`torrents/{tv,movies}` and `usenet/{incomplete,complete/{tv,movies}}`) instead of a flat `downloads/` folder
+- **SABnzbd hardening**: Sorting disabled, propagation delay, SFV checking, deobfuscation — follows TRaSH SABnzbd recommendations
+- **qBittorrent tuning**: UPnP disabled, uTP rate limiting, LAN peer limiting, encryption mode — follows TRaSH qBittorrent recommendations
 - **NFO metadata for Radarr and Sonarr**: Recommended setup step — Radarr and Sonarr now write `.nfo` files containing correct TMDB/IMDB/TVDB IDs alongside each media file. Jellyfin reads these instead of guessing from filenames, preventing metadata mismatches that cause Seerr to show "Requested" when files are already downloaded. Especially important for foreign-language films and titles shared by multiple movies
 - **Configarr**: New utility container that syncs TRaSH Guides quality profiles and custom formats to Sonarr/Radarr. One-shot job (runs once and exits) — run manually with `docker compose -f docker-compose.utilities.yml run --rm configarr`. Includes dry-run mode
 - **AI disclosure**: README now discloses that this codebase was generated with Claude Code, with human oversight throughout
 
 ### Changed
+- **Volume mounts restructured**: qBittorrent, SABnzbd, Sonarr, Radarr now mount `${MEDIA_ROOT}:/data` (single mount). Jellyfin and Bazarr mount specific subdirectories under `/data/`. This is a breaking change for existing users — see UPGRADING.md
+- **Download categories renamed**: qBittorrent categories changed from `sonarr`/`radarr` to `tv`/`movies` to match directory structure and SABnzbd categories
+- **Jellyfin library paths**: Changed from `/media/movies` and `/media/tv` to `/data/movies` and `/data/tv` for consistency across the stack
 - **Repo renamed**: `arr-stack-ugreennas` → `ultimate-arr-stack`. GitHub auto-redirects old URLs
 
 ### Documentation
-- APP-CONFIG.md: NFO metadata added as step 4 in both Sonarr and Radarr setup, with explanation of why it matters
-- UPGRADING.md: Migration note for existing users to enable NFO metadata
+- APP-CONFIG.md: Complete rewrite of paths, categories, and folder setup for all services
+- APP-CONFIG.md: TRaSH naming scheme configuration added to Sonarr and Radarr setup steps
+- APP-CONFIG.md: SABnzbd hardening section added with TRaSH recommendations
+- APP-CONFIG.md: qBittorrent tuning section added with TRaSH recommendations
+- APP-CONFIG.md: Bazarr subtitle sync (`ffsubsync`) added as setup step
+- APP-CONFIG.md: NFO metadata added as step 4 in both Sonarr and Radarr setup
+- SETUP.md: Updated directory structure diagram and mkdir commands for hardlink-compatible layout
+- UPGRADING.md: Full v1.6.5→v1.7 migration guide with step-by-step root folder migration, category changes, naming config
+- TROUBLESHOOTING.md: Updated SABnzbd paths from `downloads/` to `usenet/`
 - TROUBLESHOOTING.md: SSH post-quantum key exchange warning fix for macOS OpenSSH 10.x connecting to UGOS NAS
 - UTILITIES.md: Configarr setup and usage guide
 - REFERENCE.md: Configarr added to service tables

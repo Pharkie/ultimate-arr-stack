@@ -9,8 +9,8 @@
 **Diagnose:**
 ```bash
 # _UNPACK_ buildup = stuck unpack loop
-ls -d /volume1/Media/downloads/_UNPACK_* | wc -l
-du -shc /volume1/Media/downloads/_UNPACK_*
+ls -d /volume1/Media/usenet/incomplete/_UNPACK_* | wc -l
+du -shc /volume1/Media/usenet/incomplete/_UNPACK_*
 
 # Confirm in SABnzbd logs
 docker logs sabnzbd --tail 200 2>&1 | grep "Unpacked files"
@@ -28,13 +28,13 @@ docker stop sabnzbd
 sudo rm /volume1/@docker/volumes/arr-stack_sabnzbd-config/_data/admin/postproc2.sab
 
 # 3. Delete all failed _UNPACK_ attempts to reclaim disk space
-rm -rf /volume1/Media/downloads/_UNPACK_<release_name>*
+rm -rf /volume1/Media/usenet/incomplete/_UNPACK_<release_name>*
 
 # 4. Move the actual file (in incomplete/) to the movie folder
 mkdir -p "/volume1/Media/movies/MovieName (Year)"
-mv "/volume1/Media/downloads/incomplete/<release>/obfuscated.mkv" \
+mv "/volume1/Media/usenet/incomplete/<release>/obfuscated.mkv" \
    "/volume1/Media/movies/MovieName (Year)/MovieName (Year).mkv"
-rm -rf "/volume1/Media/downloads/incomplete/<release>"
+rm -rf "/volume1/Media/usenet/incomplete/<release>"
 
 # 5. Start SABnzbd back up
 docker start sabnzbd

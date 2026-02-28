@@ -40,9 +40,81 @@ When upgrading across versions, check below for any action required.
 
 ### v1.6.5 → v1.7
 
-**Recommended:** Enable NFO metadata in Radarr and Sonarr.
+This release adds TRaSH Guides best practices: hardlinks, naming schemes, download directory structure, and download client hardening.
 
-Without this, Jellyfin guesses TMDB/TVDB IDs from filenames. For titles shared by multiple entries on TMDB, it can pick the wrong one — causing Seerr to show "Requested" even though the file is downloaded and playable. NFO files tell Jellyfin the correct IDs directly.
+**Breaking change:** Volume mounts changed for 6 services. Docker Compose will handle this automatically on redeploy, but you must reconfigure paths inside the apps.
+
+#### 1. Create new download directories
+
+```bash
+ssh your-username@nas-ip
+mkdir -p /volume1/Media/torrents/{tv,movies}
+mkdir -p /volume1/Media/usenet/{incomplete,complete/{tv,movies}}
+chown -R 1000:1000 /volume1/Media/torrents /volume1/Media/usenet
+```
+
+#### 2. Pull and redeploy
+
+```bash
+cd /volume1/docker/arr-stack
+git pull origin main
+docker compose -f docker-compose.arr-stack.yml up -d --force-recreate
+```
+
+Wait ~30 seconds for services to stabilize.
+
+#### 3. Reconfigure Radarr root folder
+
+1. Settings → Media Management → Add Root Folder → `/data/movies`
+2. Movies → Select All → Edit → Root Folder → `/data/movies/` → Save
+3. Settings → Media Management → delete old root folder `/movies`
+
+#### 4. Reconfigure Sonarr root folder
+
+1. Settings → Media Management → Add Root Folder → `/data/tv`
+2. Series → Select All → Edit → Root Folder → `/data/tv/` → Save
+3. Settings → Media Management → delete old root folder `/tv`
+
+#### 5. Reconfigure qBittorrent categories
+
+1. Tools → Options → Downloads → Default Torrent Management Mode: **Automatic**
+2. Right-click category `sonarr` → Edit → rename to `tv`, save path `/data/torrents/tv`
+3. Right-click category `radarr` → Edit → rename to `movies`, save path `/data/torrents/movies`
+
+> **Active torrents:** If you have active torrents, reassign them to the new category names before deleting old categories.
+
+#### 6. Update download client categories in Sonarr/Radarr
+
+- **Sonarr:** Settings → Download Clients → qBittorrent → Category: `tv` (was `sonarr`)
+- **Radarr:** Settings → Download Clients → qBittorrent → Category: `movies` (was `radarr`)
+
+#### 7. Reconfigure SABnzbd paths
+
+Config (⚙️) → Folders:
+- Temporary Download Folder: `/data/usenet/incomplete`
+- Completed Download Folder: `/data/usenet/complete`
+
+Restart SABnzbd after saving.
+
+#### 8. Reconfigure Jellyfin library paths
+
+Dashboard → Libraries:
+- Edit Movies library → add `/data/movies`, remove `/media/movies`
+- Edit TV Shows library → add `/data/tv`, remove `/media/tv`
+
+This triggers a library rescan. NFO files ensure accurate identification.
+
+#### 9. Configure TRaSH naming schemes (recommended)
+
+Follow the naming configuration steps in the [App Configuration Guide](APP-CONFIG.md):
+- [Sonarr naming](APP-CONFIG.md#44-sonarr-tv-shows) (step 5)
+- [Radarr naming](APP-CONFIG.md#45-radarr-movies) (step 5)
+
+After configuring naming, rename existing files:
+- Radarr: Movies → Select All → Organize
+- Sonarr: Series → Select All → Organize
+
+#### 10. Enable NFO metadata (recommended)
 
 **In Radarr** (`http://NAS_IP:7878`):
 
@@ -57,6 +129,10 @@ Without this, Jellyfin guesses TMDB/TVDB IDs from filenames. For titles shared b
 3. Save, then refresh the full library: Series → Update All
 
 The library refresh writes `.nfo` files for all existing media. New downloads get them automatically.
+
+#### What about old `downloads/` directory?
+
+The old `/volume1/Media/downloads/` directory is still accessible inside containers at `/data/downloads/`. Any in-progress downloads will complete normally. Once they're all imported, you can delete the directory.
 
 ---
 
