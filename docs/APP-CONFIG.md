@@ -6,6 +6,56 @@ Your stack is running! Now configure each app to work together.
 
 See **[Quick Reference → Service Connection Guide](REFERENCE.md#service-connection-guide)** for how services connect to each other.
 
+## Option A: Automated Configuration (Recommended)
+
+A script automates ~22 configuration steps across qBittorrent, Sonarr, Radarr, Prowlarr, and Bazarr — root folders, download clients, naming schemes, NFO metadata, custom formats, delay profiles, subtitle sync, and more.
+
+**Prerequisites:** Complete the initial setup wizards first — each *arr app requires you to create an admin account on first access before the API is available.
+
+```bash
+# SSH to your NAS:
+cd /volume1/docker/arr-stack
+
+# If you've changed qBittorrent's default password:
+QBIT_PASSWORD='yourpassword' ./scripts/configure-apps.sh
+
+# If still using the temp password (first run):
+./scripts/configure-apps.sh
+```
+
+Preview what it will do without making changes:
+
+```bash
+./scripts/configure-apps.sh --dry-run
+```
+
+**What the script configures:**
+
+| Service | Settings |
+|---------|----------|
+| qBittorrent | Categories (`tv`/`movies`), auto torrent management, encryption, UPnP off |
+| Sonarr | Root folder, qBittorrent + SABnzbd download clients, TRaSH naming, NFO metadata, Reject ISO custom format, Usenet delay profile |
+| Radarr | Root folder, qBittorrent + SABnzbd download clients, TRaSH naming, NFO metadata, Reject ISO custom format, Usenet delay profile |
+| Prowlarr | FlareSolverr proxy, Sonarr + Radarr app sync |
+| Bazarr | Sonarr + Radarr connections, subtitle sync (ffsubsync), Sub-Zero content mods, default English language |
+
+**What stays manual after the script:**
+
+1. **Jellyfin** — Initial wizard, add libraries, hardware transcoding ([§4.1](#41-jellyfin-media-server))
+2. **qBittorrent** — Change default password ([§4.2 step 4](#42-qbittorrent-torrent-downloads))
+3. **Prowlarr** — Add your indexers ([§4.6 steps 2–3](#46-prowlarr-indexer-manager))
+4. **Seerr** — Initial setup + Jellyfin login ([§4.7](#47-seerr-request-manager))
+5. **SABnzbd** — Usenet provider credentials + folder config ([§4.3](#43-sabnzbd-usenet-downloads))
+6. **Pi-hole** — Upstream DNS servers ([§4.10](#410-pi-hole-dns))
+
+After running the script, skip to each section above for the remaining manual steps.
+
+## Option B: Manual Configuration
+
+Follow each section below to configure everything through the web UI.
+
+---
+
 ## 4.1 Jellyfin (Media Server)
 
 Streams your media library to any device.
