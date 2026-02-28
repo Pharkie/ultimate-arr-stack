@@ -13,6 +13,7 @@ All notable changes to this project will be documented in this file.
 - **NFO metadata for Radarr and Sonarr**: Recommended setup step — Radarr and Sonarr now write `.nfo` files containing correct TMDB/IMDB/TVDB IDs alongside each media file. Jellyfin reads these instead of guessing from filenames, preventing metadata mismatches that cause Seerr to show "Requested" when files are already downloaded. Especially important for foreign-language films and titles shared by multiple movies
 - **Configarr**: New utility container that syncs TRaSH Guides quality profiles and custom formats to Sonarr/Radarr. One-shot job (runs once and exits) — run manually with `docker compose -f docker-compose.utilities.yml run --rm configarr`. Includes dry-run mode
 - **AI disclosure**: README now discloses that this codebase was generated with Claude Code, with human oversight throughout
+- **Playwright E2E tests**: Automated UI screenshot tests for all 9 services plus API assertions for root folders and media libraries. Run with `npm run test:e2e`
 
 ### Changed
 - **Volume mounts restructured**: qBittorrent, SABnzbd, Sonarr, Radarr now mount `${MEDIA_ROOT}:/data` (single mount). Jellyfin and Bazarr mount specific subdirectories under `/data/`. This is a breaking change for existing users — see UPGRADING.md
@@ -33,6 +34,7 @@ All notable changes to this project will be documented in this file.
 - TROUBLESHOOTING.md: SSH post-quantum key exchange warning fix for macOS OpenSSH 10.x connecting to UGOS NAS
 - UTILITIES.md: Configarr setup and usage guide
 - REFERENCE.md: Configarr added to service tables
+- CONTRIBUTING.md: E2E tests added to pre-release checklist
 
 ---
 
