@@ -6,7 +6,7 @@ Your stack is running! Now configure each app to work together.
 
 See **[Quick Reference → Service Connection Guide](REFERENCE.md#service-connection-guide)** for how services connect to each other.
 
-## Option A: Automated Configuration (Recommended)
+## Option A: Semi-Automated Configuration (Recommended)
 
 A script automates ~22 configuration steps across qBittorrent, Sonarr, Radarr, Prowlarr, and Bazarr — root folders, download clients, naming schemes, NFO metadata, custom formats, delay profiles, subtitle sync, and more.
 
