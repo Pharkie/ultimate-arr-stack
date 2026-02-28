@@ -22,14 +22,7 @@ const PORTS = {
   pihole: 8081,
 } as const;
 
-// Services bound to localhost — use .lan domains via Traefik when available
-const LOCALHOST_SERVICES = new Set(['bazarr', 'seerr']);
-
 function url(service: keyof typeof PORTS, pathStr = '') {
-  // Bazarr and Seerr are bound to 127.0.0.1 — reach them via .lan domain
-  if (LOCALHOST_SERVICES.has(service) && HOST !== 'localhost') {
-    return `http://${service}.lan${pathStr}`;
-  }
   return `http://${HOST}:${PORTS[service]}${pathStr}`;
 }
 

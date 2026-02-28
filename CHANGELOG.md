@@ -5,7 +5,6 @@ All notable changes to this project will be documented in this file.
 ## [1.7.1] - 2026-02-28
 
 ### Security
-- **Bazarr & Jellyseerr ports bound to localhost**: Ports 6767 and 5055 now bind to `127.0.0.1` instead of all interfaces, preventing direct access that bypasses Traefik auth. Services remain accessible via `.lan` domains and external access as before
 - **VPN leak check script**: New `scripts/check-vpn.sh` compares Gluetun's exit IP against the NAS LAN IP and exits non-zero on leak. Suitable for cron monitoring
 - **Backup encryption**: `scripts/arr-backup.sh --encrypt` encrypts tarballs with GPG symmetric encryption (AES-256). Opt-in via `--encrypt` flag
 - **`.env` included in backups**: `arr-backup.sh` now backs up `.env` (saved as `dot-env` with 600 permissions). Use `--encrypt` to protect secrets at rest
@@ -15,7 +14,6 @@ All notable changes to this project will be documented in this file.
 - **Bazarr missing healthcheck start_period**: Added `start_period: 60s` to prevent false unhealthy status during startup
 - **Inconsistent script error handling**: All scripts now use `set -euo pipefail` (`arr-backup.sh`, `check-network.sh`)
 - **Consolidated backup scripts**: Merged `backup-volumes.sh` into `arr-backup.sh` — one script for all backups (volumes, `.env`, encryption, USB discovery, HA webhooks)
-- **E2E tests for localhost-bound services**: Bazarr and Seerr tests now route through `.lan` domains via Traefik
 
 ### Added
 - **`--verbose` mode for configure-apps.sh**: Prints curl response bodies on API failures for easier debugging

@@ -373,8 +373,7 @@ configure_bazarr() {
         return
     fi
 
-    # Bazarr is bound to localhost (127.0.0.1) — not accessible via NAS_IP
-    local BASE="http://127.0.0.1:6767"
+    local BASE="http://${NAS_IP}:6767"
     local AUTH="X-API-KEY: ${BAZARR_API_KEY}"
 
     if ! wait_for_service "Bazarr" "${BASE}/api/system/status"; then return; fi

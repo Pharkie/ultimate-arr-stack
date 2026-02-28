@@ -335,7 +335,7 @@ services:
         condition: service_healthy  # Needs gluetun to reach Sonarr/Radarr
         restart: true
     ports:
-      - "127.0.0.1:5055:5055"  # Localhost only (Traefik handles external access)
+      - "5055:5055"
     environment:
       - LOG_LEVEL=info
       - TZ=${TZ}
@@ -366,7 +366,7 @@ services:
         condition: service_healthy  # Needs gluetun to reach Sonarr/Radarr
         restart: true
     ports:
-      - "127.0.0.1:6767:6767"  # Localhost only (Traefik handles external access)
+      - "6767:6767"
     environment:
       - PUID=${PUID}
       - PGID=${PGID}
