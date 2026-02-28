@@ -1,6 +1,10 @@
 #!/bin/sh
 # Pause or resume all qBittorrent torrents via Web API
 # Usage: pause-resume.sh pause|resume
+#
+# Note: A shared qbit_auth() helper exists in scripts/lib/configure-helpers.sh
+# but cannot be used here because this script runs inside an Alpine container
+# with /bin/sh (not bash). Auth is implemented inline below.
 
 set -e
 

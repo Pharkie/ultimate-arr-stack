@@ -360,6 +360,8 @@ Update `.env` with your provider's required variables.
 
 **Pi-hole Password:**
 
+> **Static IP required:** Pi-hole binds its DNS listener to `NAS_IP` at boot. Your NAS **must** have a static IP that matches `NAS_IP` in `.env`. If the IP comes from DHCP, Docker may start before it's assigned and Pi-hole will fail. Check with `ip addr show eth0` — if you see `dynamic`, configure a static IP first. See [Troubleshooting](TROUBLESHOOTING.md#pi-hole-doesnt-start-after-reboot) if Pi-hole fails after reboot.
+
 Invent a password. Or, to generate a random one:
 ```bash
 openssl rand -base64 24

@@ -20,13 +20,7 @@ volumes:
 #########################
 networks:
   arr-stack:
-    name: arr-stack
-    driver: bridge
-    ipam:
-      config:
-        - subnet: 172.20.0.0/24
-          ip_range: 172.20.0.128/25
-          gateway: 172.20.0.1
+    external: true
 
 #########################
 # Logging               #

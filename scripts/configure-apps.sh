@@ -9,7 +9,12 @@
 #   ./scripts/configure-apps.sh [OPTIONS]
 #
 # Options:
-#   --dry-run    Preview what would be configured without making changes
+#   --dry-run       Preview what would be configured without making changes
+#   --verbose, -v   Print curl response bodies on failure (for debugging)
+#
+# Safe to re-run: The script is idempotent — it skips anything already
+# configured and only applies missing settings. You can run it as many
+# times as needed without side effects.
 #
 # Prerequisites:
 #   - Docker available and containers running
@@ -36,6 +41,7 @@ source "${SCRIPT_DIR}/lib/configure-helpers.sh"
 # ============================================
 
 DRY_RUN=false
+VERBOSE=false
 NAS_IP=""
 QBIT_COOKIE="/tmp/qbit_configure_cookie.txt"
 
@@ -63,9 +69,19 @@ while [[ $# -gt 0 ]]; do
             DRY_RUN=true
             shift
             ;;
+        --verbose|-v)
+            VERBOSE=true
+            shift
+            ;;
+        --help|-h)
+            head -27 "$0" | tail -24
+            echo ""
+            echo "This script is idempotent — safe to re-run at any time."
+            exit 0
+            ;;
         *)
             echo "Unknown option: $1"
-            echo "Usage: $0 [--dry-run]"
+            echo "Usage: $0 [--dry-run] [--verbose|-v] [--help|-h]"
             exit 1
             ;;
     esac
@@ -200,18 +216,9 @@ configure_qbittorrent() {
         return
     fi
 
-    # Authenticate — qBit returns "Ok." or "Fails." in body (both HTTP 200)
+    # Authenticate using shared helper (see lib/configure-helpers.sh)
     local http_code
-    local login_body
-    login_body=$(curl -s -w '\n%{http_code}' \
-        -c "$QBIT_COOKIE" \
-        --data-urlencode "username=${QBIT_USERNAME}" \
-        --data-urlencode "password=${QBIT_PASSWORD}" \
-        "${QBIT_URL}/api/v2/auth/login")
-    http_code=$(echo "$login_body" | tail -1)
-    login_body=$(echo "$login_body" | head -1)
-
-    if [[ "$http_code" != "200" ]] || [[ "$login_body" != "Ok." ]]; then
+    if ! qbit_auth "$QBIT_URL" "$QBIT_USERNAME" "$QBIT_PASSWORD" "$QBIT_COOKIE"; then
         fail "qBittorrent: authentication failed (check QBIT_USERNAME/QBIT_PASSWORD)"
         return
     fi

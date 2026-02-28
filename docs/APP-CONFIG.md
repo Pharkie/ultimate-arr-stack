@@ -10,6 +10,8 @@ See **[Quick Reference → Service Connection Guide](REFERENCE.md#service-connec
 
 A [script](../scripts/configure-apps.sh) automates ~22 configuration steps across qBittorrent, Sonarr, Radarr, Prowlarr, and Bazarr — root folders, download clients, naming schemes, NFO metadata, custom formats, delay profiles, subtitle sync, and more.
 
+> **Safe to re-run:** The script is fully idempotent — it checks each setting before applying it and skips anything already configured. You can run it as many times as needed without side effects (e.g., after a stack update or restore).
+
 **Prerequisites:** Complete the initial setup wizards first — each *arr app requires you to create an admin account on first access before the API is available.
 
 ```bash

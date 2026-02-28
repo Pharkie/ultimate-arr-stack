@@ -335,7 +335,7 @@ services:
         condition: service_healthy  # Needs gluetun to reach Sonarr/Radarr
         restart: true
     ports:
-      - "5055:5055"  # Local network access (all interfaces)
+      - "127.0.0.1:5055:5055"  # Localhost only (Traefik handles external access)
     environment:
       - LOG_LEVEL=info
       - TZ=${TZ}
@@ -366,7 +366,7 @@ services:
         condition: service_healthy  # Needs gluetun to reach Sonarr/Radarr
         restart: true
     ports:
-      - "6767:6767"  # Local network access
+      - "127.0.0.1:6767:6767"  # Localhost only (Traefik handles external access)
     environment:
       - PUID=${PUID}
       - PGID=${PGID}
@@ -384,6 +384,7 @@ services:
       interval: 3m
       timeout: 10s
       retries: 2
+      start_period: 60s
 
   # ═══════════════════════════════════════════════════════════════════════════
   # FLARESOLVERR - Cloudflare bypass. Helps Prowlarr access protected sites.

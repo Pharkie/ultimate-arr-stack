@@ -333,6 +333,25 @@ test.describe('UI screenshots', () => {
   });
 });
 
+// ─── VPN connectivity test ────────────────────────────────────────────────────
+
+test.describe('VPN connectivity', () => {
+  test('Gluetun VPN IP does not match NAS IP', async ({ request }) => {
+    const nasIp = process.env.NAS_HOST ?? 'localhost';
+    test.skip(nasIp === 'localhost', 'NAS_HOST not set — cannot compare IPs');
+
+    // Get Gluetun's exit IP via its built-in API
+    const res = await request.get(`http://${nasIp}:8000/v1/publicip/ip`);
+    expect(res.ok()).toBeTruthy();
+    const body = await res.json();
+    const vpnIp = body.public_ip ?? body.ip;
+    expect(vpnIp).toBeTruthy();
+
+    // VPN IP must differ from the NAS LAN IP
+    expect(vpnIp).not.toBe(nasIp);
+  });
+});
+
 // ─── API assertion tests ─────────────────────────────────────────────────────
 
 test.describe('API assertions', () => {

@@ -61,6 +61,10 @@ _api_request() {
         return 0
     else
         [[ "$method" != "GET" ]] && echo "$body"
+        if [[ "${VERBOSE:-false}" == "true" ]]; then
+            echo "  [verbose] $method $url → HTTP $code" >&2
+            echo "  [verbose] Response: $body" >&2
+        fi
         if [[ "$method" == "GET" ]]; then return 1; else return "$code"; fi
     fi
 }
@@ -85,6 +89,35 @@ wait_for_service() {
     done
     fail "$name not responding after 60s at $url"
     return 1
+}
+
+# ============================================
+# qBittorrent auth
+# ============================================
+
+# Authenticate to qBittorrent and write session cookie to file.
+# Returns 0 on success, 1 on failure.
+#
+# Usage:
+#   qbit_auth "$QBIT_URL" "$QBIT_USERNAME" "$QBIT_PASSWORD" "$COOKIE_FILE"
+#
+# Note: pause-resume.sh (runs inside Alpine container via /bin/sh) cannot
+# source this helper. See that script for its own inline auth implementation.
+qbit_auth() {
+    local url="$1" username="$2" password="$3" cookie_file="$4"
+    local response http_code body
+    response=$(curl -s -w '\n%{http_code}' \
+        -c "$cookie_file" \
+        --data-urlencode "username=${username}" \
+        --data-urlencode "password=${password}" \
+        "${url}/api/v2/auth/login")
+    http_code=$(echo "$response" | tail -1)
+    body=$(echo "$response" | head -1)
+
+    if [[ "$http_code" != "200" ]] || [[ "$body" != "Ok." ]]; then
+        return 1
+    fi
+    return 0
 }
 
 # ============================================

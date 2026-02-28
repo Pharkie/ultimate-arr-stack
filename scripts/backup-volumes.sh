@@ -1,4 +1,5 @@
 #!/bin/bash
+set -euo pipefail
 #
 # Backup essential Docker named volumes for arr-stack
 #
@@ -7,12 +8,14 @@
 #
 # Options:
 #   --tar           Create a .tar.gz archive (recommended for off-NAS transfer)
+#   --encrypt       Encrypt tarball with GPG symmetric encryption (requires --tar)
 #   --prefix NAME   Volume prefix (default: auto-detect from running containers)
 #   --usb DIR_NAME  Dynamically find USB device under /mnt/@usb/sd*/ containing DIR_NAME
 #                   (device letters change on reboot, so never hardcode e.g. /mnt/@usb/sdd1)
 #
 # Examples:
 #   ./scripts/backup-volumes.sh --tar                     # Backup to /tmp, create tarball
+#   ./scripts/backup-volumes.sh --tar --encrypt           # Backup + GPG encrypt
 #   ./scripts/backup-volumes.sh --tar ~/backups           # Backup to custom dir with tarball
 #   ./scripts/backup-volumes.sh --tar --usb arr-backups   # Auto-find USB, save to arr-backups/
 #   ./scripts/backup-volumes.sh --prefix media-stack      # Use custom volume prefix
@@ -28,8 +31,6 @@
 #   docker run --rm -v ./backup/gluetun-config:/source:ro \
 #     -v PREFIX_gluetun-config:/dest alpine cp -a /source/. /dest/
 #
-
-# Don't use set -e as arithmetic operations can return non-zero
 
 # --- Failure notifications via Home Assistant webhook ---
 notify_failure() {
@@ -98,14 +99,20 @@ find_usb_dir() {
 
 # Parse arguments
 CREATE_TAR=false
+ENCRYPT=false
 BACKUP_DIR=""
 VOLUME_PREFIX=""
 USB_DIR_NAME=""
+TARBALL=""
 
 while [[ $# -gt 0 ]]; do
   case $1 in
     --tar)
       CREATE_TAR=true
+      shift
+      ;;
+    --encrypt)
+      ENCRYPT=true
       shift
       ;;
     --prefix)
@@ -122,6 +129,16 @@ while [[ $# -gt 0 ]]; do
       ;;
   esac
 done
+
+if $ENCRYPT && ! $CREATE_TAR; then
+  echo "ERROR: --encrypt requires --tar"
+  exit 1
+fi
+
+if $ENCRYPT && ! command -v gpg &>/dev/null; then
+  echo "ERROR: gpg not found. Install gnupg to use --encrypt."
+  exit 1
+fi
 
 # Resolve USB backup directory if --usb was specified
 STEP="finding USB device"
@@ -268,6 +285,22 @@ if [ "$CREATE_TAR" = true ]; then
   TARBALL_SIZE=$(ls -lh "$TARBALL" | awk '{print $5}')
   echo "Created: $TARBALL ($TARBALL_SIZE)"
 
+  # GPG symmetric encryption (opt-in)
+  if $ENCRYPT; then
+    STEP="encrypting tarball"
+    echo ""
+    echo "Encrypting tarball with GPG..."
+    gpg --batch --yes --symmetric --cipher-algo AES256 "$TARBALL"
+    rm -f "$TARBALL"
+    TARBALL="${TARBALL}.gpg"
+    TARBALL_SIZE_BYTES=$(stat -f%z "$TARBALL" 2>/dev/null || stat -c%s "$TARBALL" 2>/dev/null)
+    TARBALL_SIZE_MB=$(( TARBALL_SIZE_BYTES / 1024 / 1024 ))
+    TARBALL_SIZE=$(ls -lh "$TARBALL" | awk '{print $5}')
+    echo "Encrypted: $TARBALL ($TARBALL_SIZE)"
+    echo ""
+    echo "To decrypt: gpg --decrypt $TARBALL > backup.tar.gz"
+  fi
+
   STEP="moving tarball to USB"
   # Move to final destination if specified and different from /tmp
   if [ -n "$FINAL_DEST" ] && [ "$FINAL_DEST" != "/tmp" ]; then
@@ -301,7 +334,7 @@ fi
 # Safety check runs via EXIT trap (ensure_services_running)
 
 echo ""
-if [[ "$TARBALL" == /tmp/* ]] || [ -z "$TARBALL" ]; then
+if [[ "${TARBALL}" == /tmp/* ]] || [[ -z "${TARBALL}" ]]; then
   echo "NOTE: Backup is in /tmp which is cleared on reboot."
   echo "      Copy the tarball off-NAS before rebooting!"
 fi

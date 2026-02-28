@@ -1,7 +1,12 @@
 #!/bin/bash
+set -euo pipefail
 # arr-stack backup script - runs daily via cron
 # Install: sudo cp scripts/arr-backup.sh /usr/local/bin/ && sudo chmod +x /usr/local/bin/arr-backup.sh
 # Cron: 0 3 * * * /usr/local/bin/arr-backup.sh
+#
+# WARNING: This script backs up .env which contains secrets (API keys, VPN
+# credentials, passwords) in plaintext. Ensure backup destination has
+# restricted permissions and consider encrypting backups at rest.
 
 BACKUP_DIR="/mnt/arr-backup"
 SOURCE_DIR="/volume1/docker/arr-stack"

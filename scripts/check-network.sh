@@ -4,7 +4,7 @@
 # Run this before deployment if you've had failed attempts.
 # Usage: ./scripts/check-network.sh
 
-set -e
+set -euo pipefail
 
 # Color output (disabled if not interactive)
 if [[ -t 1 ]]; then
