@@ -22,6 +22,8 @@ ultimate-arr-stack/
 │       └── utilities.yml           # Utilities routing (generic)
 ├── .env.example                    # Environment template
 ├── .env                            # Your configuration (gitignored)
+├── .env.e2e.example                # E2E test env template
+├── .env.e2e                        # Your E2E test config (gitignored)
 ├── docs/                           # Documentation
 │   ├── SETUP.md                    # Complete setup guide
 │   ├── REFERENCE.md                # Quick reference (IPs, ports, commands)
@@ -219,6 +221,12 @@ The last two checks require SSH access to your NAS. They gracefully skip when:
    # Check all containers are healthy
    docker ps --format 'table {{.Names}}\t{{.Status}}'
    ```
+
+4. **Run E2E tests** — verify all UIs load and API responses are correct:
+   ```bash
+   npm run test:e2e
+   ```
+   This logs into each service, takes screenshots of every dashboard, and asserts root folders and media libraries are present. All 13 tests must pass. Screenshots are saved to `tests/e2e/screenshots/` for visual review.
 
 ### Tagging and Publishing
 

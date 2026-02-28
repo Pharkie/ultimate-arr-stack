@@ -34,3 +34,12 @@ A separate Docker Compose project (`therapy-stack`) runs on the same NAS at `/vo
 **IMPORTANT:** Baserow's static IP (172.20.0.20) on the arr-stack network is critical. Without it, Docker can dynamically assign Gluetun's IP (172.20.0.3) to Baserow on reboot, breaking the entire VPN stack. The `ip_range: 172.20.0.128/25` in `docker-compose.traefik.yml` provides a safety net by confining dynamic IPs to 128-255.
 
 The therapy-stack project lives at `/Users/adamknowles/dev/n8n Therapybot/Git repo/`.
+
+## E2E Tests
+
+**Run `npm run test:e2e` frequently** — after any change to Docker Compose files, service configuration, network settings, or port mappings. These tests log into every service UI, screenshot the dashboards, and verify API responses (root folders, media libraries). All 13 tests must pass. Run them:
+
+- After deploying config changes to the NAS
+- Before any release
+- When troubleshooting service issues (screenshots show exactly what the UI looks like)
+- After stack restarts or container recreation
