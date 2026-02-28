@@ -101,5 +101,6 @@ scratch/
 docs/RAM-UPGRADE-BASELINE.md
 docs/*-BASELINE*.md
 
-# E2E test screenshots (contain actual library content)
+# E2E test artifacts
 tests/e2e/screenshots/*.png
+test-results/
