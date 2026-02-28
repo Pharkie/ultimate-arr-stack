@@ -7,7 +7,7 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 HOOKS_DIR="$SCRIPT_DIR/.git/hooks"
 
-echo "Setting up git hooks for arr-stack-ugreennas..."
+echo "Setting up git hooks for ultimate-arr-stack..."
 echo ""
 
 # Check we're in a git repo

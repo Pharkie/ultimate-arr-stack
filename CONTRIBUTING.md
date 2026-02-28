@@ -7,7 +7,7 @@ For contributors, forks, and anyone wanting to understand the project internals.
 ## Project Structure
 
 ```
-arr-stack-ugreennas/
+ultimate-arr-stack/
 ├── docker-compose.traefik.yml      # Traefik reverse proxy
 ├── docker-compose.arr-stack.yml    # Main media stack (Jellyfin)
 ├── docker-compose.utilities.yml    # Optional utilities (monitoring, disk usage)

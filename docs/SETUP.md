@@ -158,7 +158,7 @@ sudo apt-get update && sudo apt-get install -y git
 
 # Clone the repo
 cd /volume1/docker
-sudo git clone https://github.com/Pharkie/arr-stack-ugreennas.git arr-stack  # or your fork
+sudo git clone https://github.com/Pharkie/ultimate-arr-stack.git arr-stack  # or your fork
 sudo chown -R 1000:1000 /volume1/docker/arr-stack
 ```
 
@@ -190,7 +190,7 @@ sudo synopkg install Git
 
 # Clone the repo
 cd /volume1/docker
-sudo git clone https://github.com/Pharkie/arr-stack-ugreennas.git arr-stack  # or your fork
+sudo git clone https://github.com/Pharkie/ultimate-arr-stack.git arr-stack  # or your fork
 sudo chown -R 1000:1000 /volume1/docker/arr-stack
 ```
 
@@ -209,7 +209,7 @@ sudo chown -R 1000:1000 /srv/media
 
 # Clone the repo
 cd /srv/docker
-sudo git clone https://github.com/Pharkie/arr-stack-ugreennas.git arr-stack  # or your fork
+sudo git clone https://github.com/Pharkie/ultimate-arr-stack.git arr-stack  # or your fork
 sudo chown -R 1000:1000 /srv/docker/arr-stack
 ```
 
@@ -545,4 +545,4 @@ Other *arr apps you can add to your Core stack:
 
 ---
 
-Issues? [Report on GitHub](https://github.com/Pharkie/arr-stack-ugreennas/issues) or [chat on Reddit](https://www.reddit.com/user/Jeff46K4/).
+Issues? [Report on GitHub](https://github.com/Pharkie/ultimate-arr-stack/issues) or [chat on Reddit](https://www.reddit.com/user/Jeff46K4/).

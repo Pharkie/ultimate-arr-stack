@@ -1,6 +1,6 @@
 # Pharkie's Ultimate Arr Stack for Ugreen and Beyond
 
-[![GitHub release](https://img.shields.io/github/v/release/Pharkie/arr-stack-ugreennas)](https://github.com/Pharkie/arr-stack-ugreennas/releases)
+[![GitHub release](https://img.shields.io/github/v/release/Pharkie/ultimate-arr-stack)](https://github.com/Pharkie/ultimate-arr-stack/releases)
 
 <img align="right" width="45%" src="docs/images/demo/demo.gif">
 

@@ -1,5 +1,5 @@
 #!/bin/bash
-# Pre-commit hook for arr-stack-ugreennas
+# Pre-commit hook for ultimate-arr-stack
 # Validates commits for security and consistency
 #
 # Installation: ./setup-hooks.sh
