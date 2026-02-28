@@ -9,6 +9,9 @@ All notable changes to this project will be documented in this file.
 - **Configarr**: New utility container that syncs TRaSH Guides quality profiles and custom formats to Sonarr/Radarr. One-shot job (runs once and exits) — run manually with `docker compose -f docker-compose.utilities.yml run --rm configarr`. Includes dry-run mode
 - **AI disclosure**: README now discloses that this codebase was generated with Claude Code, with human oversight throughout
 
+### Changed
+- **Repo renamed**: `arr-stack-ugreennas` → `ultimate-arr-stack`. GitHub auto-redirects old URLs
+
 ### Documentation
 - APP-CONFIG.md: NFO metadata added as step 4 in both Sonarr and Radarr setup, with explanation of why it matters
 - UPGRADING.md: Migration note for existing users to enable NFO metadata
