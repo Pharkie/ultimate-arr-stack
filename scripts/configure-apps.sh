@@ -300,16 +300,19 @@ configure_qbittorrent() {
         return
     fi
 
-    # Authenticate
+    # Authenticate — qBit returns "Ok." or "Fails." in body (both HTTP 200)
     local http_code
-    http_code=$(curl -s -o /dev/null -w '%{http_code}' \
+    local login_body
+    login_body=$(curl -s -w '\n%{http_code}' \
         -c "$QBIT_COOKIE" \
         --data-urlencode "username=${QBIT_USERNAME}" \
         --data-urlencode "password=${QBIT_PASSWORD}" \
         "${QBIT_URL}/api/v2/auth/login")
+    http_code=$(echo "$login_body" | tail -1)
+    login_body=$(echo "$login_body" | head -1)
 
-    if [[ "$http_code" != "200" ]]; then
-        fail "qBittorrent: authentication failed (HTTP $http_code)"
+    if [[ "$http_code" != "200" ]] || [[ "$login_body" != "Ok." ]]; then
+        fail "qBittorrent: authentication failed (check QBIT_USERNAME/QBIT_PASSWORD)"
         return
     fi
 
@@ -331,17 +334,33 @@ configure_qbittorrent() {
         fi
     done
 
-    # Set preferences
-    local prefs='{"auto_tmm_enabled":true,"upnp":false,"utp_rate_limited":true,"limit_lan_peers":true,"encryption":1}'
-    http_code=$(curl -s -o /dev/null -w '%{http_code}' \
-        -b "$QBIT_COOKIE" \
-        --data-urlencode "json=${prefs}" \
-        "${QBIT_URL}/api/v2/app/setPreferences")
+    # Set preferences (skip if already correct)
+    local current_prefs
+    current_prefs=$(curl -s -b "$QBIT_COOKIE" "${QBIT_URL}/api/v2/app/preferences" 2>/dev/null)
+    local needs_update=false
 
-    if [[ "$http_code" == "200" ]]; then
-        ok "qBittorrent: set preferences (auto TMM, UPnP off, encryption)"
+    if echo "$current_prefs" | python3 -c "
+import sys, json
+p = json.load(sys.stdin)
+if not p.get('auto_tmm_enabled', False): sys.exit(1)
+if p.get('upnp', True): sys.exit(1)
+if not p.get('limit_utp_rate', False): sys.exit(1)
+if not p.get('limit_lan_peers', False): sys.exit(1)
+if p.get('encryption', 0) != 1: sys.exit(1)
+" 2>/dev/null; then
+        skip "qBittorrent: preferences"
     else
-        fail "qBittorrent: set preferences (HTTP $http_code)"
+        local prefs='{"auto_tmm_enabled":true,"upnp":false,"limit_utp_rate":true,"limit_lan_peers":true,"encryption":1}'
+        http_code=$(curl -s -o /dev/null -w '%{http_code}' \
+            -b "$QBIT_COOKIE" \
+            --data-urlencode "json=${prefs}" \
+            "${QBIT_URL}/api/v2/app/setPreferences")
+
+        if [[ "$http_code" == "200" ]]; then
+            ok "qBittorrent: set preferences (auto TMM, UPnP off, encryption)"
+        else
+            fail "qBittorrent: set preferences (HTTP $http_code)"
+        fi
     fi
 
     rm -f "$QBIT_COOKIE"
