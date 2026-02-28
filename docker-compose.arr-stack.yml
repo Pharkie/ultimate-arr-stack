@@ -331,7 +331,7 @@ services:
   # Access: seerr.lan | seerr.yourdomain.com | NAS_IP:5055
   # ═══════════════════════════════════════════════════════════════════════════
   jellyseerr:
-    image: ghcr.io/seerr-team/seerr:v3.0.1
+    image: ghcr.io/seerr-team/seerr:v3.1.0
     init: true
     container_name: jellyseerr
     depends_on:
