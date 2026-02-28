@@ -39,7 +39,8 @@ async function addHeaderToAllRequests(page: import('@playwright/test').Page, nam
 // ─── UI screenshot tests ─────────────────────────────────────────────────────
 
 test.describe('UI screenshots', () => {
-  test('Jellyfin — login and screenshot home', async ({ page }) => {
+  test('Jellyfin — login and screenshot home', async ({ page, context }) => {
+    test.setTimeout(60_000);
     const username = process.env.JELLYFIN_USERNAME;
     const password = process.env.JELLYFIN_PASSWORD;
     test.skip(!username || !password, 'JELLYFIN_USERNAME / JELLYFIN_PASSWORD not set');
@@ -71,6 +72,77 @@ test.describe('UI screenshots', () => {
     // Verify we're NOT on a login page
     const pageUrl = page.url();
     expect(pageUrl).not.toContain('login');
+
+    // Wait for media sections to render
+    await page.waitForTimeout(3_000);
+
+    // Remove lazy loading BEFORE scrolling so images load immediately when visible
+    await page.evaluate(() => {
+      document.querySelectorAll('img[loading="lazy"]').forEach(img => {
+        (img as HTMLImageElement).loading = 'eager';
+      });
+    });
+
+    // Scroll vertically through the page, and also scroll each horizontal carousel
+    await page.evaluate(async () => {
+      const delay = (ms: number) => new Promise(r => setTimeout(r, ms));
+
+      // Vertical scroll to trigger section rendering
+      const step = Math.max(200, window.innerHeight / 2);
+      for (let y = 0; y < document.body.scrollHeight; y += step) {
+        window.scrollTo(0, y);
+        await delay(200);
+      }
+      window.scrollTo(0, document.body.scrollHeight);
+      await delay(500);
+
+      // Scroll each horizontal carousel to the end and back
+      const scrollers = document.querySelectorAll('.itemsContainer, .scrollSlider, [class*="scroller"]');
+      for (const scroller of scrollers) {
+        if (scroller.scrollWidth > scroller.clientWidth) {
+          scroller.scrollLeft = scroller.scrollWidth;
+          await delay(500);
+          scroller.scrollLeft = 0;
+          await delay(200);
+        }
+      }
+    });
+
+    // Force-reload any images that still haven't loaded
+    await page.evaluate(async () => {
+      document.querySelectorAll('img').forEach(img => {
+        if (!img.complete || img.naturalWidth === 0) {
+          const src = img.src;
+          img.src = '';
+          img.src = src;
+        }
+      });
+      // Wait for all images to finish loading
+      await Promise.all(
+        Array.from(document.querySelectorAll('img'))
+          .filter(img => img.src)
+          .map(img => {
+            if (img.complete && img.naturalWidth > 0) return Promise.resolve();
+            return new Promise<void>(resolve => {
+              img.onload = () => resolve();
+              img.onerror = () => resolve();
+              setTimeout(resolve, 8_000);
+            });
+          })
+      );
+    });
+
+    // Hide blurhash canvas overlays so actual loaded images show through
+    await page.evaluate(() => {
+      document.querySelectorAll('canvas').forEach(c => {
+        (c as HTMLElement).style.opacity = '0';
+      });
+    });
+
+    // Scroll back to top for screenshot
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await page.waitForTimeout(1_000);
+
     await page.screenshot({ path: screenshotPath('jellyfin'), fullPage: true });
   });
 
@@ -168,12 +240,39 @@ test.describe('UI screenshots', () => {
     await page.screenshot({ path: screenshotPath('sabnzbd'), fullPage: true });
   });
 
-  test('Seerr — screenshot landing page', async ({ page }) => {
-    await page.goto(url('seerr'));
-    await page.waitForLoadState('networkidle');
+  test('Seerr — login and screenshot discover page', async ({ page }) => {
+    const username = process.env.JELLYFIN_USERNAME;
+    const password = process.env.JELLYFIN_PASSWORD;
+    test.skip(!username || !password, 'JELLYFIN_USERNAME / JELLYFIN_PASSWORD not set (Seerr uses Jellyfin SSO)');
 
-    // Verify the Seerr page loaded (login page is expected — Jellyfin SSO too complex for v1)
-    await expect(page.getByText('Sign In').or(page.getByText('Jellyfin')).first()).toBeVisible({ timeout: 10_000 });
+    // Authenticate via Seerr's Jellyfin auth API
+    const authRes = await page.request.post(url('seerr', '/api/v1/auth/jellyfin'), {
+      data: { username, password },
+    });
+    expect(authRes.ok()).toBeTruthy();
+
+    // Transfer session cookies to browser context
+    const cookies = (await authRes.headersArray())
+      .filter((h) => h.name.toLowerCase() === 'set-cookie')
+      .map((h) => {
+        const [nameVal] = h.value.split(';');
+        const [name, ...rest] = nameVal.split('=');
+        return {
+          name: name.trim(),
+          value: rest.join('=').trim(),
+          domain: HOST,
+          path: '/',
+        };
+      });
+    if (cookies.length > 0) {
+      await page.context().addCookies(cookies);
+    }
+
+    await page.goto(url('seerr', '/'));
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(2_000);
+
+    expect(page.url()).not.toContain('login');
     await page.screenshot({ path: screenshotPath('seerr'), fullPage: true });
   });
 

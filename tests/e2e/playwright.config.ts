@@ -14,6 +14,7 @@ export default defineConfig({
     headless: true,
     ignoreHTTPSErrors: true,
     screenshot: 'off',
+    viewport: { width: 1920, height: 1080 },
   },
   projects: [
     {
