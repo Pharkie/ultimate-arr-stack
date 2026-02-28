@@ -42,7 +42,7 @@ When upgrading across versions, check below for any action required.
 
 **Recommended:** Enable NFO metadata in Radarr and Sonarr.
 
-Without this, Jellyfin guesses TMDB/TVDB IDs from filenames. For titles shared by multiple movies (e.g. "Resurrection", "The Host"), it can pick the wrong one — causing Seerr to show "Requested" even though the file is downloaded and playable. NFO files tell Jellyfin the correct IDs directly.
+Without this, Jellyfin guesses TMDB/TVDB IDs from filenames. For titles shared by multiple entries on TMDB, it can pick the wrong one — causing Seerr to show "Requested" even though the file is downloaded and playable. NFO files tell Jellyfin the correct IDs directly.
 
 **In Radarr** (`http://NAS_IP:7878`):
 

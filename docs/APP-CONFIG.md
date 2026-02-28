@@ -310,7 +310,7 @@ Searches for movies, sends download links to qBittorrent/SABnzbd, and organizes 
 
 ### NFO Metadata
 
-> **Why this matters:** Without NFO files, Jellyfin identifies media by guessing from the filename. For movies with common titles (e.g. "Resurrection", "The Host", "Parasite"), it can match the wrong TMDB entry. When the TMDB IDs don't agree between Radarr/Sonarr and Jellyfin, Seerr can't link them — so requests stay stuck at "Requested" even though the file is downloaded and playable.
+> **Why this matters:** Without NFO files, Jellyfin identifies media by guessing from the filename. For movies or shows with common titles shared by multiple entries on TMDB, it can match the wrong one. When the TMDB IDs don't agree between Radarr/Sonarr and Jellyfin, Seerr can't link them — so requests stay stuck at "Requested" even though the file is downloaded and playable.
 >
 > Enabling NFO metadata makes Radarr/Sonarr write a small `.nfo` file alongside each media file containing the correct TMDB/IMDB/TVDB IDs. Jellyfin reads these instead of guessing. This eliminates the entire class of metadata mismatch bugs.
 >
