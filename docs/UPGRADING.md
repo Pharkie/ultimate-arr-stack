@@ -38,6 +38,44 @@ docker compose -f docker-compose.arr-stack.yml up -d  # Restarts containers with
 
 When upgrading across versions, check below for any action required.
 
+### v1.7 → v1.7.1
+
+Security hardening, infrastructure cleanup, and backup consolidation.
+
+#### 1. Pull and redeploy
+
+```bash
+cd /volume1/docker/arr-stack
+git pull origin main
+docker compose -f docker-compose.arr-stack.yml up -d --force-recreate
+docker compose -f docker-compose.traefik.yml up -d --force-recreate
+docker compose -f docker-compose.utilities.yml up -d --force-recreate
+```
+
+> **Note:** Start arr-stack first — it now owns the `arr-stack` network. Traefik and utilities reference it as `external: true`.
+
+#### 2. Bazarr & Jellyseerr port access removed
+
+These services are now bound to `127.0.0.1` (localhost only) for security — they were previously accessible on all interfaces, bypassing Traefik auth.
+
+**If you access them via `NAS_IP:6767` or `NAS_IP:5055`**, use `.lan` domains instead:
+- Bazarr: `http://bazarr.lan` (via Traefik)
+- Jellyseerr: `http://seerr.lan` (via Traefik)
+
+> This requires local DNS via Pi-hole. See [Local DNS Guide](LOCAL-DNS.md) if not already configured.
+
+#### 3. Update backup crontab (if using automated backups)
+
+The backup script was renamed from `backup-volumes.sh` to `arr-backup.sh`:
+
+```bash
+sudo crontab -l | sed 's/backup-volumes.sh/arr-backup.sh/' | sudo crontab -
+```
+
+Verify: `sudo crontab -l` should show `arr-backup.sh`.
+
+---
+
 ### v1.6.5 → v1.7
 
 This release adds TRaSH Guides best practices: hardlinks, naming schemes, download directory structure, and download client hardening.

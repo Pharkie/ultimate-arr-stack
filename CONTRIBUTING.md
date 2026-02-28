@@ -76,7 +76,7 @@ This project uses **separate Docker Compose files** for each layer:
 - Easier troubleshooting with isolated logs
 - Optional components can be skipped
 
-**Deployment order**: Traefik first (creates network) → cloudflared → arr-stack → utilities (optional).
+**Deployment order**: arr-stack first (creates network) → Traefik → cloudflared → utilities (optional).
 
 ### Storage Structure
 
