@@ -71,6 +71,7 @@ Wait ~30 seconds for services to stabilize.
 1. Settings → Media Management → Add Root Folder → `/data/media/movies`
 2. Movies → Select All → Edit → Root Folder → `/data/media/movies/` → Save
 3. Settings → Media Management → delete old root folder `/movies`
+4. **Fix collections:** If you see "Missing root folder for movie collection" on the Health page, go to Movies → Collections → Select All → Edit → Root Folder → `/data/media/movies/` → Save
 
 #### 4. Reconfigure Sonarr root folder
 
