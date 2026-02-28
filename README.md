@@ -14,7 +14,7 @@ Works on Ugreen, Synology, QNAP, or any Docker host.
 
 - **Production-ready** — Real healthchecks, auto-recovery when VPN reconnects, backup script. Not just "it runs."
 - **Battle-tested** — Edge cases found and fixed across multiple NAS setups. More resilient than most.
-- **[TRaSH Guides](https://trash-guides.info/) best practices** — Hardlinks for instant imports, TRaSH naming schemes, separated download directories, download client hardening.
+- **Best practices built in** — Downloads appear instantly without using extra disk space, files are named consistently, and download settings are tuned for security and performance. Based on [TRaSH Guides](https://trash-guides.info/).
 - **Everything you need** — Jellyfin, Sonarr, Radarr, Prowlarr, Bazarr, Seerr, qBittorrent, SABnzbd, Pi-hole, Cloudflare Tunnel. Modular — skip what you don't need, add what you do (e.g. Lidarr).
 - **Step-by-step guide** — Not just a docker-compose file in a repo.
 - **Flexible** — Supports 30+ VPN providers. Plex users can swap Jellyfin (see [setup guide](docs/SETUP.md)).
