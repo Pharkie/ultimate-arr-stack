@@ -598,6 +598,7 @@ configure_radarr() {
 
     if $DRY_RUN; then
         dry "Add root folder /data/media/movies"
+        dry "Fix collection root folders (if pointing to wrong path)"
         dry "Add qBittorrent download client (category: movies)"
         if $SABNZBD_RUNNING; then dry "Add SABnzbd download client (category: movies)"; fi
         dry "Enable NFO metadata (Kodi/Emby)"
@@ -619,6 +620,55 @@ configure_radarr() {
         else
             fail "Radarr: add root folder /data/media/movies"
         fi
+    fi
+
+    # Fix collections pointing to wrong root folder (e.g. /movies instead of /data/media/movies)
+    # This happens when upgrading from older path layouts
+    local collections
+    collections=$(api_get "${BASE}/api/v3/collection" "$AUTH") || true
+    local bad_collections
+    bad_collections=$(echo "$collections" | python3 -c "
+import sys, json
+try:
+    data = json.load(sys.stdin)
+    bad = [c for c in data if c.get('rootFolderPath','') != '/data/media/movies' and c.get('rootFolderPath','') != '']
+    print(len(bad))
+except: print('0')
+" 2>/dev/null)
+    if [[ "$bad_collections" -gt 0 ]] 2>/dev/null; then
+        if $DRY_RUN; then
+            dry "Fix root folder path on ${bad_collections} collection(s)"
+        else
+            local fixed=0
+            local cids
+            cids=$(echo "$collections" | python3 -c "
+import sys, json
+data = json.load(sys.stdin)
+for c in data:
+    if c.get('rootFolderPath','') != '/data/media/movies' and c.get('rootFolderPath','') != '':
+        print(c['id'])
+" 2>/dev/null)
+            for cid in $cids; do
+                local coll
+                coll=$(api_get "${BASE}/api/v3/collection/${cid}" "$AUTH") || continue
+                local updated
+                updated=$(echo "$coll" | python3 -c "
+import sys, json
+c = json.load(sys.stdin)
+c['rootFolderPath'] = '/data/media/movies'
+for m in c.get('movies', []):
+    if m.get('rootFolderPath','') != '/data/media/movies':
+        m['rootFolderPath'] = '/data/media/movies'
+print(json.dumps(c))
+" 2>/dev/null)
+                if api_put "${BASE}/api/v3/collection/${cid}" "application/json" "$updated" "$AUTH" >/dev/null 2>&1; then
+                    fixed=$((fixed + 1))
+                fi
+            done
+            ok "Radarr: fixed root folder on ${fixed} collection(s)"
+        fi
+    else
+        skip "Radarr: collection root folders"
     fi
 
     # Download client: qBittorrent

@@ -23,7 +23,6 @@ check_secrets() {
             .env) continue ;;  # .env should be gitignored anyway
             scripts/lib/check-*.sh) continue ;;  # These contain example patterns
             scripts/lib/common.sh) continue ;;
-            scripts/configure-apps.sh) continue ;;  # Contains $PASSWORD variable refs, not secrets
             tests/fixtures/*) continue ;;  # Test fixtures contain intentional fake secrets
             *.md) continue ;;  # Documentation may contain examples
         esac
@@ -105,10 +104,12 @@ check_secrets() {
         fi
 
         # Pattern 9: SSH/generic passwords (15+ chars, non-placeholder)
+        # Skip shell variable references like PASSWORD="${VAR:-}" or PASSWORD=$(...)
         if echo "$content" | grep -qE '(SSH_PASS|_PASSWORD|_PASSWD)=[^[:space:]]{15,}' 2>/dev/null; then
             local match
             match=$(echo "$content" | grep -oE '(SSH_PASS|_PASSWORD|_PASSWD)=[^[:space:]]{15,}')
-            if ! echo "$match" | grep -qiE '(your|here|example|placeholder|xxx)'; then
+            if ! echo "$match" | grep -qiE '(your|here|example|placeholder|xxx)' && \
+               ! echo "$match" | grep -qE '="\$\{|=\$\('; then
                 echo "    WARNING: Possible password in $file"
                 ((errors++))
             fi
