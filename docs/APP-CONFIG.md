@@ -8,7 +8,7 @@ See **[Quick Reference → Service Connection Guide](REFERENCE.md#service-connec
 
 ## Option A: Semi-Automated Configuration (Recommended)
 
-A script automates ~22 configuration steps across qBittorrent, Sonarr, Radarr, Prowlarr, and Bazarr — root folders, download clients, naming schemes, NFO metadata, custom formats, delay profiles, subtitle sync, and more.
+A [script](../scripts/configure-apps.sh) automates ~22 configuration steps across qBittorrent, Sonarr, Radarr, Prowlarr, and Bazarr — root folders, download clients, naming schemes, NFO metadata, custom formats, delay profiles, subtitle sync, and more.
 
 **Prerequisites:** Complete the initial setup wizards first — each *arr app requires you to create an admin account on first access before the API is available.
 
