@@ -175,3 +175,39 @@ sudo crontab -e
 ```
 
 > **Note:** `swappiness=10` doesn't disable swap — the kernel will still swap under real memory pressure. It just stops proactively swapping out app pages to make room for disk cache when there's no pressure.
+
+## SSH: Post-Quantum Key Exchange Warning
+
+**Symptom:** Every SSH connection to the NAS shows:
+```
+** WARNING: connection is not using a post-quantum key exchange algorithm.
+** This session may be vulnerable to "store now, decrypt later" attacks.
+```
+
+**Cause:** macOS OpenSSH 10.x warns when the connection doesn't use a post-quantum key exchange algorithm (`sntrup761x25519-sha512@openssh.com`). UGOS ships OpenSSH 9.2 which supports the algorithm, but the UGOS-managed `/etc/ssh/sshd_config.d/high_crypt.conf` sets `KexAlgorithms` without it — so it's never offered to clients.
+
+**Fix (two parts):**
+
+1. **NAS — add a drop-in config** that loads before the UGOS-managed one:
+```bash
+sudo tee /etc/ssh/sshd_config.d/00-pq-kex.conf << 'EOF'
+KexAlgorithms sntrup761x25519-sha512@openssh.com,curve25519-sha256,curve25519-sha256@libssh.org,diffie-hellman-group-exchange-sha256,diffie-hellman-group16-sha512,diffie-hellman-group18-sha512
+EOF
+sudo systemctl restart sshd
+```
+
+The `00-` prefix ensures it loads before `high_crypt.conf` (alphabetical order, first match wins in sshd).
+
+2. **Client (Mac) — add to `~/.ssh/config`:**
+```
+Host your-nas.local
+    KexAlgorithms sntrup761x25519-sha512@openssh.com,curve25519-sha256,curve25519-sha256@libssh.org
+```
+
+**Verify:**
+```bash
+ssh -vv user@your-nas.local 'exit' 2>&1 | grep 'kex: algorithm'
+# Should show: sntrup761x25519-sha512@openssh.com
+```
+
+**UGOS resilience:** The `sshd_config.d/` drop-in directory is less likely to be wiped than the main config (same principle as using `@reboot` crontab instead of `/etc/rc.local`). If a UGOS update does remove it, you'll just see the warning again — nothing breaks. The client-side config on your Mac is completely UGOS-proof.
