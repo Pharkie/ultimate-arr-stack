@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.7.0] - 2026-02-28
+
+### Added
+- **NFO metadata for Radarr and Sonarr**: Recommended setup step — Radarr and Sonarr now write `.nfo` files containing correct TMDB/IMDB/TVDB IDs alongside each media file. Jellyfin reads these instead of guessing from filenames, preventing metadata mismatches that cause Seerr to show "Requested" when files are already downloaded. Especially important for foreign-language films and titles shared by multiple movies
+
+### Documentation
+- APP-CONFIG.md: NFO metadata added as step 4 in both Sonarr and Radarr setup, with explanation of why it matters
+- UPGRADING.md: Migration note for existing users to enable NFO metadata
+
+---
+
 ## [1.6.5] - 2026-02-22
 
 ### Fixed

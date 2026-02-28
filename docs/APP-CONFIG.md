@@ -268,7 +268,12 @@ Searches for TV shows, sends download links to qBittorrent/SABnzbd, and organize
    - API Key: (from SABnzbd Config → General)
    - Category: `tv` (default category in SABnzbd)
 
-4. **Block ISOs:** Some indexers serve disc images that Jellyfin can't play.
+4. **Enable NFO metadata:** Settings → Metadata → Kodi (XBMC) / Emby → **Enable** (see [why this matters](#nfo-metadata))
+   - Series Metadata: ✅
+   - Episode Metadata: ✅
+   - All image options: ❌ (Jellyfin handles its own artwork)
+
+5. **Block ISOs:** Some indexers serve disc images that Jellyfin can't play.
    - Settings → Custom Formats → + → Name: `Reject ISO`
    - Add condition: Release Title, value `\.iso$`, check **Regex**
    - Settings → Profiles → your quality profile → set `Reject ISO` to `-10000`
@@ -294,10 +299,22 @@ Searches for movies, sends download links to qBittorrent/SABnzbd, and organizes 
    - API Key: (from SABnzbd Config → General)
    - Category: `movies` (default category in SABnzbd)
 
-4. **Block ISOs:** Some indexers serve disc images that Jellyfin can't play.
+4. **Enable NFO metadata:** Settings → Metadata → Kodi (XBMC) / Emby → **Enable** (see [why this matters](#nfo-metadata))
+   - Movie Metadata: ✅
+   - Movie Images: ❌ (Jellyfin handles its own artwork)
+
+5. **Block ISOs:** Some indexers serve disc images that Jellyfin can't play.
    - Settings → Custom Formats → + → Name: `Reject ISO`
    - Add condition: Release Title, value `\.iso$`, check **Regex**
    - Settings → Profiles → your quality profile → set `Reject ISO` to `-10000`
+
+### NFO Metadata
+
+> **Why this matters:** Without NFO files, Jellyfin identifies media by guessing from the filename. For movies with common titles (e.g. "Resurrection", "The Host", "Parasite"), it can match the wrong TMDB entry. When the TMDB IDs don't agree between Radarr/Sonarr and Jellyfin, Seerr can't link them — so requests stay stuck at "Requested" even though the file is downloaded and playable.
+>
+> Enabling NFO metadata makes Radarr/Sonarr write a small `.nfo` file alongside each media file containing the correct TMDB/IMDB/TVDB IDs. Jellyfin reads these instead of guessing. This eliminates the entire class of metadata mismatch bugs.
+>
+> **After enabling:** Run a full library refresh to write NFOs for existing media. In Radarr: Movies → Update All. In Sonarr: Series → Update All. New downloads will get NFOs automatically.
 
 ## 4.6 Prowlarr (Indexer Manager)
 

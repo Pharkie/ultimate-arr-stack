@@ -38,6 +38,28 @@ docker compose -f docker-compose.arr-stack.yml up -d  # Restarts containers with
 
 When upgrading across versions, check below for any action required.
 
+### v1.6.5 → v1.7
+
+**Recommended:** Enable NFO metadata in Radarr and Sonarr.
+
+Without this, Jellyfin guesses TMDB/TVDB IDs from filenames. For titles shared by multiple movies (e.g. "Resurrection", "The Host"), it can pick the wrong one — causing Seerr to show "Requested" even though the file is downloaded and playable. NFO files tell Jellyfin the correct IDs directly.
+
+**In Radarr** (`http://NAS_IP:7878`):
+
+1. Settings → Metadata → Kodi (XBMC) / Emby → **Enable**
+2. Movie Metadata: ✅, Movie Images: ❌
+3. Save, then refresh the full library: Movies → Update All
+
+**In Sonarr** (`http://NAS_IP:8989`):
+
+1. Settings → Metadata → Kodi (XBMC) / Emby → **Enable**
+2. Series Metadata: ✅, Episode Metadata: ✅, all image options: ❌
+3. Save, then refresh the full library: Series → Update All
+
+The library refresh writes `.nfo` files for all existing media. New downloads get them automatically.
+
+---
+
 ### v1.4 → v1.5
 
 **Breaking change:** Removed all env var fallbacks from compose files.
