@@ -69,6 +69,7 @@
 | duc | 172.20.0.14 | 8838 | Disk usage |
 | Beszel | 172.20.0.15 | 8090 | System monitoring |
 | DIUN | 172.20.0.16 | — | Image update notifier (no UI) |
+| Configarr | — | — | TRaSH Guides sync (one-shot, no UI) |
 
 ### Service Connection Guide
 
@@ -181,3 +182,4 @@ Services start in dependency order (handled automatically by `depends_on`):
 | qbit-scheduler | Pause torrents overnight |
 | Beszel | System metrics (CPU, RAM, disk, containers) |
 | DIUN | Docker image update notifications |
+| Configarr | TRaSH Guides quality profile sync (one-shot) |

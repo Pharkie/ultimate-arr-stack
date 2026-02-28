@@ -72,6 +72,10 @@ If this project helped you, give it a ⭐ to help others find it, or buy me a co
 
 ---
 
+## AI Disclosure
+
+This codebase was generated with [Claude Code](https://claude.ai/claude-code) (Anthropic, Claude Opus 4.6) and has had limited manual code review. Use at your own risk. That said, the entire development process was closely overseen by a human with particular attention to security and reliability — every architectural decision, configuration choice, and debugging session was directed and verified by a human throughout. The stack is tested on real NAS hardware and actively monitored in daily use.
+
 ## License
 
 Documentation, configuration files, and examples in this repository are licensed under [CC BY-NC 4.0](https://creativecommons.org/licenses/by-nc/4.0/) (Attribution-NonCommercial). Individual software components (Sonarr, Radarr, Jellyfin, etc.) retain their own licenses.

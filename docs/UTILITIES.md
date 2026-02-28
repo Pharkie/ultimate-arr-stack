@@ -15,6 +15,7 @@ docker compose -f docker-compose.utilities.yml up -d
 | **Beszel** | System metrics (CPU, RAM, disk, containers) | http://beszel.lan |
 | **duc** | Disk usage analyzer (treemap UI) | http://duc.lan |
 | **qbit-scheduler** | Pauses torrents overnight for disk spin-down | Internal |
+| **Configarr** | Syncs TRaSH Guides quality profiles to Sonarr/Radarr | Run manually |
 
 > **Want Docker log viewing?** [Dozzle](https://dozzle.dev/) is a lightweight web UI for viewing container logs in real-time. Not included in the stack, but easy to add if you want it.
 
@@ -107,6 +108,36 @@ docker exec qbit-scheduler /app/pause-resume.sh resume  # Start all torrents
 ```bash
 docker logs qbit-scheduler
 ```
+
+## Configarr Setup
+
+Configarr syncs [TRaSH Guides](https://trash-guides.info/) quality profiles and custom formats to Sonarr and Radarr. It runs once and exits — no persistent service, no web UI.
+
+**1. Copy the example config:**
+```bash
+cp configarr/config.yml.example configarr/config.yml
+```
+
+**2. Add API keys to `.env`:**
+```bash
+SONARR_API_KEY=your_sonarr_api_key
+RADARR_API_KEY=your_radarr_api_key
+```
+Find these in Sonarr/Radarr → Settings → General → API Key.
+
+**3. Edit `configarr/config.yml`** — uncomment the template set you want (e.g., `sonarr-v4-quality-profile-web-1080p`). Browse available templates at the [recyclarr config-templates repo](https://github.com/recyclarr/config-templates).
+
+**4. Preview changes (dry run):**
+```bash
+docker compose -f docker-compose.utilities.yml run --rm -e DRY_RUN=true configarr
+```
+
+**5. Apply changes:**
+```bash
+docker compose -f docker-compose.utilities.yml run --rm configarr
+```
+
+> **Tip:** Run with `DRY_RUN=true` first every time to preview what Configarr will change before it touches your Sonarr/Radarr settings.
 
 ---
 

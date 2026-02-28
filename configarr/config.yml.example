@@ -1,0 +1,96 @@
+# Configarr - TRaSH Guides quality profile sync
+# Docs: https://configarr.de/docs/intro
+#
+# Setup:
+#   1. Copy this file to config.yml
+#   2. Add SONARR_API_KEY and RADARR_API_KEY to your .env file
+#   3. Preview changes:  docker compose -f docker-compose.utilities.yml run --rm -e DRY_RUN=true configarr
+#   4. Apply changes:    docker compose -f docker-compose.utilities.yml run --rm configarr
+#
+# Finding API keys:
+#   Sonarr → Settings → General → API Key
+#   Radarr → Settings → General → API Key
+#
+# Browse available templates:
+#   https://github.com/recyclarr/config-templates
+#
+# Note: The quality profiles below include 1080p fallback qualities so content
+# is still grabbed when no 4K release exists. The TRaSH Guides UHD templates
+# are 4K-only by default — the custom quality_profiles sections add the fallback.
+# If you only want 4K, remove the "WEB 1080p" / "Bluray-1080p" entries.
+
+sonarr:
+  main:
+    base_url: http://gluetun:8989
+    api_key: !env SONARR_API_KEY
+
+    quality_definition:
+      type: series
+
+    # TRaSH Guides custom formats for 2160p WEB scoring
+    # For 1080p-only, swap to: sonarr-v4-custom-formats-web-1080p
+    include:
+      - template: sonarr-v4-quality-definition-series
+      - template: sonarr-v4-custom-formats-web-2160p
+
+    custom_formats: []
+
+    # 4K preferred, 1080p fallback
+    quality_profiles:
+      - name: WEB-2160p
+        reset_unmatched_scores:
+          enabled: true
+        upgrade:
+          allowed: true
+          until_quality: WEB 2160p
+          until_score: 10000
+        min_format_score: 0
+        quality_sort: top
+        qualities:
+          - name: WEB 2160p
+            qualities:
+              - WEBDL-2160p
+              - WEBRip-2160p
+          - name: WEB 1080p
+            qualities:
+              - WEBDL-1080p
+              - WEBRip-1080p
+
+radarr:
+  main:
+    base_url: http://gluetun:7878
+    api_key: !env RADARR_API_KEY
+
+    quality_definition:
+      type: movie
+
+    # TRaSH Guides custom formats for UHD Bluray + WEB scoring
+    # For 1080p-only, swap to: radarr-custom-formats-hd-bluray-web
+    include:
+      - template: radarr-quality-definition-movie
+      - template: radarr-custom-formats-uhd-bluray-web
+
+    custom_formats: []
+
+    # 4K preferred, 1080p fallback
+    quality_profiles:
+      - name: UHD Bluray + WEB
+        reset_unmatched_scores:
+          enabled: true
+        upgrade:
+          allowed: true
+          until_quality: Bluray-2160p
+          until_score: 10000
+        min_format_score: 0
+        quality_sort: top
+        qualities:
+          - name: Bluray-2160p
+          - name: WEB 2160p
+            qualities:
+              - WEBDL-2160p
+              - WEBRip-2160p
+          - name: Bluray-1080p
+          - name: WEB 1080p
+            qualities:
+              - WEBDL-1080p
+              - WEBRip-1080p

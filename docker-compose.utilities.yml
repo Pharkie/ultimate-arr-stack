@@ -13,6 +13,7 @@ volumes:
   uptime-kuma-data:
   beszel-data:
   diun-data:
+  configarr-repos:
 
 #########################
 # Networks              #
@@ -197,4 +198,25 @@ services:
       - DIUN_NOTIF_WEBHOOK_METHOD=POST
       - DIUN_NOTIF_WEBHOOK_HEADERS_0_NAME=Content-Type
       - DIUN_NOTIF_WEBHOOK_HEADERS_0_VALUE=application/json
+    logging: *default-logging
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # CONFIGARR - Syncs TRaSH Guides quality profiles and custom formats to
+  # Sonarr/Radarr. One-shot job: runs once and exits. No web UI.
+  # Run manually: docker compose -f docker-compose.utilities.yml run --rm configarr
+  # Dry run first: docker compose -f docker-compose.utilities.yml run --rm -e DRY_RUN=true configarr
+  # ═══════════════════════════════════════════════════════════════════════════
+  configarr:
+    image: ghcr.io/raydak-labs/configarr:1.23.0
+    container_name: configarr
+    restart: "no"
+    networks:
+      - arr-stack
+    volumes:
+      - ./configarr/config.yml:/app/config/config.yml:ro
+      - configarr-repos:/app/repos
+    environment:
+      - TZ=${TZ}
+      - SONARR_API_KEY=${SONARR_API_KEY}
+      - RADARR_API_KEY=${RADARR_API_KEY}
     logging: *default-logging
