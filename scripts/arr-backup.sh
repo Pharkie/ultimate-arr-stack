@@ -294,6 +294,9 @@ if [ "$CREATE_TAR" = true ]; then
   echo ""
   echo "Creating tarball..."
 
+  # Remove stale tarball from previous run (sticky-bit on /tmp blocks overwrites by different users)
+  rm -f "$TARBALL"
+
   # Exclude socket files (qbittorrent ipc-socket) - they can't be archived
   tar -czf "$TARBALL" \
     --exclude='*/ipc-socket' \
