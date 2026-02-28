@@ -13,8 +13,8 @@ Streams your media library to any device.
 1. **Access:** `http://NAS_IP:8096`
 2. **Initial Setup:** Create admin account
 3. **Add Libraries:**
-   - Movies: Content type "Movies", Folder `/data/movies`
-   - TV Shows: Content type "Shows", Folder `/data/tv`
+   - Movies: Content type "Movies", Folder `/data/media/movies`
+   - TV Shows: Content type "Shows", Folder `/data/media/tv`
 
 <details>
 <summary><strong>Hardware Transcoding (Intel Quick Sync) - Recommended for Ugreen</strong></summary>
@@ -196,7 +196,7 @@ Receives download requests from Sonarr and Radarr and downloads files via torren
    - `tv` → Save path: `/data/torrents/tv`
    - `movies` → Save path: `/data/torrents/movies`
 
-   > **Why categories matter:** Sonarr/Radarr tell qBittorrent which category to use when requesting downloads. qBittorrent puts files in the category's save path. After download completes, Sonarr/Radarr create hardlinks from `/data/torrents/tv` or `/data/torrents/movies` to your library (`/data/tv` or `/data/movies`). If categories don't match, downloads won't be found.
+   > **Why categories matter:** Sonarr/Radarr tell qBittorrent which category to use when requesting downloads. qBittorrent puts files in the category's save path. After download completes, Sonarr/Radarr create hardlinks from `/data/torrents/tv` or `/data/torrents/movies` to your library (`/data/media/tv` or `/data/media/movies`). If categories don't match, downloads won't be found.
 
 ### qBittorrent Tuning (TRaSH Recommended)
 
@@ -287,7 +287,7 @@ These settings follow [TRaSH Guides SABnzbd recommendations](https://trash-guide
 Searches for TV shows, sends download links to qBittorrent/SABnzbd, and organizes completed files.
 
 1. **Access:** `http://NAS_IP:8989`
-2. **Add Root Folder:** Settings → Media Management → `/data/tv`
+2. **Add Root Folder:** Settings → Media Management → `/data/media/tv`
 3. **Add Download Client(s):** Settings → Download Clients
 
    **qBittorrent (torrents):**
@@ -329,7 +329,7 @@ Searches for TV shows, sends download links to qBittorrent/SABnzbd, and organize
 Searches for movies, sends download links to qBittorrent/SABnzbd, and organizes completed files.
 
 1. **Access:** `http://NAS_IP:7878`
-2. **Add Root Folder:** Settings → Media Management → `/data/movies`
+2. **Add Root Folder:** Settings → Media Management → `/data/media/movies`
 3. **Add Download Client(s):** Settings → Download Clients
 
    **qBittorrent (torrents):**

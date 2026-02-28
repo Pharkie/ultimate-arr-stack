@@ -146,7 +146,7 @@ Docker comes preinstalled on UGOS - no installation needed! Folders created via 
 
 1. Open UGOS web interface → **Files** app
 2. Create shared folders: **Media**, **docker**
-3. Inside **Media**, create subfolders: **tv**, **movies**
+3. Inside **Media**, create subfolder: **media**, then inside **media** create **tv** and **movies**
 4. Enable SSH: **Control Panel** → **Terminal** → toggle SSH on
 5. SSH into your NAS and create download directories + install git:
 
@@ -156,10 +156,11 @@ ssh your-username@nas-ip
 # Install git (Ugreen NAS uses Debian)
 sudo apt-get update && sudo apt-get install -y git
 
-# Create download directories (hardlink-compatible structure)
+# Create media and download directories (hardlink-compatible structure)
+mkdir -p /volume1/Media/media/{tv,movies}
 mkdir -p /volume1/Media/torrents/{tv,movies}
 mkdir -p /volume1/Media/usenet/{incomplete,complete/{tv,movies}}
-chown -R 1000:1000 /volume1/Media/torrents /volume1/Media/usenet
+chown -R 1000:1000 /volume1/Media/media /volume1/Media/torrents /volume1/Media/usenet
 
 # Clone the repo
 cd /volume1/docker
@@ -183,7 +184,7 @@ Scanning media files for viruses is unnecessary - video/audio files can't contai
 <summary><strong>Synology / QNAP</strong></summary>
 
 Use File Station to create:
-- **Media** shared folder with subfolders: tv, movies
+- **Media** shared folder with subfolder: **media** (containing **tv** and **movies**)
 - **docker** shared folder
 
 Then via SSH:
@@ -193,10 +194,11 @@ ssh your-username@nas-ip
 # Install git if not present (Synology)
 sudo synopkg install Git
 
-# Create download directories (hardlink-compatible structure)
+# Create media and download directories (hardlink-compatible structure)
+mkdir -p /volume1/Media/media/{tv,movies}
 mkdir -p /volume1/Media/torrents/{tv,movies}
 mkdir -p /volume1/Media/usenet/{incomplete,complete/{tv,movies}}
-chown -R 1000:1000 /volume1/Media/torrents /volume1/Media/usenet
+chown -R 1000:1000 /volume1/Media/media /volume1/Media/torrents /volume1/Media/usenet
 
 # Clone the repo
 cd /volume1/docker
@@ -213,8 +215,8 @@ sudo chown -R 1000:1000 /volume1/docker/arr-stack
 # Install git if needed
 sudo apt-get update && sudo apt-get install -y git
 
-# Create media directories
-sudo mkdir -p /srv/media/{tv,movies}
+# Create media and download directories
+sudo mkdir -p /srv/media/media/{tv,movies}
 sudo mkdir -p /srv/media/torrents/{tv,movies}
 sudo mkdir -p /srv/media/usenet/{incomplete,complete/{tv,movies}}
 sudo chown -R 1000:1000 /srv/media
@@ -234,8 +236,9 @@ sudo chown -R 1000:1000 /srv/docker/arr-stack
 ```
 /volume1/  (or /srv/)
 ├── Media/
-│   ├── movies/               # Movie library (Radarr → Jellyfin)
-│   ├── tv/                   # TV show library (Sonarr → Jellyfin)
+│   ├── media/                # Library files (TRaSH recommended)
+│   │   ├── movies/           #   Movie library (Radarr → Jellyfin)
+│   │   └── tv/               #   TV show library (Sonarr → Jellyfin)
 │   ├── torrents/             # qBittorrent downloads
 │   │   ├── tv/               #   Sonarr category
 │   │   └── movies/           #   Radarr category

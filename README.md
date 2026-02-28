@@ -14,6 +14,7 @@ Works on Ugreen, Synology, QNAP, or any Docker host.
 
 - **Production-ready** — Real healthchecks, auto-recovery when VPN reconnects, backup script. Not just "it runs."
 - **Battle-tested** — Edge cases found and fixed across multiple NAS setups. More resilient than most.
+- **[TRaSH Guides](https://trash-guides.info/) best practices** — Hardlinks for instant imports, TRaSH naming schemes, separated download directories, download client hardening.
 - **Everything you need** — Jellyfin, Sonarr, Radarr, Prowlarr, Bazarr, Seerr, qBittorrent, SABnzbd, Pi-hole, Cloudflare Tunnel. Modular — skip what you don't need, add what you do (e.g. Lidarr).
 - **Step-by-step guide** — Not just a docker-compose file in a repo.
 - **Flexible** — Supports 30+ VPN providers. Plex users can swap Jellyfin (see [setup guide](docs/SETUP.md)).
@@ -22,6 +23,8 @@ Works on Ugreen, Synology, QNAP, or any Docker host.
 <details>
 <summary>Technical features</summary>
 
+- **Hardlinks** — Single volume mount enables instant imports with zero extra disk space
+- **TRaSH naming** — Standardised file naming with quality, codec, HDR, and release group info
 - **Local `.lan` domains** — `http://sonarr.lan` instead of port numbers
 - **Intel Quick Sync** — GPU-accelerated transcoding on Intel NAS (Ugreen DXP4800+, etc.). Remove 4 lines from compose file if no Intel GPU.
 - **Auto-recovery** — Services restart when VPN reconnects
@@ -72,9 +75,9 @@ If this project helped you, give it a ⭐ to help others find it, or buy me a co
 
 ---
 
-## AI Disclosure
+## LLM Generated, Human Reviewed
 
-This codebase was generated with [Claude Code](https://claude.ai/claude-code) (Anthropic, Claude Opus 4.6) and has had limited manual code review. Use at your own risk. That said, the entire development process was closely overseen by a human with particular attention to security and reliability — every architectural decision, configuration choice, and debugging session was directed and verified by a human throughout. The stack is tested on real NAS hardware and actively monitored in daily use.
+This code was generated with [Claude Code](https://claude.ai/claude-code) (Anthropic, Claude Opus 4.6). Development was overseen by the human author with attention to reliability and security. Architectural decisions, configuration choices, and development sessions were closely planned, directed and verified by the human author throughout. The code and test results were reviewed and tested by the human author beyond the LLM. Still, the code has had limited manual review, I encourage you to make your own checks and use this code at your own risk.
 
 ## License
 

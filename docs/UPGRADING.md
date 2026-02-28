@@ -44,13 +44,16 @@ This release adds TRaSH Guides best practices: hardlinks, naming schemes, downlo
 
 **Breaking change:** Volume mounts changed for 6 services. Docker Compose will handle this automatically on redeploy, but you must reconfigure paths inside the apps.
 
-#### 1. Create new download directories
+#### 1. Create new directories and move library files
 
 ```bash
 ssh your-username@nas-ip
+mkdir -p /volume1/Media/media
+mv /volume1/Media/movies /volume1/Media/media/movies
+mv /volume1/Media/tv /volume1/Media/media/tv
 mkdir -p /volume1/Media/torrents/{tv,movies}
 mkdir -p /volume1/Media/usenet/{incomplete,complete/{tv,movies}}
-chown -R 1000:1000 /volume1/Media/torrents /volume1/Media/usenet
+chown -R 1000:1000 /volume1/Media/media /volume1/Media/torrents /volume1/Media/usenet
 ```
 
 #### 2. Pull and redeploy
@@ -65,14 +68,14 @@ Wait ~30 seconds for services to stabilize.
 
 #### 3. Reconfigure Radarr root folder
 
-1. Settings → Media Management → Add Root Folder → `/data/movies`
-2. Movies → Select All → Edit → Root Folder → `/data/movies/` → Save
+1. Settings → Media Management → Add Root Folder → `/data/media/movies`
+2. Movies → Select All → Edit → Root Folder → `/data/media/movies/` → Save
 3. Settings → Media Management → delete old root folder `/movies`
 
 #### 4. Reconfigure Sonarr root folder
 
-1. Settings → Media Management → Add Root Folder → `/data/tv`
-2. Series → Select All → Edit → Root Folder → `/data/tv/` → Save
+1. Settings → Media Management → Add Root Folder → `/data/media/tv`
+2. Series → Select All → Edit → Root Folder → `/data/media/tv/` → Save
 3. Settings → Media Management → delete old root folder `/tv`
 
 #### 5. Reconfigure qBittorrent categories
@@ -99,8 +102,8 @@ Restart SABnzbd after saving.
 #### 8. Reconfigure Jellyfin library paths
 
 Dashboard → Libraries:
-- Edit Movies library → add `/data/movies`, remove `/media/movies`
-- Edit TV Shows library → add `/data/tv`, remove `/media/tv`
+- Edit Movies library → add `/data/media/movies`, remove `/media/movies`
+- Edit TV Shows library → add `/data/media/tv`, remove `/media/tv`
 
 This triggers a library rescan. NFO files ensure accurate identification.
 

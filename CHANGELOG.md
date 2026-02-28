@@ -17,7 +17,7 @@ All notable changes to this project will be documented in this file.
 ### Changed
 - **Volume mounts restructured**: qBittorrent, SABnzbd, Sonarr, Radarr now mount `${MEDIA_ROOT}:/data` (single mount). Jellyfin and Bazarr mount specific subdirectories under `/data/`. This is a breaking change for existing users — see UPGRADING.md
 - **Download categories renamed**: qBittorrent categories changed from `sonarr`/`radarr` to `tv`/`movies` to match directory structure and SABnzbd categories
-- **Jellyfin library paths**: Changed from `/media/movies` and `/media/tv` to `/data/movies` and `/data/tv` for consistency across the stack
+- **Jellyfin library paths**: Changed from `/media/movies` and `/media/tv` to `/data/media/movies` and `/data/media/tv` — follows TRaSH recommended `media/` subdirectory structure
 - **Repo renamed**: `arr-stack-ugreennas` → `ultimate-arr-stack`. GitHub auto-redirects old URLs
 
 ### Documentation

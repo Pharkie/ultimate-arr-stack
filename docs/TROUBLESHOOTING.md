@@ -31,9 +31,9 @@ sudo rm /volume1/@docker/volumes/arr-stack_sabnzbd-config/_data/admin/postproc2.
 rm -rf /volume1/Media/usenet/incomplete/_UNPACK_<release_name>*
 
 # 4. Move the actual file (in incomplete/) to the movie folder
-mkdir -p "/volume1/Media/movies/MovieName (Year)"
+mkdir -p "/volume1/Media/media/movies/MovieName (Year)"
 mv "/volume1/Media/usenet/incomplete/<release>/obfuscated.mkv" \
-   "/volume1/Media/movies/MovieName (Year)/MovieName (Year).mkv"
+   "/volume1/Media/media/movies/MovieName (Year)/MovieName (Year).mkv"
 rm -rf "/volume1/Media/usenet/incomplete/<release>"
 
 # 5. Start SABnzbd back up
