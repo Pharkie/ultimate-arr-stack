@@ -15,7 +15,7 @@ Read `.claude/config.local.md` first to get the hostname, user, and password.
 
 This is a Docker media stack for Ugreen NAS devices. Key paths:
 
-- **Local dev repo**: `/Users/adamknowles/dev/arr-stack-ugreennas/`
+- **Local dev repo**: `/Users/adamknowles/dev/ultimate-arr-stack/`
 - **NAS deploy path**: `/volume1/docker/arr-stack/`
 
 When editing files that need to go on the NAS (like `pihole/02-local-dns.conf`), edit them **on the NAS**, not in this local repo.
