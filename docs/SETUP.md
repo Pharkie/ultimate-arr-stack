@@ -490,7 +490,7 @@ Watch and request media from anywhere via `jellyfin.yourdomain.com`. Requires a 
 Service configs are stored in Docker named volumes. Run periodic backups:
 
 ```bash
-./scripts/backup-volumes.sh --tar
+./scripts/arr-backup.sh --tar
 ```
 
 Creates a ~13MB tarball of essential configs (VPN settings, indexers, request history, etc.).

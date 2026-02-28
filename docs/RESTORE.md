@@ -4,7 +4,7 @@ Step-by-step procedures for restoring from backups. See [Backup & Restore](BACKU
 
 ## Prerequisites
 
-- A backup tarball from `scripts/backup-volumes.sh --tar` (or `--encrypt`)
+- A backup tarball from `scripts/arr-backup.sh --tar` (or `--encrypt`)
 - Docker installed and the stack repo cloned (see [Setup Guide](SETUP.md))
 - SSH access to your NAS
 
@@ -12,7 +12,7 @@ Step-by-step procedures for restoring from backups. See [Backup & Restore](BACKU
 
 ## Restore from Volume Backup
 
-These steps restore service configs backed up by `scripts/backup-volumes.sh`.
+These steps restore service configs backed up by `scripts/arr-backup.sh`.
 
 ### 1. Transfer Backup to NAS
 
@@ -103,44 +103,16 @@ docker compose -f docker-compose.arr-stack.yml start jellyseerr
 
 ---
 
-## Restore from arr-backup.sh
+## Restore `.env` from Backup
 
-The `scripts/arr-backup.sh` cron script creates dated folders on USB with compose files and volume tarballs.
-
-### 1. Find Latest Backup
+The backup includes your `.env` file (saved as `dot-env`):
 
 ```bash
-ls /mnt/arr-backup/
-# Shows: 20250101/ 20250102/ etc.
+cp /tmp/arr-stack-backup-*/dot-env /volume1/docker/arr-stack/.env
+chmod 600 /volume1/docker/arr-stack/.env
 ```
 
-### 2. Restore Compose Configs
-
-```bash
-cd /volume1/docker/arr-stack
-tar -xzf /mnt/arr-backup/20250101/configs.tar.gz
-```
-
-This restores `docker-compose.arr-stack.yml`, `.env`, and `traefik/` config.
-
-### 3. Restore Volume Tarballs
-
-```bash
-for tarball in /mnt/arr-backup/20250101/*-config.tar.gz; do
-  vol_name=$(basename "$tarball" .tar.gz)
-  echo "Restoring $vol_name..."
-  docker run --rm \
-    -v "$(pwd)":/backup:ro \
-    -v "arr-stack_${vol_name}":/dest \
-    alpine sh -c "tar -xzf /backup/$tarball -C /dest"
-done
-```
-
-### 4. Start Stack
-
-```bash
-docker compose -f docker-compose.arr-stack.yml up -d
-```
+Compose files and Traefik config don't need restoring — they're in git. Just `git clone` the repo again.
 
 ---
 

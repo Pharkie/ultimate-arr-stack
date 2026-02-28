@@ -102,10 +102,10 @@ Run periodic backups of service configs:
 
 ```bash
 # Manual backup
-./scripts/backup-volumes.sh --tar
+./scripts/arr-backup.sh --tar
 
 # Encrypted backup
-./scripts/backup-volumes.sh --tar --encrypt
+./scripts/arr-backup.sh --tar --encrypt
 ```
 
 See [Backup & Restore](BACKUP.md) for full details and [Restore Guide](RESTORE.md) for recovery procedures.

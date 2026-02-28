@@ -92,7 +92,7 @@ This project uses **separate Docker Compose files** for each layer:
         └── cloudflared/   # User-edited (bind mount)
 ```
 
-**Service data** (Sonarr, Radarr, Jellyfin, etc.) is stored in Docker named volumes (e.g., `arr-stack_sonarr-config`), not in the repo directory. Use `scripts/backup-volumes.sh` to back them up.
+**Service data** (Sonarr, Radarr, Jellyfin, etc.) is stored in Docker named volumes (e.g., `arr-stack_sonarr-config`), not in the repo directory. Use `scripts/arr-backup.sh` to back them up.
 
 ---
 
@@ -249,7 +249,7 @@ Without the `gh release edit` step, the release stays Draft and won't show as La
 
 ```
 scripts/
-├── backup-volumes.sh       # Backup all Docker named volumes
+├── arr-backup.sh       # Backup all Docker named volumes
 ├── pre-commit              # Main hook (symlinked from .git/hooks/)
 └── lib/
     ├── common.sh               # Shared functions (NAS config, SSH, file scanning)

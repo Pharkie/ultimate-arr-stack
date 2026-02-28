@@ -18,7 +18,7 @@ For the automated daily backup to work, plug a USB drive into your NAS:
 
 ## What Gets Backed Up
 
-The backup script (`scripts/backup-volumes.sh`) backs up **essential configs only** - small files that are hard to recreate:
+The backup script (`scripts/arr-backup.sh`) backs up **essential configs only** - small files that are hard to recreate:
 
 | Volume | Size | Contents |
 |--------|------|----------|
@@ -56,7 +56,7 @@ Large volumes that regenerate automatically are excluded:
 ```bash
 # SSH into your NAS first, then:
 cd /volume1/docker/arr-stack
-./scripts/backup-volumes.sh --tar
+./scripts/arr-backup.sh --tar
 ```
 
 Output:
@@ -137,16 +137,16 @@ docker compose -f docker-compose.arr-stack.yml start jellyseerr
 ## Script Options
 
 ```bash
-./scripts/backup-volumes.sh [OPTIONS] [BACKUP_DIR]
+./scripts/arr-backup.sh [OPTIONS] [BACKUP_DIR]
 
 Options:
   --tar           Create .tar.gz archive (recommended)
   --prefix NAME   Override volume prefix (default: auto-detect)
 
 Examples:
-  ./scripts/backup-volumes.sh --tar                    # Default location
-  ./scripts/backup-volumes.sh --tar /path/to/backup    # Custom location
-  ./scripts/backup-volumes.sh --prefix media-stack     # Custom prefix
+  ./scripts/arr-backup.sh --tar                    # Default location
+  ./scripts/arr-backup.sh --tar /path/to/backup    # Custom location
+  ./scripts/arr-backup.sh --prefix media-stack     # Custom prefix
 ```
 
 ### Volume Prefix Auto-Detection
@@ -155,7 +155,7 @@ The script auto-detects your volume prefix from running containers. If you clone
 
 If auto-detection fails, use `--prefix`:
 ```bash
-./scripts/backup-volumes.sh --tar --prefix media-stack
+./scripts/arr-backup.sh --tar --prefix media-stack
 ```
 
 ### Request Manager Detection
@@ -175,7 +175,7 @@ A cron job runs daily at 6am, backing up to USB:
 sudo crontab -l
 
 # Default schedule (already configured):
-0 6 * * * /volume1/docker/arr-stack/scripts/backup-volumes.sh --tar /mnt/arr-backup >> /var/log/arr-backup.log 2>&1
+0 6 * * * /volume1/docker/arr-stack/scripts/arr-backup.sh --tar /mnt/arr-backup >> /var/log/arr-backup.log 2>&1
 ```
 
 **Features:**

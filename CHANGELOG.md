@@ -2,6 +2,35 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.7.1] - 2026-02-28
+
+### Security
+- **Bazarr & Jellyseerr ports bound to localhost**: Ports 6767 and 5055 now bind to `127.0.0.1` instead of all interfaces, preventing direct access that bypasses Traefik auth. Services remain accessible via `.lan` domains and external access as before
+- **VPN leak check script**: New `scripts/check-vpn.sh` compares Gluetun's exit IP against the NAS LAN IP and exits non-zero on leak. Suitable for cron monitoring
+- **Backup encryption**: `scripts/arr-backup.sh --encrypt` encrypts tarballs with GPG symmetric encryption (AES-256). Opt-in via `--encrypt` flag
+- **`.env` included in backups**: `arr-backup.sh` now backs up `.env` (saved as `dot-env` with 600 permissions). Use `--encrypt` to protect secrets at rest
+
+### Fixed
+- **Network definition duplication**: `arr-stack` network was fully defined in 3 compose files. Now owned by `docker-compose.arr-stack.yml` only; traefik and utilities compose files use `external: true`
+- **Bazarr missing healthcheck start_period**: Added `start_period: 60s` to prevent false unhealthy status during startup
+- **Inconsistent script error handling**: All scripts now use `set -euo pipefail` (`arr-backup.sh`, `check-network.sh`)
+- **Consolidated backup scripts**: Merged `backup-volumes.sh` into `arr-backup.sh` — one script for all backups (volumes, `.env`, encryption, USB discovery, HA webhooks)
+- **E2E tests for localhost-bound services**: Bazarr and Seerr tests now route through `.lan` domains via Traefik
+
+### Added
+- **`--verbose` mode for configure-apps.sh**: Prints curl response bodies on API failures for easier debugging
+- **`--help` flag for configure-apps.sh**: Shows usage and confirms idempotency
+- **Shared `qbit_auth()` helper**: Extracted qBittorrent authentication into `scripts/lib/configure-helpers.sh`, reducing duplication with `configure-apps.sh`
+- **VPN connectivity E2E test**: Verifies VPN-tunneled services are reachable (Gluetun healthy)
+- **Maintenance guide** (`docs/MAINTENANCE.md`): Multi-compose command reference, VPN verification, health check guidance
+- **Restore guide** (`docs/RESTORE.md`): Step-by-step restore procedures for volume backups and arr-backup tarballs
+
+### Documentation
+- SETUP.md: Pi-hole static IP warning added to Step 2.5
+- APP-CONFIG.md: Idempotency note for configure-apps.sh (safe to re-run)
+
+---
+
 ## [1.7.0] - 2026-02-28
 
 ### Added
@@ -85,7 +114,7 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 - **Swappiness tuning**: Set `vm.swappiness=10` via root `@reboot` crontab. UGOS default (60) aggressively swaps out app pages even with plenty of free RAM. Reduces unnecessary zram overhead and keeps container memory resident
-- **Backup to USB**: `backup-volumes.sh --usb DIR_NAME` dynamically finds USB devices under `/mnt/@usb/sd*/` (device letters change on reboot). Includes 7-day rotation
+- **Backup to USB**: `arr-backup.sh --usb DIR_NAME` dynamically finds USB devices under `/mnt/@usb/sd*/` (device letters change on reboot). Includes 7-day rotation
 - **Backup failure notifications**: Home Assistant webhook alerts when backup fails, with step-level error reporting (`HA_WEBHOOK_URL` env var)
 
 ### Documentation
