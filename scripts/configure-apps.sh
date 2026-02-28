@@ -13,6 +13,7 @@
 #
 # Prerequisites:
 #   - Docker available and containers running
+#   - python3 available (for JSON parsing)
 #   - Run on the NAS (not your dev machine)
 #
 # What stays manual after this script:
@@ -22,6 +23,13 @@
 #   - Seerr: initial Jellyfin login + service connections
 #   - SABnzbd: usenet provider credentials + folder config
 #   - Pi-hole: upstream DNS
+
+# ============================================
+# Source helpers
+# ============================================
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "${SCRIPT_DIR}/lib/configure-helpers.sh"
 
 # ============================================
 # Globals
@@ -44,114 +52,6 @@ BAZARR_API_KEY=""
 SABNZBD_API_KEY=""
 QBIT_USERNAME="${QBIT_USERNAME:-admin}"
 QBIT_PASSWORD="${QBIT_PASSWORD:-}"
-
-# ============================================
-# Helpers
-# ============================================
-
-log()   { echo "[configure] $1"; }
-ok()    { echo "  ✓ $1"; CONFIGURED=$((CONFIGURED + 1)); }
-skip()  { echo "  - $1 (already configured)"; SKIPPED=$((SKIPPED + 1)); }
-fail()  { echo "  ✗ $1"; FAILED=$((FAILED + 1)); }
-info()  { echo "  $1"; }
-dry()   { echo "  [dry-run] Would: $1"; }
-
-# Simple JSON value extractor — no jq dependency
-# Usage: json_value "key" <<< "$json"
-# Handles: "key": "value", "key": 123, "key": true/false/null
-# For arrays/objects, use grep directly
-json_value() {
-    local key="$1"
-    grep -o "\"${key}\"[[:space:]]*:[[:space:]]*\"[^\"]*\"" | head -1 | sed "s/\"${key}\"[[:space:]]*:[[:space:]]*\"//" | sed 's/"$//'
-}
-
-# Extract numeric/boolean JSON value (unquoted)
-json_value_raw() {
-    local key="$1"
-    grep -o "\"${key}\"[[:space:]]*:[[:space:]]*[0-9a-z]*" | head -1 | sed "s/\"${key}\"[[:space:]]*:[[:space:]]*//"
-}
-
-# HTTP helpers — return body to stdout, check status via file
-# Usage: body=$(api_get "url" "header1" "header2" ...)
-api_get() {
-    local url="$1"; shift
-    local args=(-s -w '\n%{http_code}' -o -)
-    for h in "$@"; do args+=(-H "$h"); done
-    local response
-    response=$(curl "${args[@]}" "$url")
-    local code
-    code=$(echo "$response" | tail -1)
-    local body
-    body=$(echo "$response" | sed '$d')
-    if [[ "$code" =~ ^2 ]]; then
-        echo "$body"
-        return 0
-    else
-        return 1
-    fi
-}
-
-api_post() {
-    local url="$1"; shift
-    local content_type="$1"; shift
-    local data="$1"; shift
-    local args=(-s -w '\n%{http_code}' -o - -X POST -H "Content-Type: $content_type")
-    for h in "$@"; do args+=(-H "$h"); done
-    if [[ -n "$data" ]]; then args+=(--data "$data"); fi
-    local response
-    response=$(curl "${args[@]}" "$url")
-    local code
-    code=$(echo "$response" | tail -1)
-    local body
-    body=$(echo "$response" | sed '$d')
-    if [[ "$code" =~ ^2 ]]; then
-        echo "$body"
-        return 0
-    else
-        echo "$body"
-        return "$code"
-    fi
-}
-
-api_put() {
-    local url="$1"; shift
-    local content_type="$1"; shift
-    local data="$1"; shift
-    local args=(-s -w '\n%{http_code}' -o - -X PUT -H "Content-Type: $content_type")
-    for h in "$@"; do args+=(-H "$h"); done
-    if [[ -n "$data" ]]; then args+=(--data "$data"); fi
-    local response
-    response=$(curl "${args[@]}" "$url")
-    local code
-    code=$(echo "$response" | tail -1)
-    local body
-    body=$(echo "$response" | sed '$d')
-    if [[ "$code" =~ ^2 ]]; then
-        echo "$body"
-        return 0
-    else
-        echo "$body"
-        return "$code"
-    fi
-}
-
-# Wait for a service to respond (60s timeout)
-# Accepts 2xx, 3xx, and 401 (auth required = service is up)
-wait_for_service() {
-    local name="$1" url="$2"
-    local i=0
-    while [[ $i -lt 60 ]]; do
-        local code
-        code=$(curl -s -o /dev/null -w '%{http_code}' "$url" 2>/dev/null)
-        if [[ "$code" =~ ^[23] ]] || [[ "$code" == "401" ]]; then
-            return 0
-        fi
-        sleep 1
-        i=$((i + 1))
-    done
-    fail "$name not responding after 60s at $url"
-    return 1
-}
 
 # ============================================
 # Parse arguments
@@ -337,17 +237,15 @@ configure_qbittorrent() {
     # Set preferences (skip if already correct)
     local current_prefs
     current_prefs=$(curl -s -b "$QBIT_COOKIE" "${QBIT_URL}/api/v2/app/preferences" 2>/dev/null)
-    local needs_update=false
 
-    if echo "$current_prefs" | python3 -c "
-import sys, json
-p = json.load(sys.stdin)
+    if json_extract "$current_prefs" "
+p = data
 if not p.get('auto_tmm_enabled', False): sys.exit(1)
 if p.get('upnp', True): sys.exit(1)
 if not p.get('limit_utp_rate', False): sys.exit(1)
 if not p.get('limit_lan_peers', False): sys.exit(1)
 if p.get('encryption', 0) != 1: sys.exit(1)
-" 2>/dev/null; then
+"; then
         skip "qBittorrent: preferences"
     else
         local prefs='{"auto_tmm_enabled":true,"upnp":false,"limit_utp_rate":true,"limit_lan_peers":true,"encryption":1}'
@@ -367,461 +265,29 @@ if p.get('encryption', 0) != 1: sys.exit(1)
 }
 
 # ============================================
-# 2. Sonarr
+# 2. Sonarr & Radarr (via shared configure_arr_service)
 # ============================================
 
-configure_sonarr() {
-    log "Configuring Sonarr..."
+# Sonarr metadata fields
+SONARR_METADATA_FIELDS='[{"name":"seriesMetadata","value":true},{"name":"seriesMetadataEpisodeGuide","value":true},{"name":"seriesMetadataUrl","value":false},{"name":"episodeMetadata","value":true},{"name":"seriesImages","value":false},{"name":"seasonImages","value":false},{"name":"episodeImages","value":false}]'
 
-    if [[ -z "$SONARR_API_KEY" ]]; then
-        fail "Sonarr: no API key, skipping"
-        return
-    fi
-
-    local BASE="http://${NAS_IP}:8989"
-    local AUTH="X-Api-Key: ${SONARR_API_KEY}"
-
-    if ! wait_for_service "Sonarr" "${BASE}/api/v3/health" ; then return; fi
-
-    if $DRY_RUN; then
-        dry "Add root folder /data/media/tv"
-        dry "Add qBittorrent download client (category: tv)"
-        if $SABNZBD_RUNNING; then dry "Add SABnzbd download client (category: tv)"; fi
-        dry "Enable NFO metadata (Kodi/Emby)"
-        dry "Set TRaSH naming scheme"
-        dry "Add Reject ISO custom format"
-        dry "Score Reject ISO at -10000 in quality profiles"
-        if $SABNZBD_RUNNING; then dry "Add delay profile (Usenet 0, Torrent 30)"; fi
-        return
-    fi
-
-    # Root folder
-    local roots
-    roots=$(api_get "${BASE}/api/v3/rootfolder" "$AUTH") || true
-    if echo "$roots" | grep -q '"/data/media/tv"'; then
-        skip "Sonarr: root folder /data/media/tv"
-    else
-        if api_post "${BASE}/api/v3/rootfolder" "application/json" '{"path":"/data/media/tv"}' "$AUTH" >/dev/null 2>&1; then
-            ok "Sonarr: added root folder /data/media/tv"
-        else
-            fail "Sonarr: add root folder /data/media/tv"
-        fi
-    fi
-
-    # Download client: qBittorrent
-    local clients
-    clients=$(api_get "${BASE}/api/v3/downloadclient" "$AUTH") || true
-    if echo "$clients" | grep -qi 'qbittorrent'; then
-        skip "Sonarr: qBittorrent download client"
-    else
-        local qbit_payload
-        qbit_payload=$(cat <<QBIT_JSON
-{
-    "enable": true,
-    "protocol": "torrent",
-    "priority": 1,
-    "name": "qBittorrent",
-    "implementation": "QBittorrent",
-    "configContract": "QBittorrentSettings",
-    "fields": [
-        {"name": "host", "value": "localhost"},
-        {"name": "port", "value": 8085},
-        {"name": "username", "value": "${QBIT_USERNAME}"},
-        {"name": "password", "value": "${QBIT_PASSWORD}"},
-        {"name": "tvCategory", "value": "tv"},
-        {"name": "recentTvPriority", "value": 0},
-        {"name": "olderTvPriority", "value": 0},
-        {"name": "initialState", "value": 0},
-        {"name": "sequentialOrder", "value": false},
-        {"name": "firstAndLast", "value": false}
-    ]
-}
-QBIT_JSON
+# Sonarr naming payload (TRaSH guide)
+SONARR_NAMING_PAYLOAD=$(cat <<'EOF'
+{"renameEpisodes":true,"replaceIllegalCharacters":true,"multiEpisodeStyle":5,"standardEpisodeFormat":"{Series TitleYear} - S{season:00}E{episode:00} - {Episode CleanTitle} [{Custom Formats }{Quality Full}]{[MediaInfo AudioCodec}{ MediaInfo AudioChannels]}{[MediaInfo VideoDynamicRangeType]}{[Mediainfo VideoCodec]}{-Release Group}","dailyEpisodeFormat":"{Series TitleYear} - {Air-Date} - {Episode CleanTitle} [{Custom Formats }{Quality Full}]{[MediaInfo AudioCodec}{ MediaInfo AudioChannels]}{[MediaInfo VideoDynamicRangeType]}{[Mediainfo VideoCodec]}{-Release Group}","animeEpisodeFormat":"{Series TitleYear} - S{season:00}E{episode:00} - {absolute:000} - {Episode CleanTitle} [{Custom Formats }{Quality Full}]{[MediaInfo AudioCodec}{ MediaInfo AudioChannels}{MediaInfo AudioLanguages}]{[MediaInfo VideoDynamicRangeType]}{[Mediainfo VideoCodec][ Mediainfo VideoBitDepth]bit}{-Release Group}","seasonFolderFormat":"Season {season:00}","seriesFolderFormat":"{Series TitleYear} [tvdbid-{TvdbId}]"}
+EOF
 )
-        if api_post "${BASE}/api/v3/downloadclient" "application/json" "$qbit_payload" "$AUTH" >/dev/null 2>&1; then
-            ok "Sonarr: added qBittorrent download client"
-        else
-            fail "Sonarr: add qBittorrent download client"
-        fi
-    fi
 
-    # Download client: SABnzbd (if running)
-    if $SABNZBD_RUNNING && [[ -n "$SABNZBD_API_KEY" ]]; then
-        if echo "$clients" | grep -qi 'sabnzbd'; then
-            skip "Sonarr: SABnzbd download client"
-        else
-            local sab_payload
-            sab_payload=$(cat <<SAB_JSON
-{
-    "enable": true,
-    "protocol": "usenet",
-    "priority": 1,
-    "name": "SABnzbd",
-    "implementation": "Sabnzbd",
-    "configContract": "SabnzbdSettings",
-    "fields": [
-        {"name": "host", "value": "localhost"},
-        {"name": "port", "value": 8080},
-        {"name": "apiKey", "value": "${SABNZBD_API_KEY}"},
-        {"name": "tvCategory", "value": "tv"},
-        {"name": "recentTvPriority", "value": -100},
-        {"name": "olderTvPriority", "value": -100}
-    ]
-}
-SAB_JSON
+# Radarr metadata fields
+RADARR_METADATA_FIELDS='[{"name":"movieMetadata","value":true},{"name":"movieMetadataURL","value":false},{"name":"movieMetadataLanguage","value":1},{"name":"movieImages","value":false},{"name":"useMovieNfo","value":true}]'
+
+# Radarr naming payload (TRaSH guide)
+RADARR_NAMING_PAYLOAD=$(cat <<'EOF'
+{"renameMovies":true,"replaceIllegalCharacters":true,"standardMovieFormat":"{Movie CleanTitle} {(Release Year)} {imdb-{ImdbId}} - {Edition Tags }{[Custom Formats]}{[Quality Full]}{[MediaInfo AudioCodec}{ MediaInfo AudioChannels]}{[MediaInfo VideoDynamicRangeType]}{[Mediainfo VideoCodec]}{-Release Group}","movieFolderFormat":"{Movie CleanTitle} ({Release Year})"}
+EOF
 )
-            if api_post "${BASE}/api/v3/downloadclient" "application/json" "$sab_payload" "$AUTH" >/dev/null 2>&1; then
-                ok "Sonarr: added SABnzbd download client"
-            else
-                fail "Sonarr: add SABnzbd download client"
-            fi
-        fi
-    fi
-
-    # NFO Metadata
-    local metadata
-    metadata=$(api_get "${BASE}/api/v3/metadata" "$AUTH") || true
-    # Find the Kodi/Emby metadata profile ID
-    local meta_id
-    meta_id=$(echo "$metadata" | grep -o '"id":[0-9]*' | head -1 | grep -o '[0-9]*')
-    if [[ -n "$meta_id" ]]; then
-        local meta_enabled
-        meta_enabled=$(echo "$metadata" | json_value_raw "enable")
-        if [[ "$meta_enabled" == "true" ]]; then
-            skip "Sonarr: NFO metadata"
-        else
-            local meta_payload="{\"enable\":true,\"name\":\"Kodi (XBMC) / Emby\",\"id\":${meta_id},\"fields\":[{\"name\":\"seriesMetadata\",\"value\":true},{\"name\":\"seriesMetadataEpisodeGuide\",\"value\":true},{\"name\":\"seriesMetadataUrl\",\"value\":false},{\"name\":\"episodeMetadata\",\"value\":true},{\"name\":\"seriesImages\",\"value\":false},{\"name\":\"seasonImages\",\"value\":false},{\"name\":\"episodeImages\",\"value\":false}],\"implementation\":\"XbmcMetadata\",\"configContract\":\"XbmcMetadataSettings\"}"
-            if api_put "${BASE}/api/v3/metadata/${meta_id}" "application/json" "$meta_payload" "$AUTH" >/dev/null 2>&1; then
-                ok "Sonarr: enabled NFO metadata"
-            else
-                fail "Sonarr: enable NFO metadata"
-            fi
-        fi
-    fi
-
-    # Naming
-    local naming
-    naming=$(api_get "${BASE}/api/v3/config/naming" "$AUTH") || true
-    local rename_enabled
-    rename_enabled=$(echo "$naming" | json_value_raw "renameEpisodes")
-    if [[ "$rename_enabled" == "true" ]]; then
-        skip "Sonarr: TRaSH naming (already customised)"
-    else
-        local naming_payload
-        naming_payload=$(cat <<'NAMING_JSON'
-{
-    "renameEpisodes": true,
-    "replaceIllegalCharacters": true,
-    "multiEpisodeStyle": 5,
-    "standardEpisodeFormat": "{Series TitleYear} - S{season:00}E{episode:00} - {Episode CleanTitle} [{Custom Formats }{Quality Full}]{[MediaInfo AudioCodec}{ MediaInfo AudioChannels]}{[MediaInfo VideoDynamicRangeType]}{[Mediainfo VideoCodec]}{-Release Group}",
-    "dailyEpisodeFormat": "{Series TitleYear} - {Air-Date} - {Episode CleanTitle} [{Custom Formats }{Quality Full}]{[MediaInfo AudioCodec}{ MediaInfo AudioChannels]}{[MediaInfo VideoDynamicRangeType]}{[Mediainfo VideoCodec]}{-Release Group}",
-    "animeEpisodeFormat": "{Series TitleYear} - S{season:00}E{episode:00} - {absolute:000} - {Episode CleanTitle} [{Custom Formats }{Quality Full}]{[MediaInfo AudioCodec}{ MediaInfo AudioChannels}{MediaInfo AudioLanguages}]{[MediaInfo VideoDynamicRangeType]}{[Mediainfo VideoCodec][ Mediainfo VideoBitDepth]bit}{-Release Group}",
-    "seasonFolderFormat": "Season {season:00}",
-    "seriesFolderFormat": "{Series TitleYear} [tvdbid-{TvdbId}]"
-}
-NAMING_JSON
-)
-        if api_put "${BASE}/api/v3/config/naming" "application/json" "$naming_payload" "$AUTH" >/dev/null 2>&1; then
-            ok "Sonarr: set TRaSH naming scheme"
-        else
-            fail "Sonarr: set TRaSH naming scheme"
-        fi
-    fi
-
-    # Custom Format: Reject ISO
-    local formats
-    formats=$(api_get "${BASE}/api/v3/customformat" "$AUTH") || true
-    local iso_cf_id=""
-    if echo "$formats" | grep -q '"Reject ISO"'; then
-        skip "Sonarr: Reject ISO custom format"
-        iso_cf_id=$(echo "$formats" | grep -o '"Reject ISO"[^}]*"id":[0-9]*' | grep -o '"id":[0-9]*' | grep -o '[0-9]*')
-        # Fallback: try other order
-        if [[ -z "$iso_cf_id" ]]; then
-            iso_cf_id=$(echo "$formats" | grep -B20 '"Reject ISO"' | grep -o '"id":[0-9]*' | tail -1 | grep -o '[0-9]*')
-        fi
-    else
-        local cf_payload='{"name":"Reject ISO","includeCustomFormatWhenRenaming":false,"specifications":[{"name":"ISO","implementation":"ReleaseTitleSpecification","negate":false,"required":true,"fields":[{"name":"value","value":"\\.iso$"}]}]}'
-        local cf_result
-        cf_result=$(api_post "${BASE}/api/v3/customformat" "application/json" "$cf_payload" "$AUTH" 2>&1) || true
-        if echo "$cf_result" | grep -q '"id"'; then
-            ok "Sonarr: added Reject ISO custom format"
-            iso_cf_id=$(echo "$cf_result" | grep -o '"id":[0-9]*' | head -1 | grep -o '[0-9]*')
-        else
-            fail "Sonarr: add Reject ISO custom format"
-        fi
-    fi
-
-    # Score Reject ISO in quality profiles
-    if [[ -n "$iso_cf_id" ]]; then
-        local profiles
-        profiles=$(api_get "${BASE}/api/v3/qualityprofile" "$AUTH") || true
-        # Process each profile — look for profiles and add/update ISO scoring
-        local profile_ids
-        profile_ids=$(echo "$profiles" | grep -o '"id":[0-9]*' | grep -o '[0-9]*')
-        for pid in $profile_ids; do
-            local profile
-            profile=$(api_get "${BASE}/api/v3/qualityprofile/${pid}" "$AUTH") || continue
-            # Check if Reject ISO is already scored
-            if echo "$profile" | grep -q "\"format\":${iso_cf_id}"; then
-                local current_score
-                current_score=$(echo "$profile" | grep -o "\"format\":${iso_cf_id},\"score\":[0-9-]*" | grep -o '"score":[0-9-]*' | grep -o '[0-9-]*$')
-                if [[ "$current_score" == "-10000" ]]; then
-                    continue  # Already scored correctly
-                fi
-            fi
-            # Add or update the custom format score
-            local updated_profile
-            updated_profile=$(echo "$profile" | sed "s/\"formatItems\":\[/\"formatItems\":[{\"format\":${iso_cf_id},\"name\":\"Reject ISO\",\"score\":-10000},/")
-            if api_put "${BASE}/api/v3/qualityprofile/${pid}" "application/json" "$updated_profile" "$AUTH" >/dev/null 2>&1; then
-                ok "Sonarr: scored Reject ISO at -10000 in profile ${pid}"
-            else
-                fail "Sonarr: score Reject ISO in profile ${pid}"
-            fi
-        done
-    fi
-
-    # Delay profile (if SABnzbd running — prefer Usenet)
-    if $SABNZBD_RUNNING; then
-        local delays
-        delays=$(api_get "${BASE}/api/v3/delayprofile" "$AUTH") || true
-        # Check if any profile already prefers usenet with torrent delay
-        if echo "$delays" | grep -q '"preferredProtocol".*"usenet"'; then
-            skip "Sonarr: delay profile"
-        else
-            local delay_payload='{"enableUsenet":true,"enableTorrent":true,"preferredProtocol":"usenet","usenetDelay":0,"torrentDelay":30,"bypassIfHighestQuality":true,"order":2147483647,"tags":[]}'
-            if api_post "${BASE}/api/v3/delayprofile" "application/json" "$delay_payload" "$AUTH" >/dev/null 2>&1; then
-                ok "Sonarr: added delay profile (Usenet 0, Torrent 30 min)"
-            else
-                fail "Sonarr: add delay profile"
-            fi
-        fi
-    fi
-}
 
 # ============================================
-# 3. Radarr
-# ============================================
-
-configure_radarr() {
-    log "Configuring Radarr..."
-
-    if [[ -z "$RADARR_API_KEY" ]]; then
-        fail "Radarr: no API key, skipping"
-        return
-    fi
-
-    local BASE="http://${NAS_IP}:7878"
-    local AUTH="X-Api-Key: ${RADARR_API_KEY}"
-
-    if ! wait_for_service "Radarr" "${BASE}/api/v3/health"; then return; fi
-
-    if $DRY_RUN; then
-        dry "Add root folder /data/media/movies"
-        dry "Add qBittorrent download client (category: movies)"
-        if $SABNZBD_RUNNING; then dry "Add SABnzbd download client (category: movies)"; fi
-        dry "Enable NFO metadata (Kodi/Emby)"
-        dry "Set TRaSH naming scheme"
-        dry "Add Reject ISO custom format"
-        dry "Score Reject ISO at -10000 in quality profiles"
-        if $SABNZBD_RUNNING; then dry "Add delay profile (Usenet 0, Torrent 30)"; fi
-        return
-    fi
-
-    # Root folder
-    local roots
-    roots=$(api_get "${BASE}/api/v3/rootfolder" "$AUTH") || true
-    if echo "$roots" | grep -q '"/data/media/movies"'; then
-        skip "Radarr: root folder /data/media/movies"
-    else
-        if api_post "${BASE}/api/v3/rootfolder" "application/json" '{"path":"/data/media/movies"}' "$AUTH" >/dev/null 2>&1; then
-            ok "Radarr: added root folder /data/media/movies"
-        else
-            fail "Radarr: add root folder /data/media/movies"
-        fi
-    fi
-
-    # Download client: qBittorrent
-    local clients
-    clients=$(api_get "${BASE}/api/v3/downloadclient" "$AUTH") || true
-    if echo "$clients" | grep -qi 'qbittorrent'; then
-        skip "Radarr: qBittorrent download client"
-    else
-        local qbit_payload
-        qbit_payload=$(cat <<QBIT_JSON
-{
-    "enable": true,
-    "protocol": "torrent",
-    "priority": 1,
-    "name": "qBittorrent",
-    "implementation": "QBittorrent",
-    "configContract": "QBittorrentSettings",
-    "fields": [
-        {"name": "host", "value": "localhost"},
-        {"name": "port", "value": 8085},
-        {"name": "username", "value": "${QBIT_USERNAME}"},
-        {"name": "password", "value": "${QBIT_PASSWORD}"},
-        {"name": "movieCategory", "value": "movies"},
-        {"name": "recentMoviePriority", "value": 0},
-        {"name": "olderMoviePriority", "value": 0},
-        {"name": "initialState", "value": 0},
-        {"name": "sequentialOrder", "value": false},
-        {"name": "firstAndLast", "value": false}
-    ]
-}
-QBIT_JSON
-)
-        if api_post "${BASE}/api/v3/downloadclient" "application/json" "$qbit_payload" "$AUTH" >/dev/null 2>&1; then
-            ok "Radarr: added qBittorrent download client"
-        else
-            fail "Radarr: add qBittorrent download client"
-        fi
-    fi
-
-    # Download client: SABnzbd (if running)
-    if $SABNZBD_RUNNING && [[ -n "$SABNZBD_API_KEY" ]]; then
-        if echo "$clients" | grep -qi 'sabnzbd'; then
-            skip "Radarr: SABnzbd download client"
-        else
-            local sab_payload
-            sab_payload=$(cat <<SAB_JSON
-{
-    "enable": true,
-    "protocol": "usenet",
-    "priority": 1,
-    "name": "SABnzbd",
-    "implementation": "Sabnzbd",
-    "configContract": "SabnzbdSettings",
-    "fields": [
-        {"name": "host", "value": "localhost"},
-        {"name": "port", "value": 8080},
-        {"name": "apiKey", "value": "${SABNZBD_API_KEY}"},
-        {"name": "movieCategory", "value": "movies"},
-        {"name": "recentMoviePriority", "value": -100},
-        {"name": "olderMoviePriority", "value": -100}
-    ]
-}
-SAB_JSON
-)
-            if api_post "${BASE}/api/v3/downloadclient" "application/json" "$sab_payload" "$AUTH" >/dev/null 2>&1; then
-                ok "Radarr: added SABnzbd download client"
-            else
-                fail "Radarr: add SABnzbd download client"
-            fi
-        fi
-    fi
-
-    # NFO Metadata
-    local metadata
-    metadata=$(api_get "${BASE}/api/v3/metadata" "$AUTH") || true
-    local meta_id
-    meta_id=$(echo "$metadata" | grep -o '"id":[0-9]*' | head -1 | grep -o '[0-9]*')
-    if [[ -n "$meta_id" ]]; then
-        local meta_enabled
-        meta_enabled=$(echo "$metadata" | json_value_raw "enable")
-        if [[ "$meta_enabled" == "true" ]]; then
-            skip "Radarr: NFO metadata"
-        else
-            local meta_payload="{\"enable\":true,\"name\":\"Kodi (XBMC) / Emby\",\"id\":${meta_id},\"fields\":[{\"name\":\"movieMetadata\",\"value\":true},{\"name\":\"movieMetadataURL\",\"value\":false},{\"name\":\"movieMetadataLanguage\",\"value\":1},{\"name\":\"movieImages\",\"value\":false},{\"name\":\"useMovieNfo\",\"value\":true}],\"implementation\":\"XbmcMetadata\",\"configContract\":\"XbmcMetadataSettings\"}"
-            if api_put "${BASE}/api/v3/metadata/${meta_id}" "application/json" "$meta_payload" "$AUTH" >/dev/null 2>&1; then
-                ok "Radarr: enabled NFO metadata"
-            else
-                fail "Radarr: enable NFO metadata"
-            fi
-        fi
-    fi
-
-    # Naming
-    local naming
-    naming=$(api_get "${BASE}/api/v3/config/naming" "$AUTH") || true
-    local rename_enabled
-    rename_enabled=$(echo "$naming" | json_value_raw "renameMovies")
-    if [[ "$rename_enabled" == "true" ]]; then
-        skip "Radarr: TRaSH naming (already customised)"
-    else
-        local naming_payload
-        naming_payload=$(cat <<'NAMING_JSON'
-{
-    "renameMovies": true,
-    "replaceIllegalCharacters": true,
-    "standardMovieFormat": "{Movie CleanTitle} {(Release Year)} {imdb-{ImdbId}} - {Edition Tags }{[Custom Formats]}{[Quality Full]}{[MediaInfo AudioCodec}{ MediaInfo AudioChannels]}{[MediaInfo VideoDynamicRangeType]}{[Mediainfo VideoCodec]}{-Release Group}",
-    "movieFolderFormat": "{Movie CleanTitle} ({Release Year})"
-}
-NAMING_JSON
-)
-        if api_put "${BASE}/api/v3/config/naming" "application/json" "$naming_payload" "$AUTH" >/dev/null 2>&1; then
-            ok "Radarr: set TRaSH naming scheme"
-        else
-            fail "Radarr: set TRaSH naming scheme"
-        fi
-    fi
-
-    # Custom Format: Reject ISO
-    local formats
-    formats=$(api_get "${BASE}/api/v3/customformat" "$AUTH") || true
-    local iso_cf_id=""
-    if echo "$formats" | grep -q '"Reject ISO"'; then
-        skip "Radarr: Reject ISO custom format"
-        iso_cf_id=$(echo "$formats" | grep -o '"Reject ISO"[^}]*"id":[0-9]*' | grep -o '"id":[0-9]*' | grep -o '[0-9]*')
-        if [[ -z "$iso_cf_id" ]]; then
-            iso_cf_id=$(echo "$formats" | grep -B20 '"Reject ISO"' | grep -o '"id":[0-9]*' | tail -1 | grep -o '[0-9]*')
-        fi
-    else
-        local cf_payload='{"name":"Reject ISO","includeCustomFormatWhenRenaming":false,"specifications":[{"name":"ISO","implementation":"ReleaseTitleSpecification","negate":false,"required":true,"fields":[{"name":"value","value":"\\.iso$"}]}]}'
-        local cf_result
-        cf_result=$(api_post "${BASE}/api/v3/customformat" "application/json" "$cf_payload" "$AUTH" 2>&1) || true
-        if echo "$cf_result" | grep -q '"id"'; then
-            ok "Radarr: added Reject ISO custom format"
-            iso_cf_id=$(echo "$cf_result" | grep -o '"id":[0-9]*' | head -1 | grep -o '[0-9]*')
-        else
-            fail "Radarr: add Reject ISO custom format"
-        fi
-    fi
-
-    # Score Reject ISO in quality profiles
-    if [[ -n "$iso_cf_id" ]]; then
-        local profiles
-        profiles=$(api_get "${BASE}/api/v3/qualityprofile" "$AUTH") || true
-        local profile_ids
-        profile_ids=$(echo "$profiles" | grep -o '"id":[0-9]*' | grep -o '[0-9]*')
-        for pid in $profile_ids; do
-            local profile
-            profile=$(api_get "${BASE}/api/v3/qualityprofile/${pid}" "$AUTH") || continue
-            if echo "$profile" | grep -q "\"format\":${iso_cf_id}"; then
-                local current_score
-                current_score=$(echo "$profile" | grep -o "\"format\":${iso_cf_id},\"score\":[0-9-]*" | grep -o '"score":[0-9-]*' | grep -o '[0-9-]*$')
-                if [[ "$current_score" == "-10000" ]]; then
-                    continue
-                fi
-            fi
-            local updated_profile
-            updated_profile=$(echo "$profile" | sed "s/\"formatItems\":\[/\"formatItems\":[{\"format\":${iso_cf_id},\"name\":\"Reject ISO\",\"score\":-10000},/")
-            if api_put "${BASE}/api/v3/qualityprofile/${pid}" "application/json" "$updated_profile" "$AUTH" >/dev/null 2>&1; then
-                ok "Radarr: scored Reject ISO at -10000 in profile ${pid}"
-            else
-                fail "Radarr: score Reject ISO in profile ${pid}"
-            fi
-        done
-    fi
-
-    # Delay profile (if SABnzbd running)
-    if $SABNZBD_RUNNING; then
-        local delays
-        delays=$(api_get "${BASE}/api/v3/delayprofile" "$AUTH") || true
-        if echo "$delays" | grep -q '"preferredProtocol".*"usenet"'; then
-            skip "Radarr: delay profile"
-        else
-            local delay_payload='{"enableUsenet":true,"enableTorrent":true,"preferredProtocol":"usenet","usenetDelay":0,"torrentDelay":30,"bypassIfHighestQuality":true,"order":2147483647,"tags":[]}'
-            if api_post "${BASE}/api/v3/delayprofile" "application/json" "$delay_payload" "$AUTH" >/dev/null 2>&1; then
-                ok "Radarr: added delay profile (Usenet 0, Torrent 30 min)"
-            else
-                fail "Radarr: add delay profile"
-            fi
-        fi
-    fi
-}
-
-# ============================================
-# 4. Prowlarr
+# 3. Prowlarr
 # ============================================
 
 configure_prowlarr() {
@@ -847,7 +313,7 @@ configure_prowlarr() {
     # FlareSolverr proxy
     local proxies
     proxies=$(api_get "${BASE}/api/v1/indexerProxy" "$AUTH") || true
-    if echo "$proxies" | grep -qi 'flaresolverr'; then
+    if json_extract "$proxies" "sys.exit(0 if any(p.get('name','').lower() == 'flaresolverr' for p in data) else 1)"; then
         skip "Prowlarr: FlareSolverr proxy"
     else
         local fs_payload='{"name":"FlareSolverr","implementation":"FlareSolverr","configContract":"FlareSolverrSettings","fields":[{"name":"host","value":"http://localhost:8191"},{"name":"requestTimeout","value":60}],"tags":[]}'
@@ -858,75 +324,38 @@ configure_prowlarr() {
         fi
     fi
 
-    # Application: Sonarr
+    # Applications: Sonarr and Radarr
     local apps
     apps=$(api_get "${BASE}/api/v1/applications" "$AUTH") || true
-    if echo "$apps" | grep -qi 'sonarr'; then
-        skip "Prowlarr: Sonarr application"
-    else
-        if [[ -n "$SONARR_API_KEY" ]]; then
-            local sonarr_payload
-            sonarr_payload=$(cat <<SONARR_APP
-{
-    "name": "Sonarr",
-    "syncLevel": "fullSync",
-    "implementation": "Sonarr",
-    "configContract": "SonarrSettings",
-    "fields": [
-        {"name": "prowlarrUrl", "value": "http://localhost:9696"},
-        {"name": "baseUrl", "value": "http://localhost:8989"},
-        {"name": "apiKey", "value": "${SONARR_API_KEY}"},
-        {"name": "syncCategories", "value": [5000, 5010, 5020, 5030, 5040, 5045, 5050, 5060, 5070, 5080]}
-    ],
-    "tags": []
-}
-SONARR_APP
-)
-            if api_post "${BASE}/api/v1/applications" "application/json" "$sonarr_payload" "$AUTH" >/dev/null 2>&1; then
-                ok "Prowlarr: added Sonarr application"
-            else
-                fail "Prowlarr: add Sonarr application"
-            fi
-        else
-            fail "Prowlarr: add Sonarr (no Sonarr API key)"
-        fi
-    fi
 
-    # Application: Radarr
-    if echo "$apps" | grep -qi 'radarr'; then
-        skip "Prowlarr: Radarr application"
-    else
-        if [[ -n "$RADARR_API_KEY" ]]; then
-            local radarr_payload
-            radarr_payload=$(cat <<RADARR_APP
-{
-    "name": "Radarr",
-    "syncLevel": "fullSync",
-    "implementation": "Radarr",
-    "configContract": "RadarrSettings",
-    "fields": [
-        {"name": "prowlarrUrl", "value": "http://localhost:9696"},
-        {"name": "baseUrl", "value": "http://localhost:7878"},
-        {"name": "apiKey", "value": "${RADARR_API_KEY}"},
-        {"name": "syncCategories", "value": [2000, 2010, 2020, 2030, 2040, 2045, 2050, 2060, 2070, 2080]}
-    ],
-    "tags": []
-}
-RADARR_APP
-)
-            if api_post "${BASE}/api/v1/applications" "application/json" "$radarr_payload" "$AUTH" >/dev/null 2>&1; then
-                ok "Prowlarr: added Radarr application"
-            else
-                fail "Prowlarr: add Radarr application"
-            fi
+    local arr_name arr_port arr_categories
+    for arr_name in Sonarr Radarr; do
+        local key_var="${arr_name^^}_API_KEY"
+        local arr_key="${!key_var}"
+        if [[ "$arr_name" == "Sonarr" ]]; then
+            arr_port=8989; arr_categories="[5000, 5010, 5020, 5030, 5040, 5045, 5050, 5060, 5070, 5080]"
         else
-            fail "Prowlarr: add Radarr (no Radarr API key)"
+            arr_port=7878; arr_categories="[2000, 2010, 2020, 2030, 2040, 2045, 2050, 2060, 2070, 2080]"
         fi
-    fi
+
+        local name_lower="${arr_name,,}"
+        if json_extract "$apps" "sys.exit(0 if any(a.get('name','').lower() == '${name_lower}' for a in data) else 1)"; then
+            skip "Prowlarr: ${arr_name} application"
+        elif [[ -z "$arr_key" ]]; then
+            fail "Prowlarr: add ${arr_name} (no ${arr_name} API key)"
+        else
+            local app_payload="{\"name\":\"${arr_name}\",\"syncLevel\":\"fullSync\",\"implementation\":\"${arr_name}\",\"configContract\":\"${arr_name}Settings\",\"fields\":[{\"name\":\"prowlarrUrl\",\"value\":\"http://localhost:9696\"},{\"name\":\"baseUrl\",\"value\":\"http://localhost:${arr_port}\"},{\"name\":\"apiKey\",\"value\":\"${arr_key}\"},{\"name\":\"syncCategories\",\"value\":${arr_categories}}],\"tags\":[]}"
+            if api_post "${BASE}/api/v1/applications" "application/json" "$app_payload" "$AUTH" >/dev/null 2>&1; then
+                ok "Prowlarr: added ${arr_name} application"
+            else
+                fail "Prowlarr: add ${arr_name} application"
+            fi
+        fi
+    done
 }
 
 # ============================================
-# 5. Bazarr
+# 4. Bazarr
 # ============================================
 
 configure_bazarr() {
@@ -964,11 +393,10 @@ configure_bazarr() {
 
     # --- Sonarr/Radarr connections ---
     local sonarr_connected=false radarr_connected=false
-    # Check sonarr section specifically for gluetun + correct port
     local sonarr_section
-    sonarr_section=$(echo "$settings" | python3 -c "import sys,json; d=json.load(sys.stdin); s=d.get('sonarr',{}); print(s.get('ip',''),s.get('port',''))" 2>/dev/null || echo "")
+    sonarr_section=$(json_extract "$settings" "s=data.get('sonarr',{}); print(s.get('ip',''),s.get('port',''))")
     local radarr_section
-    radarr_section=$(echo "$settings" | python3 -c "import sys,json; d=json.load(sys.stdin); s=d.get('radarr',{}); print(s.get('ip',''),s.get('port',''))" 2>/dev/null || echo "")
+    radarr_section=$(json_extract "$settings" "s=data.get('radarr',{}); print(s.get('ip',''),s.get('port',''))")
     [[ "$sonarr_section" == "gluetun 8989" ]] && sonarr_connected=true
     [[ "$radarr_section" == "gluetun 7878" ]] && radarr_connected=true
 
@@ -992,9 +420,7 @@ configure_bazarr() {
     fi
 
     # --- Subtitle sync (ffsubsync) ---
-    local subsync_enabled
-    subsync_enabled=$(echo "$settings" | grep -o '"use_subsync"[[:space:]]*:[[:space:]]*[a-z]*' | head -1 | grep -o '[a-z]*$')
-    if [[ "$subsync_enabled" == "true" ]]; then
+    if json_extract "$settings" "sys.exit(0 if data.get('subsync', {}).get('use_subsync') else 1)"; then
         skip "Bazarr: subtitle sync"
     else
         local subsync_payload='{"subsync": {"use_subsync": true, "use_subsync_threshold": true, "subsync_threshold": 90, "use_subsync_movie_threshold": true, "subsync_movie_threshold": 70}}'
@@ -1007,10 +433,9 @@ configure_bazarr() {
     fi
 
     # --- Sub-Zero content modifications ---
-    # Remove Tags, Remove Emoji, OCR Fixes, Common Fixes, Fix Uppercase (Hearing Impaired OFF)
-    local current_mods
-    current_mods=$(echo "$settings" | grep -o '"subzero_mods"[[:space:]]*:[[:space:]]*\[[^]]*\]' | head -1)
-    if echo "$current_mods" | grep -q 'remove_tags' && echo "$current_mods" | grep -q 'OCR_fixes'; then
+    if json_extract "$settings" "
+mods = data.get('general', {}).get('subzero_mods', [])
+sys.exit(0 if 'remove_tags' in mods and 'OCR_fixes' in mods else 1)"; then
         skip "Bazarr: Sub-Zero content modifications"
     else
         local subzero_payload='{"general": {"subzero_mods": ["remove_tags", "emoji", "OCR_fixes", "common", "fix_uppercase"]}}'
@@ -1023,9 +448,7 @@ configure_bazarr() {
     fi
 
     # --- Default subtitle language (English) ---
-    local default_enabled
-    default_enabled=$(echo "$settings" | grep -o '"serie_default_enabled"[[:space:]]*:[[:space:]]*[a-z]*' | head -1 | grep -o '[a-z]*$')
-    if [[ "$default_enabled" == "true" ]]; then
+    if json_extract "$settings" "sys.exit(0 if data.get('general', {}).get('serie_default_enabled') else 1)"; then
         skip "Bazarr: default subtitle language"
     else
         local lang_payload='{"general": {"serie_default_enabled": true, "serie_default_profile": 1, "movie_default_enabled": true, "movie_default_profile": 1}}'
@@ -1050,9 +473,11 @@ configure_bazarr() {
 
 configure_qbittorrent
 echo ""
-configure_sonarr
+configure_arr_service "Sonarr" 8989 "$SONARR_API_KEY" "/data/media/tv" "tv" \
+    "renameEpisodes" "$SONARR_METADATA_FIELDS" "$SONARR_NAMING_PAYLOAD"
 echo ""
-configure_radarr
+configure_arr_service "Radarr" 7878 "$RADARR_API_KEY" "/data/media/movies" "movies" \
+    "renameMovies" "$RADARR_METADATA_FIELDS" "$RADARR_NAMING_PAYLOAD"
 echo ""
 configure_prowlarr
 echo ""
