@@ -1,0 +1,40 @@
+{
+  "name": "Ultimate Arr Stack (Claude Code)",
+  "build": {
+    "dockerfile": "Dockerfile"
+  },
+
+  // Persist Claude Code OAuth credentials across container rebuilds.
+  // The extension stores tokens in $CLAUDE_CONFIG_DIR/.credentials.json
+  // (confirmed by binary inspection — same path as CLI, no VS Code SecretStorage).
+  // Bind-mounting host ~/.claude makes this immune to rebuilds AND docker prune.
+  // Official ref: https://github.com/anthropics/claude-code/tree/main/.devcontainer
+  "initializeCommand": "mkdir -p ${localEnv:HOME}/.claude ${localEnv:HOME}/Screenshots",
+  "mounts": [
+    "source=/var/run/docker.sock,target=/var/run/docker.sock,type=bind",
+    "source=${localEnv:HOME}/.gitconfig,target=/home/vscode/.gitconfig,type=bind,readonly",
+    "source=${localEnv:HOME}/.claude,target=/home/vscode/.claude,type=bind",
+    "source=${localEnv:HOME}/Screenshots,target=/home/vscode/Screenshots,type=bind,readonly"
+  ],
+  "containerEnv": {
+    "CLAUDE_CONFIG_DIR": "/home/vscode/.claude"
+  },
+
+  "postCreateCommand": "sudo groupadd -f docker && sudo usermod -aG docker vscode && npm install && npx playwright install chromium && bash setup-hooks.sh",
+
+  "customizations": {
+    "vscode": {
+      "settings": {
+        "terminal.integrated.defaultProfile.linux": "zsh",
+        "claudeCode.initialPermissionMode": "bypassPermissions"
+      },
+      "extensions": [
+        "ms-azuretools.vscode-docker",
+        "anthropic.claude-code",
+        "ms-playwright.playwright",
+        "esbenp.prettier-vscode",
+        "redhat.vscode-yaml"
+      ]
+    }
+  }
+}
