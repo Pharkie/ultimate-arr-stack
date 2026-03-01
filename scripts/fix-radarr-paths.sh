@@ -45,20 +45,25 @@ echo "=== Radarr Path Fixer ==="
 echo "Movies dir: $MOVIES_DIR"
 echo ""
 
+# Use unique temp files (avoids /tmp sticky-bit issues across users)
+TMPDIR=$(mktemp -d /tmp/fix-radarr-XXXXXX)
+trap 'rm -rf "$TMPDIR"' EXIT
+
 # Dump current state
-curl -s "http://localhost:7878/api/v3/movie?apikey=${RADARR_API_KEY}" > /tmp/radarr_movies.json
-ls -1 "$MOVIES_DIR" > /tmp/disk_dirs.txt
+curl -s "http://localhost:7878/api/v3/movie?apikey=${RADARR_API_KEY}" > "$TMPDIR/movies.json"
+ls -1 "$MOVIES_DIR" > "$TMPDIR/disk_dirs.txt"
 
 # Run the fix
-python3 - "$RADARR_API_KEY" << 'PYEOF'
+python3 - "$RADARR_API_KEY" "$TMPDIR" << 'PYEOF'
 import json, os, re, sys, subprocess
 
 KEY = sys.argv[1]
+TMPDIR = sys.argv[2]
 
-with open("/tmp/radarr_movies.json") as f:
+with open(os.path.join(TMPDIR, "movies.json")) as f:
     movies = json.load(f)
 
-with open("/tmp/disk_dirs.txt") as f:
+with open(os.path.join(TMPDIR, "disk_dirs.txt")) as f:
     disk_dirs = set(line.strip() for line in f if line.strip())
 
 def normalize(s):
@@ -120,7 +125,8 @@ for m in movies:
         new_path = "/data/media/movies/%s" % match
         m["path"] = new_path
 
-        with open("/tmp/radarr_update.json", "w") as f:
+        update_file = os.path.join(TMPDIR, "update.json")
+        with open(update_file, "w") as f:
             json.dump(m, f)
 
         result = subprocess.run(
@@ -128,7 +134,7 @@ for m in movies:
              "-X", "PUT",
              "http://127.0.0.1:7878/api/v3/movie/%s?apikey=%s" % (m["id"], KEY),
              "-H", "Content-Type: application/json",
-             "-d", "@/tmp/radarr_update.json"],
+             "-d", "@%s" % update_file],
             capture_output=True, text=True
         )
         code = result.stdout.strip()
@@ -158,5 +164,4 @@ else:
     print("No fixes needed.")
 PYEOF
 
-# Cleanup
-rm -f /tmp/radarr_movies.json /tmp/disk_dirs.txt /tmp/radarr_update.json
+# Cleanup handled by EXIT trap
