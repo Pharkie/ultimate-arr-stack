@@ -8,6 +8,7 @@
 
 # Private Configuration (see .claude/config.local.md.example)
 .claude/config.local.md
+.claude/settings.local.json
 
 # Traefik SSL Certificates
 traefik/acme.json
