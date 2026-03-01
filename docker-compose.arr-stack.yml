@@ -19,7 +19,7 @@ volumes:
   radarr-config:
   jellyfin-config:
   jellyfin-cache:
-  jellyseerr-config:
+  seerr-config:
   bazarr-config:
   pihole-etc-pihole:
   pihole-etc-dnsmasq:
@@ -326,10 +326,10 @@ services:
   # SEERR (formerly Jellyseerr) - Request portal. Users request movies/shows here.
   # Access: seerr.lan | seerr.yourdomain.com | NAS_IP:5055
   # ═══════════════════════════════════════════════════════════════════════════
-  jellyseerr:
+  seerr:
     image: ghcr.io/seerr-team/seerr:v3.1.0
     init: true
-    container_name: jellyseerr
+    container_name: seerr
     depends_on:
       gluetun:
         condition: service_healthy  # Needs gluetun to reach Sonarr/Radarr
@@ -344,7 +344,7 @@ services:
       arr-stack:
         ipv4_address: 172.20.0.8
     volumes:
-      - jellyseerr-config:/app/config
+      - seerr-config:/app/config
     restart: always
     logging: *default-logging
     healthcheck:

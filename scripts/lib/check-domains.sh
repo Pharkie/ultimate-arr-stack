@@ -14,6 +14,12 @@ check_domains() {
         return 0
     fi
 
+    # Skip if dig is not available
+    if ! command -v dig &>/dev/null; then
+        echo "    SKIP: dig not installed"
+        return 0
+    fi
+
     # Get Pi-hole IP (NAS IP)
     local pihole_ip
     pihole_ip=$(get_nas_ip)
@@ -50,13 +56,13 @@ check_domains() {
     local lan_fail=0
     for domain_name in "${lan_domains[@]}"; do
         local result
-        result=$(dig +short "$domain_name" @"$pihole_ip" 2>/dev/null)
+        result=$(dig +short +time=2 +tries=1 "$domain_name" @"$pihole_ip" 2>/dev/null)
         if [[ -n "$result" ]]; then
-            ((lan_ok++))
+            lan_ok=$((lan_ok + 1))
         else
             echo "      FAIL: $domain_name does not resolve"
-            ((lan_fail++))
-            ((warnings++))
+            lan_fail=$((lan_fail + 1))
+            warnings=$((warnings + 1))
         fi
     done
 
@@ -77,22 +83,22 @@ check_domains() {
         for ext_domain in "${external_domains[@]}"; do
             # Check DNS resolution
             local result
-            result=$(dig +short "$ext_domain" 2>/dev/null | head -1)
+            result=$(dig +short +time=2 +tries=1 "$ext_domain" 2>/dev/null | head -1)
             if [[ -n "$result" ]]; then
                 # Check HTTP response (allow 2xx, 3xx redirects, 401/403 auth)
                 local http_code
                 http_code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 "https://$ext_domain" 2>/dev/null)
                 if [[ "$http_code" =~ ^(200|301|302|303|307|308|401|403)$ ]]; then
-                    ((ext_ok++))
+                    ext_ok=$((ext_ok + 1))
                 else
                     echo "      FAIL: $ext_domain - HTTP $http_code"
-                    ((ext_fail++))
-                    ((warnings++))
+                    ext_fail=$((ext_fail + 1))
+                    warnings=$((warnings + 1))
                 fi
             else
                 echo "      FAIL: $ext_domain does not resolve"
-                ((ext_fail++))
-                ((warnings++))
+                ext_fail=$((ext_fail + 1))
+                warnings=$((warnings + 1))
             fi
         done
 

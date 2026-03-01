@@ -28,7 +28,7 @@ cloudflared/cert.pem
 
 # Application Configs (these should be on NAS, not in repo)
 gluetun-config/
-jellyseerr/
+seerr/
 bazarr/
 notifiarr/
 homarr/

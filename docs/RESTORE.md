@@ -89,16 +89,16 @@ To restore just one service (e.g., after corrupted config):
 
 ```bash
 # Stop the service
-docker compose -f docker-compose.arr-stack.yml stop jellyseerr
+docker compose -f docker-compose.arr-stack.yml stop seerr
 
 # Restore from backup
 docker run --rm \
-  -v /tmp/arr-stack-backup-20250101/jellyseerr-config:/source:ro \
-  -v arr-stack_jellyseerr-config:/dest \
+  -v /tmp/arr-stack-backup-20250101/seerr-config:/source:ro \
+  -v arr-stack_seerr-config:/dest \
   alpine cp -a /source/. /dest/
 
 # Restart
-docker compose -f docker-compose.arr-stack.yml start jellyseerr
+docker compose -f docker-compose.arr-stack.yml start seerr
 ```
 
 ---

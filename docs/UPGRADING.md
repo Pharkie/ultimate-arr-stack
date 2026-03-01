@@ -76,12 +76,12 @@ This release adds TRaSH Guides best practices: hardlinks, naming schemes, downlo
 
 ```bash
 ssh your-username@nas-ip
-mkdir -p /volume1/Media/media
-mv /volume1/Media/movies /volume1/Media/media/movies
-mv /volume1/Media/tv /volume1/Media/media/tv
-mkdir -p /volume1/Media/torrents/{tv,movies}
-mkdir -p /volume1/Media/usenet/{incomplete,complete/{tv,movies}}
-chown -R 1000:1000 /volume1/Media/media /volume1/Media/torrents /volume1/Media/usenet
+mkdir -p /volume1/data/media
+mv /volume1/data/movies /volume1/data/media/movies
+mv /volume1/data/tv /volume1/data/media/tv
+mkdir -p /volume1/data/torrents/{tv,movies}
+mkdir -p /volume1/data/usenet/{incomplete,complete/{tv,movies}}
+chown -R 1000:1000 /volume1/data/media /volume1/data/torrents /volume1/data/usenet
 ```
 
 #### 2. Pull and redeploy
@@ -136,11 +136,11 @@ Dashboard → Libraries:
 
 This triggers a library rescan. NFO files ensure accurate identification.
 
-#### 9. Update Jellyseerr root folders
+#### 9. Update Seerr root folders
 
-Jellyseerr stores its own copy of the root folder paths. If not updated, new requests will fail with "Root folder does not exist":
+Seerr stores its own copy of the root folder paths. If not updated, new requests will fail with "Root folder does not exist":
 
-1. Open Jellyseerr → Settings → Services
+1. Open Seerr → Settings → Services
 2. Click Radarr server → change Root Folder from `/movies` to `/data/media/movies` → Save
 3. Click Sonarr server → change Root Folder from `/tv` to `/data/media/tv` → Save
 
@@ -182,13 +182,13 @@ The library refresh writes `.nfo` files for all existing media. New downloads ge
 
 #### 12. Clean up old `downloads/` directory
 
-The old `/volume1/Media/downloads/` directory is still accessible inside containers at `/data/downloads/`. Once all in-progress downloads are imported, verify nothing references it then delete:
+The old `/volume1/data/downloads/` directory is still accessible inside containers at `/data/downloads/`. Once all in-progress downloads are imported, verify nothing references it then delete:
 
 ```bash
 # Check no qBittorrent torrents use the old path
 # (all should show /data/torrents/ paths after migration)
 # Then delete:
-rm -rf /volume1/Media/downloads/
+rm -rf /volume1/data/downloads/
 ```
 
 ---
@@ -197,7 +197,7 @@ rm -rf /volume1/Media/downloads/
 
 **Breaking change:** Removed all env var fallbacks from compose files.
 
-Previously, compose files had fallbacks like `${MEDIA_ROOT:-/volume1/Media}`. Now they use `${MEDIA_ROOT}` — if a variable is missing from `.env`, Docker will fail with a clear error instead of silently using a default.
+Previously, compose files had fallbacks like `${MEDIA_ROOT:-/volume1/data}`. Now they use `${MEDIA_ROOT}` — if a variable is missing from `.env`, Docker will fail with a clear error instead of silently using a default.
 
 **Action required:** Ensure your `.env` has all required variables. If you copied from `.env.example` when you first set up, you're fine. If not:
 

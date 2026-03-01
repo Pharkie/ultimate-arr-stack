@@ -199,8 +199,8 @@ VOLUME_SUFFIXES=(
 )
 
 # Request manager - detect which volume exists
-if docker volume inspect "${VOLUME_PREFIX}_jellyseerr-config" &>/dev/null; then
-  VOLUME_SUFFIXES+=(jellyseerr-config)
+if docker volume inspect "${VOLUME_PREFIX}_seerr-config" &>/dev/null; then
+  VOLUME_SUFFIXES+=(seerr-config)
 elif docker volume inspect "${VOLUME_PREFIX}_overseerr-config" &>/dev/null; then
   VOLUME_SUFFIXES+=(overseerr-config)
 fi

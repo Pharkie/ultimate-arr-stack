@@ -25,9 +25,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && pip3 install --break-system-packages pyyaml \
     && rm -rf /var/lib/apt/lists/*
 
+# GitHub CLI
+RUN apt-get update && apt-get install -y --no-install-recommends gh \
+    && rm -rf /var/lib/apt/lists/*
+
 # sshpass (for NAS SSH access from scripts)
+# dnsutils provides dig (for pre-commit domain checks)
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      sshpass \
+      sshpass dnsutils \
     && rm -rf /var/lib/apt/lists/*
 
 # Claude Code CLI (update npm first to suppress version warnings)
