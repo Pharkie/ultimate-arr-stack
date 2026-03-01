@@ -9,18 +9,21 @@
   // (confirmed by binary inspection — same path as CLI, no VS Code SecretStorage).
   // Bind-mounting host ~/.claude makes this immune to rebuilds AND docker prune.
   // Official ref: https://github.com/anthropics/claude-code/tree/main/.devcontainer
-  "initializeCommand": "mkdir -p ${localEnv:HOME}/.claude ${localEnv:HOME}/Screenshots",
+  "initializeCommand": "mkdir -p ${localEnv:HOME}/.claude ${localEnv:HOME}/Screenshots ${localEnv:HOME}/.config/gh",
   "mounts": [
     "source=/var/run/docker.sock,target=/var/run/docker.sock,type=bind",
     "source=${localEnv:HOME}/.gitconfig,target=/home/vscode/.gitconfig,type=bind,readonly",
     "source=${localEnv:HOME}/.claude,target=/home/vscode/.claude,type=bind",
-    "source=${localEnv:HOME}/Screenshots,target=/home/vscode/Screenshots,type=bind,readonly"
+    "source=${localEnv:HOME}/Screenshots,target=/home/vscode/Screenshots,type=bind,readonly",
+    "source=${localEnv:HOME}/.config/gh,target=/home/vscode/.config/gh,type=bind",
+    "source=arr-stack-node-modules,target=/workspaces/ultimate-arr-stack/node_modules,type=volume",
+    "source=arr-stack-playwright,target=/home/vscode/.cache/ms-playwright,type=volume"
   ],
   "containerEnv": {
     "CLAUDE_CONFIG_DIR": "/home/vscode/.claude"
   },
 
-  "postCreateCommand": "sudo groupadd -f docker && sudo usermod -aG docker vscode && npm install && npx playwright install chromium && bash setup-hooks.sh",
+  "postCreateCommand": "sudo groupadd -f docker && sudo usermod -aG docker vscode && sudo chown vscode:vscode node_modules && sudo chown vscode:vscode /home/vscode/.cache/ms-playwright && npm install && npx playwright install chromium && bash setup-hooks.sh",
 
   "customizations": {
     "vscode": {

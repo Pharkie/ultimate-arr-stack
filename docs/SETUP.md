@@ -145,8 +145,8 @@ First, set up the folder structure for your media and get the files from this Gi
 Docker comes preinstalled on UGOS - no installation needed! Folders created via SSH don't appear in UGOS Files app, so create top-level folders via GUI.
 
 1. Open UGOS web interface → **Files** app
-2. Create shared folders: **Media**, **docker**
-3. Inside **Media**, create subfolder: **media**, then inside **media** create **tv** and **movies**
+2. Create shared folders: **data**, **docker**
+3. Inside **data**, create subfolder: **media**, then inside **media** create **tv** and **movies**
 4. Enable SSH: **Control Panel** → **Terminal** → toggle SSH on
 5. SSH into your NAS and create download directories + install git:
 
@@ -157,10 +157,10 @@ ssh your-username@nas-ip
 sudo apt-get update && sudo apt-get install -y git
 
 # Create media and download directories (hardlink-compatible structure)
-mkdir -p /volume1/Media/media/{tv,movies}
-mkdir -p /volume1/Media/torrents/{tv,movies}
-mkdir -p /volume1/Media/usenet/{incomplete,complete/{tv,movies}}
-chown -R 1000:1000 /volume1/Media/media /volume1/Media/torrents /volume1/Media/usenet
+mkdir -p /volume1/data/media/{tv,movies}
+mkdir -p /volume1/data/torrents/{tv,movies}
+mkdir -p /volume1/data/usenet/{incomplete,complete/{tv,movies}}
+chown -R 1000:1000 /volume1/data/media /volume1/data/torrents /volume1/data/usenet
 
 # Clone the repo
 cd /volume1/docker
@@ -170,9 +170,9 @@ sudo chown -R 1000:1000 /volume1/docker/arr-stack
 
 **Note:** Use `sudo` for Docker commands on Ugreen NAS. Service configs are stored in Docker named volumes (auto-created on first run).
 
-**Antivirus tip:** UGOS has a built-in antivirus scanner that runs scheduled scans. The default settings can scan your entire Media folder, taking 40-50+ hours and causing system slowdowns. To fix:
+**Antivirus tip:** UGOS has a built-in antivirus scanner that runs scheduled scans. The default settings can scan your entire data folder, taking 40-50+ hours and causing system slowdowns. To fix:
 1. Open **Security** app → **Scheduled Scan**
-2. Remove `/volume1/Media` from the scan targets
+2. Remove `/volume1/data` from the scan targets
 3. Change frequency from daily to weekly
 4. Under "Scan file types", select **Specific** and uncheck **Multimedia Data**
 
@@ -184,7 +184,7 @@ Scanning media files for viruses is unnecessary - video/audio files can't contai
 <summary><strong>Synology / QNAP</strong></summary>
 
 Use File Station to create:
-- **Media** shared folder with subfolder: **media** (containing **tv** and **movies**)
+- **data** shared folder with subfolder: **media** (containing **tv** and **movies**)
 - **docker** shared folder
 
 Then via SSH:
@@ -195,10 +195,10 @@ ssh your-username@nas-ip
 sudo synopkg install Git
 
 # Create media and download directories (hardlink-compatible structure)
-mkdir -p /volume1/Media/media/{tv,movies}
-mkdir -p /volume1/Media/torrents/{tv,movies}
-mkdir -p /volume1/Media/usenet/{incomplete,complete/{tv,movies}}
-chown -R 1000:1000 /volume1/Media/media /volume1/Media/torrents /volume1/Media/usenet
+mkdir -p /volume1/data/media/{tv,movies}
+mkdir -p /volume1/data/torrents/{tv,movies}
+mkdir -p /volume1/data/usenet/{incomplete,complete/{tv,movies}}
+chown -R 1000:1000 /volume1/data/media /volume1/data/torrents /volume1/data/usenet
 
 # Clone the repo
 cd /volume1/docker
@@ -216,10 +216,10 @@ sudo chown -R 1000:1000 /volume1/docker/arr-stack
 sudo apt-get update && sudo apt-get install -y git
 
 # Create media and download directories
-sudo mkdir -p /srv/media/media/{tv,movies}
-sudo mkdir -p /srv/media/torrents/{tv,movies}
-sudo mkdir -p /srv/media/usenet/{incomplete,complete/{tv,movies}}
-sudo chown -R 1000:1000 /srv/media
+sudo mkdir -p /srv/data/media/{tv,movies}
+sudo mkdir -p /srv/data/torrents/{tv,movies}
+sudo mkdir -p /srv/data/usenet/{incomplete,complete/{tv,movies}}
+sudo chown -R 1000:1000 /srv/data
 
 # Clone the repo
 cd /srv/docker
@@ -235,7 +235,7 @@ sudo chown -R 1000:1000 /srv/docker/arr-stack
 
 ```
 /volume1/  (or /srv/)
-├── Media/
+├── data/
 │   ├── media/                # Library files (TRaSH recommended)
 │   │   ├── movies/           #   Movie library (Radarr → Jellyfin)
 │   │   └── tv/               #   TV show library (Sonarr → Jellyfin)
@@ -281,9 +281,9 @@ Set `MEDIA_ROOT` in `.env` to match your media folder location:
 
 ```bash
 # Examples:
-MEDIA_ROOT=/volume1/Media     # Ugreen, Synology
-MEDIA_ROOT=/share/Media       # QNAP
-MEDIA_ROOT=/srv/media         # Linux server
+MEDIA_ROOT=/volume1/data      # Ugreen, Synology
+MEDIA_ROOT=/share/data        # QNAP
+MEDIA_ROOT=/srv/data          # Linux server
 ```
 
 Containers run as the user specified by PUID/PGID. This must match who owns your media folders:
