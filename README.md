@@ -56,7 +56,7 @@ Watch: Jellyfin — locally or remotely via Traefik
 | Doc | Purpose |
 |-----|---------|
 | [Architecture](docs/ARCHITECTURE.md) | Understand how the stack fits together |
-| [App Configuration](docs/APP-CONFIG.md) | Configure each app (Jellyfin, Sonarr, Radarr, etc.) |
+| [App Configuration](docs/APP-CONFIG.md) | Configure each app — [script-assisted](docs/APP-CONFIG-QUICK.md) or [manual](docs/APP-CONFIG.md) |
 | [Local DNS](docs/LOCAL-DNS.md) | Set up `.lan` domains with Pi-hole + Traefik |
 | [Remote Access](docs/REMOTE-ACCESS.md) | Access from anywhere via Cloudflare Tunnel |
 | [Utilities](docs/UTILITIES.md) | Monitoring, auto-recovery, disk usage tools |

@@ -38,6 +38,43 @@ docker compose -f docker-compose.arr-stack.yml up -d  # Restarts containers with
 
 When upgrading across versions, check below for any action required.
 
+### v1.7.1 → v1.7.2
+
+Container rename: `jellyseerr` → `seerr` (completes the Seerr rebrand from v1.6.4). App configuration docs restructured into three files — existing `APP-CONFIG.md` anchor links still work.
+
+#### 1. Pull and redeploy
+
+```bash
+cd /volume1/docker/arr-stack
+git pull origin main
+```
+
+#### 2. Migrate the Docker volume
+
+```bash
+# Stop the old container
+docker stop jellyseerr && docker rm jellyseerr
+
+# Create new volume and copy data
+docker volume create arr-stack_seerr-config
+docker run --rm \
+  -v arr-stack_jellyseerr-config:/source:ro \
+  -v arr-stack_seerr-config:/dest \
+  alpine sh -c "cp -a /source/. /dest/"
+
+# Start with new name
+docker compose -f docker-compose.arr-stack.yml up -d seerr
+
+# Verify Seerr works, then remove old volume
+docker volume rm arr-stack_jellyseerr-config
+```
+
+#### 3. Update Uptime Kuma monitor (if using)
+
+If you have an Uptime Kuma monitor for Seerr, update the URL from `http://jellyseerr:5055/api/v1/status` to `http://seerr:5055/api/v1/status`.
+
+---
+
 ### v1.7 → v1.7.1
 
 Infrastructure cleanup and backup consolidation.

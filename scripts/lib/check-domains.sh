@@ -50,14 +50,27 @@ check_domains() {
         "beszel.lan"
     )
 
-    # Check .lan domains
+    # Check .lan domains (parallel for speed)
     echo "    Checking .lan domains (via Pi-hole at $pihole_ip)..."
     local lan_ok=0
     local lan_fail=0
+    local tmpdir
+    tmpdir=$(mktemp -d)
+
     for domain_name in "${lan_domains[@]}"; do
-        local result
-        result=$(dig +short +time=2 +tries=1 "$domain_name" @"$pihole_ip" 2>/dev/null)
-        if [[ -n "$result" ]]; then
+        (
+            result=$(dig +short +time=2 +tries=1 "$domain_name" @"$pihole_ip" 2>/dev/null)
+            if [[ -n "$result" ]]; then
+                touch "$tmpdir/${domain_name}.ok"
+            else
+                touch "$tmpdir/${domain_name}.fail"
+            fi
+        ) &
+    done
+    wait
+
+    for domain_name in "${lan_domains[@]}"; do
+        if [[ -f "$tmpdir/${domain_name}.ok" ]]; then
             lan_ok=$((lan_ok + 1))
         else
             echo "      FAIL: $domain_name does not resolve"
@@ -65,6 +78,7 @@ check_domains() {
             warnings=$((warnings + 1))
         fi
     done
+    rm -rf "$tmpdir"
 
     if [[ $lan_fail -eq 0 ]]; then
         echo "      OK: All ${lan_ok} .lan domains resolve"
@@ -80,27 +94,42 @@ check_domains() {
         echo "    Checking external domains..."
         local ext_ok=0
         local ext_fail=0
+        local ext_tmpdir
+        ext_tmpdir=$(mktemp -d)
+
         for ext_domain in "${external_domains[@]}"; do
-            # Check DNS resolution
-            local result
-            result=$(dig +short +time=2 +tries=1 "$ext_domain" 2>/dev/null | head -1)
-            if [[ -n "$result" ]]; then
-                # Check HTTP response (allow 2xx, 3xx redirects, 401/403 auth)
-                local http_code
-                http_code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 "https://$ext_domain" 2>/dev/null)
-                if [[ "$http_code" =~ ^(200|301|302|303|307|308|401|403)$ ]]; then
-                    ext_ok=$((ext_ok + 1))
+            (
+                result=$(dig +short +time=2 +tries=1 "$ext_domain" 2>/dev/null | head -1)
+                if [[ -n "$result" ]]; then
+                    http_code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 "https://$ext_domain" 2>/dev/null)
+                    if [[ "$http_code" =~ ^(200|301|302|303|307|308|401|403)$ ]]; then
+                        touch "$ext_tmpdir/${ext_domain}.ok"
+                    else
+                        echo "$http_code" > "$ext_tmpdir/${ext_domain}.fail"
+                    fi
                 else
-                    echo "      FAIL: $ext_domain - HTTP $http_code"
-                    ext_fail=$((ext_fail + 1))
-                    warnings=$((warnings + 1))
+                    touch "$ext_tmpdir/${ext_domain}.nodns"
                 fi
+            ) &
+        done
+        wait
+
+        for ext_domain in "${external_domains[@]}"; do
+            if [[ -f "$ext_tmpdir/${ext_domain}.ok" ]]; then
+                ext_ok=$((ext_ok + 1))
+            elif [[ -f "$ext_tmpdir/${ext_domain}.fail" ]]; then
+                local code
+                code=$(cat "$ext_tmpdir/${ext_domain}.fail")
+                echo "      FAIL: $ext_domain - HTTP $code"
+                ext_fail=$((ext_fail + 1))
+                warnings=$((warnings + 1))
             else
                 echo "      FAIL: $ext_domain does not resolve"
                 ext_fail=$((ext_fail + 1))
                 warnings=$((warnings + 1))
             fi
         done
+        rm -rf "$ext_tmpdir"
 
         if [[ $ext_fail -eq 0 ]]; then
             echo "      OK: All ${ext_ok} external domains accessible"

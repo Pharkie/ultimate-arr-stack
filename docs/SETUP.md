@@ -7,7 +7,7 @@ Everything you need to go from zero to streaming. Works on any NAS or Docker hos
 - [Choose Your Setup](#choose-your-setup)
 - [Requirements](#requirements)
 - [Stack Overview](#stack-overview)
-- [Step 1: Create Directories](#step-1-create-directories-and-clonefork-repository)
+- [Step 1: Create Directories and Clone/Fork Repository](#step-1-create-directories-and-clonefork-repository)
 - [Step 2: Edit Your Settings](#step-2-edit-your-settings)
 - [Step 3: Start the Stack](#step-3-start-the-stack)
 - [Step 4: Configure Each App](#step-4-configure-each-app)
@@ -34,8 +34,6 @@ Decide how you'll access your media stack:
 ---
 
 ## Requirements
-
-Here's what you'll need to get started.
 
 ### Hardware
 - **NAS** (Ugreen, Synology, QNAP, etc.) or any Linux server/Raspberry Pi 4+
@@ -79,6 +77,8 @@ Here's what you'll need to get started.
 | **Radarr** | Movie manager - searches for movies, sends to download client | Core |
 | **Prowlarr** | Indexer manager - finds download sources for Sonarr/Radarr | Core |
 | **qBittorrent** | Torrent client - downloads files (through VPN) | Core |
+| **SABnzbd** | Usenet client - downloads files via SSL (optional, for Usenet users) | Core |
+| **Bazarr** | Subtitle manager - finds and syncs subtitles for your library | Core |
 | **Gluetun** | VPN container - routes download traffic through VPN so your ISP can't see what you download | Core |
 | **Pi-hole** | DNS server - blocks ads, provides Docker DNS | Core |
 | **Traefik** | Reverse proxy - enables `.lan` domains | + local DNS |
@@ -405,26 +405,19 @@ docker ps
 # Check VPN connection (should show a VPN IP and location)
 docker logs gluetun 2>&1 | grep "Public IP address" | tail -1
 
-# Verify VPN IP (should NOT be your home IP)
-docker exec gluetun wget -qO- https://ipinfo.io/ip
 ```
 
 ---
 
 ## Step 4: Configure Each App
 
-Your stack is running! Now configure each app to work together. Follow the **[App Configuration Guide](APP-CONFIG.md)** to set up:
+Your stack is running! Now configure each app to work together.
 
-1. **Jellyfin** — Media server (hardware transcoding, Kodi setup)
-2. **qBittorrent** — Torrent downloads
-3. **SABnzbd** — Usenet downloads
-4. **Sonarr** — TV show management
-5. **Radarr** — Movie management
-6. **Prowlarr** — Indexer management
-7. **Seerr** — Request portal
-8. **Bazarr** — Subtitles
-9. **Usenet priority** — Prefer Usenet over torrents (optional)
-10. **Pi-hole** — DNS and ad-blocking
+Choose your path:
+- **Recommended:** [Script-Assisted Setup](APP-CONFIG-QUICK.md) (~5 min — script handles most of it)
+- **Manual:** [Full Manual Setup](APP-CONFIG.md) (~30 min — configure everything through the UI)
+
+Both guides walk you through creating accounts, connecting services, and adding your indexers — step by step.
 
 ---
 
@@ -458,14 +451,18 @@ Compare the IPs — qBittorrent should show your VPN's IP, not your home IP.
 
 ## ✅ Core Complete!
 
-**Congratulations!** Your media stack is working. You can now:
-- Access services via `NAS_IP:port` (e.g., `192.168.1.50:8096` for Jellyfin)
-- Add content via Sonarr (TV) and Radarr (movies)
-- Request content via Seerr
+Your media stack is fully configured. The two services you'll use most:
+
+- **Seerr** — `http://NAS_IP:5055` — Request new shows and movies
+- **Jellyfin** — `http://NAS_IP:8096` — Watch your media library
+
+> Replace `NAS_IP` with your NAS's IP address (e.g., `192.168.1.50`). For all service URLs, ports, and network details, see [Quick Reference](REFERENCE.md).
+
+**Try it out:** Open Seerr, request a show or movie, then watch it download in Sonarr/Radarr and appear in Jellyfin.
 
 **What's next?**
 - **Stop here** if IP:port access is fine for you
-- **Continue to [+ local DNS](#-local-dns-lan-domains--optional)** for `.lan` domains (and remote access)
+- **Continue to [+ local DNS](#-local-dns-lan-domains--optional)** for friendly `.lan` URLs (e.g., `http://jellyfin.lan`) and remote access
 
 ---
 

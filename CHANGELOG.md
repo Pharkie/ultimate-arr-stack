@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.7.2] - 2026-03-01
+
+### Changed
+- **Container renamed: `jellyseerr` → `seerr`**: Container name, service name, and Docker volume all renamed from `jellyseerr`/`jellyseerr-config` to `seerr`/`seerr-config`. Completes the rebrand started in v1.6.4. Existing users must migrate the volume — see UPGRADING.md
+- **Parallel domain checks in pre-commit hook**: `.lan` and external domain lookups now run concurrently instead of sequentially — reduces check time from ~28s to <1s
+
+### Fixed
+- **Uptime Kuma monitor URL**: Updated from `http://jellyseerr:5055` to `http://seerr:5055`
+
+### Documentation
+- **App configuration split into 3 focused guides**: [Script-Assisted](docs/APP-CONFIG-QUICK.md) (~5 min), [Manual](docs/APP-CONFIG.md) (~30 min), and [Advanced](docs/APP-CONFIG-ADVANCED.md) (optional tuning). Clearer step-by-step flow with strict separation of access setup vs. configuration
+- **SETUP.md improvements**: Slimmed Step 4 handoff, added SABnzbd/Bazarr to Stack Overview, clearer "Core Complete" section with service URLs and Quick Reference link
+
+---
+
 ## [1.7.1] - 2026-02-28
 
 ### Security
@@ -81,7 +96,7 @@ All notable changes to this project will be documented in this file.
 ## [1.6.4] - 2026-02-20
 
 ### Changed
-- **Jellyseerr → Seerr**: Migrated from `fallenbagel/jellyseerr:2.7` to `ghcr.io/seerr-team/seerr:v3.0.1` (the official rebrand). Runs as non-root (UID 1000), requires `init: true`. Container name and volume remain `jellyseerr` / `jellyseerr-config` for backwards compatibility
+- **Jellyseerr → Seerr**: Migrated from `fallenbagel/jellyseerr:2.7` to `ghcr.io/seerr-team/seerr:v3.0.1` (the official rebrand). Runs as non-root (UID 1000), requires `init: true`. Container and volume renamed to `seerr` / `seerr-config` in v1.7.2
 - **jellyseerr.lan → seerr.lan**: Primary domain renamed. Permanent 301 redirects from `jellyseerr.lan` and `jellyseer.lan` to `seerr.lan` (Traefik + external). Existing bookmarks continue to work
 - **FlareSolverr healthcheck**: Reduced `start_period` from 2m to 60s to exit `starting` state faster
 
