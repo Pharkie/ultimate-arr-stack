@@ -146,6 +146,14 @@ After configuring naming, rename existing files:
 - Radarr: Movies → Select All → Organize
 - Sonarr: Series → Select All → Organize
 
+> **Important: Verify paths after organizing.** The TRaSH naming scheme renames directories on disk (e.g., `Avatar The Way of Water` → `Avatar - The Way of Water`). In rare cases, Radarr's database may not update to match, causing movies to show as "missing" on the Health page.
+>
+> **Check:** Go to Radarr → System → Health. If you see "missing root folder" or many movies suddenly show as unmonitored/missing, run the path fixer:
+> ```bash
+> ./scripts/fix-radarr-paths.sh
+> ```
+> This compares Radarr's database paths against actual directories on disk and fixes any mismatches. Safe to run multiple times.
+
 #### 10. Enable NFO metadata (recommended)
 
 **In Radarr** (`http://NAS_IP:7878`):
@@ -162,9 +170,16 @@ After configuring naming, rename existing files:
 
 The library refresh writes `.nfo` files for all existing media. New downloads get them automatically.
 
-#### What about old `downloads/` directory?
+#### 11. Clean up old `downloads/` directory
 
-The old `/volume1/Media/downloads/` directory is still accessible inside containers at `/data/downloads/`. Any in-progress downloads will complete normally. Once they're all imported, you can delete the directory.
+The old `/volume1/Media/downloads/` directory is still accessible inside containers at `/data/downloads/`. Once all in-progress downloads are imported, verify nothing references it then delete:
+
+```bash
+# Check no qBittorrent torrents use the old path
+# (all should show /data/torrents/ paths after migration)
+# Then delete:
+rm -rf /volume1/Media/downloads/
+```
 
 ---
 

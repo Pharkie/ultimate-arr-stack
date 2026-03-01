@@ -249,7 +249,8 @@ Without the `gh release edit` step, the release stays Draft and won't show as La
 
 ```
 scripts/
-├── arr-backup.sh       # Backup all Docker named volumes
+├── arr-backup.sh           # Backup all Docker named volumes
+├── fix-radarr-paths.sh     # Fix Radarr paths after TRaSH naming organize
 ├── pre-commit              # Main hook (symlinked from .git/hooks/)
 └── lib/
     ├── common.sh               # Shared functions (NAS config, SSH, file scanning)
