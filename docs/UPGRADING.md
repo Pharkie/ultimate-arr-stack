@@ -136,7 +136,17 @@ Dashboard → Libraries:
 
 This triggers a library rescan. NFO files ensure accurate identification.
 
-#### 9. Configure TRaSH naming schemes (recommended)
+#### 9. Update Jellyseerr root folders
+
+Jellyseerr stores its own copy of the root folder paths. If not updated, new requests will fail with "Root folder does not exist":
+
+1. Open Jellyseerr → Settings → Services
+2. Click Radarr server → change Root Folder from `/movies` to `/data/media/movies` → Save
+3. Click Sonarr server → change Root Folder from `/tv` to `/data/media/tv` → Save
+
+> **If requests already failed:** Go to Requests, find any with "Failed" status, and click the retry button. They'll re-submit with the corrected path.
+
+#### 10. Configure TRaSH naming schemes (recommended)
 
 Follow the naming configuration steps in the [App Configuration Guide](APP-CONFIG.md):
 - [Sonarr naming](APP-CONFIG.md#44-sonarr-tv-shows) (step 5)
@@ -154,7 +164,7 @@ After configuring naming, rename existing files:
 > ```
 > This compares Radarr's database paths against actual directories on disk and fixes any mismatches. Safe to run multiple times.
 
-#### 10. Enable NFO metadata (recommended)
+#### 11. Enable NFO metadata (recommended)
 
 **In Radarr** (`http://NAS_IP:7878`):
 
@@ -170,7 +180,7 @@ After configuring naming, rename existing files:
 
 The library refresh writes `.nfo` files for all existing media. New downloads get them automatically.
 
-#### 11. Clean up old `downloads/` directory
+#### 12. Clean up old `downloads/` directory
 
 The old `/volume1/Media/downloads/` directory is still accessible inside containers at `/data/downloads/`. Once all in-progress downloads are imported, verify nothing references it then delete:
 
