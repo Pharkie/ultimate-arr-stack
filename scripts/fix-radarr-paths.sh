@@ -66,11 +66,20 @@ with open(os.path.join(TMPDIR, "movies.json")) as f:
 with open(os.path.join(TMPDIR, "disk_dirs.txt")) as f:
     disk_dirs = set(line.strip() for line in f if line.strip())
 
+import unicodedata
+
+def strip_accents(s):
+    """Convert accented chars to ASCII (e.g., ā → a, é → e)."""
+    return "".join(
+        c for c in unicodedata.normalize("NFD", s)
+        if unicodedata.category(c) != "Mn"
+    )
+
 def normalize(s):
-    return re.sub(r"[^a-z0-9]", "", s.lower())
+    return re.sub(r"[^a-z0-9]", "", strip_accents(s).lower())
 
 def normalize_no_articles(s):
-    s = re.sub(r"[^a-z0-9 ]", "", s.lower()).strip()
+    s = re.sub(r"[^a-z0-9 ]", "", strip_accents(s).lower()).strip()
     s = re.sub(r"^(the|a|an)\s+", "", s)
     s = re.sub(r",?\s*(the|a|an)$", "", s)
     return re.sub(r"\s+", "", s)
