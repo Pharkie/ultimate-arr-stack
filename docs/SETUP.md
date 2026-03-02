@@ -171,7 +171,7 @@ sudo chown -R 1000:1000 /volume1/docker/arr-stack
 **Note:** Use `sudo` for Docker commands on Ugreen NAS. Service configs are stored in Docker named volumes (auto-created on first run).
 
 <details>
-<summary><strong>Antivirus tip</strong></summary>
+<summary><strong>Note on UGOS Antivirus</strong></summary>
 
 UGOS has a built-in antivirus scanner that runs scheduled scans. The default settings can scan your entire data folder, taking 40-50+ hours and causing system slowdowns. To fix:
 1. Open **Security** app → **Scheduled Scan**
