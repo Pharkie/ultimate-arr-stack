@@ -4,6 +4,8 @@
 
 The [configure-apps.sh](../scripts/configure-apps.sh) script automates ~22 configuration steps across qBittorrent, Sonarr, Radarr, Prowlarr, and Bazarr — root folders, download clients, naming schemes, NFO metadata, custom formats, delay profiles, subtitle sync, and more.
 
+> **Note:** This script is LLM-generated and human-reviewed. Best not to blindly run scripts from the internet — review [configure-apps.sh](../scripts/configure-apps.sh) for security before running it.
+
 ## Step 1: Set up access to each app
 
 Work through these in order. Each app needs you to create an account or complete a first-run wizard before anything else works.
