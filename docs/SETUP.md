@@ -420,7 +420,7 @@ Your stack is running! Now configure each app to work together.
 
 Choose your path:
 - **Script-Assisted:** [Script-Assisted Setup](APP-CONFIG-QUICK.md) (~5 min — quicker, but the script is LLM-generated so review it for security first)
-- **Manual:** [Full Manual Setup](APP-CONFIG.md) (~30 min — configure everything through the UI yourself)
+- **Manual:** [Full Manual Setup](APP-CONFIG.md) (~30 min — do it yourself without trusting a script)
 
 Both guides walk you through creating accounts, connecting services, and adding your indexers — step by step.
 
