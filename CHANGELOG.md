@@ -10,6 +10,7 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 - **Uptime Kuma monitor URL**: Updated from `http://jellyseerr:5055` to `http://seerr:5055`
+- **Missing `sudo` in UGOS setup**: `mkdir` and `chown` commands for media directories now use `sudo`, matching the Linux Server section. Fixes "not writable by user" errors for non-root NAS users (fixes #11)
 
 ### Documentation
 - **App configuration split into 3 focused guides**: [Script-Assisted](docs/APP-CONFIG-QUICK.md) (~5 min), [Manual](docs/APP-CONFIG.md) (~30 min), and [Advanced](docs/APP-CONFIG-ADVANCED.md) (optional tuning). Clearer step-by-step flow with strict separation of access setup vs. configuration

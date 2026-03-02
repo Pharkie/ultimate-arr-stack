@@ -157,10 +157,10 @@ ssh your-username@nas-ip
 sudo apt-get update && sudo apt-get install -y git
 
 # Create media and download directories (hardlink-compatible structure)
-mkdir -p /volume1/data/media/{tv,movies}
-mkdir -p /volume1/data/torrents/{tv,movies}
-mkdir -p /volume1/data/usenet/{incomplete,complete/{tv,movies}}
-chown -R 1000:1000 /volume1/data/media /volume1/data/torrents /volume1/data/usenet
+sudo mkdir -p /volume1/data/media/{tv,movies}
+sudo mkdir -p /volume1/data/torrents/{tv,movies}
+sudo mkdir -p /volume1/data/usenet/{incomplete,complete/{tv,movies}}
+sudo chown -R 1000:1000 /volume1/data/media /volume1/data/torrents /volume1/data/usenet
 
 # Clone the repo
 cd /volume1/docker
@@ -195,10 +195,10 @@ ssh your-username@nas-ip
 sudo synopkg install Git
 
 # Create media and download directories (hardlink-compatible structure)
-mkdir -p /volume1/data/media/{tv,movies}
-mkdir -p /volume1/data/torrents/{tv,movies}
-mkdir -p /volume1/data/usenet/{incomplete,complete/{tv,movies}}
-chown -R 1000:1000 /volume1/data/media /volume1/data/torrents /volume1/data/usenet
+sudo mkdir -p /volume1/data/media/{tv,movies}
+sudo mkdir -p /volume1/data/torrents/{tv,movies}
+sudo mkdir -p /volume1/data/usenet/{incomplete,complete/{tv,movies}}
+sudo chown -R 1000:1000 /volume1/data/media /volume1/data/torrents /volume1/data/usenet
 
 # Clone the repo
 cd /volume1/docker
