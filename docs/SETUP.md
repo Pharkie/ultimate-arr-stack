@@ -419,8 +419,8 @@ docker logs gluetun 2>&1 | grep "Public IP address" | tail -1
 Your stack is running! Now configure each app to work together.
 
 Choose your path:
-- **Recommended:** [Script-Assisted Setup](APP-CONFIG-QUICK.md) (~5 min — script handles most of it)
-- **Manual:** [Full Manual Setup](APP-CONFIG.md) (~30 min — configure everything through the UI)
+- **Script-Assisted:** [Script-Assisted Setup](APP-CONFIG-QUICK.md) (~5 min — quicker, but the script is LLM-generated so review it for security first)
+- **Manual:** [Full Manual Setup](APP-CONFIG.md) (~30 min — configure everything through the UI yourself)
 
 Both guides walk you through creating accounts, connecting services, and adding your indexers — step by step.
 
