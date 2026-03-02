@@ -156,7 +156,7 @@ ssh your-username@nas-ip
 # Install git (Ugreen NAS uses Debian)
 sudo apt-get update && sudo apt-get install -y git
 
-# Create media and download directories (hardlink-compatible structure)
+# Create media and download directories
 sudo mkdir -p /volume1/data/media/{tv,movies}
 sudo mkdir -p /volume1/data/torrents/{tv,movies}
 sudo mkdir -p /volume1/data/usenet/{incomplete,complete/{tv,movies}}
@@ -194,7 +194,7 @@ ssh your-username@nas-ip
 # Install git if not present (Synology)
 sudo synopkg install Git
 
-# Create media and download directories (hardlink-compatible structure)
+# Create media and download directories
 sudo mkdir -p /volume1/data/media/{tv,movies}
 sudo mkdir -p /volume1/data/torrents/{tv,movies}
 sudo mkdir -p /volume1/data/usenet/{incomplete,complete/{tv,movies}}
