@@ -171,6 +171,17 @@ Tools → Options → BitTorrent:
 
 > **Mobile access?** The default UI is poor on mobile. This stack includes [VueTorrent](https://github.com/VueTorrent/VueTorrent)—enable it at Tools → Options → Web UI → Use alternative WebUI → `/vuetorrent`.
 
+### Auth bypass for local networks
+
+qBittorrent bans IPs after repeated failed login attempts (e.g., from scripts or Sonarr/Radarr reconnections). To prevent this, whitelist your Docker and LAN subnets:
+
+Tools → Options → Web UI → Authentication:
+- **Bypass authentication for clients on localhost:** ✅
+- **Bypass authentication for clients in whitelisted IP subnets:** ✅
+- **Whitelisted subnets:** `172.20.0.0/24, 10.10.0.0/24, 127.0.0.0/8`
+
+> Adjust the `10.10.0.0/24` to match your LAN subnet. The `172.20.0.0/24` is the arr-stack Docker network — this ensures Sonarr, Radarr, and API scripts can always reach qBittorrent without auth failures.
+
 ---
 
 ## SABnzbd Hardening (TRaSH Recommended)
