@@ -60,7 +60,7 @@ Preview what it will do without making changes:
 
 | Service | Settings |
 |---------|----------|
-| qBittorrent | Categories (`tv`/`movies`), auto torrent management, encryption, UPnP off, stall timeout |
+| qBittorrent | Categories (`tv`/`movies`), auto torrent management, encryption, UPnP off, stall timeout, concurrent limits |
 | Sonarr | Root folder, qBittorrent + SABnzbd download clients, TRaSH naming, NFO metadata, Reject ISO custom format, Usenet delay profile |
 | Radarr | Root folder, qBittorrent + SABnzbd download clients, TRaSH naming, NFO metadata, Reject ISO custom format, Usenet delay profile |
 | Prowlarr | FlareSolverr proxy, Sonarr + Radarr app sync |

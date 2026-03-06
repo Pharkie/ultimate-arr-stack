@@ -179,7 +179,6 @@ Services start in dependency order (handled automatically by `depends_on`):
 | deunhealth | Auto-restart on VPN reconnect |
 | Uptime Kuma | Service uptime monitoring |
 | duc | Disk usage treemap |
-| qbit-scheduler | Pause torrents overnight |
 | Beszel | System metrics (CPU, RAM, disk, containers) |
 | DIUN | Docker image update notifications |
 | Configarr | TRaSH Guides quality profile sync (one-shot) |

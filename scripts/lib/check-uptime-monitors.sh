@@ -17,7 +17,6 @@ check_uptime_monitors() {
         "Pi-hole"
         "Prowlarr"
         "qBittorrent"
-        "qbit-scheduler"
         "Radarr"
         "Sonarr"
         "Traefik"

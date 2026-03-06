@@ -14,7 +14,6 @@ docker compose -f docker-compose.utilities.yml up -d
 | **Uptime Kuma** | Service monitoring dashboard | http://uptime.lan |
 | **Beszel** | System metrics (CPU, RAM, disk, containers) | http://beszel.lan |
 | **duc** | Disk usage analyzer (treemap UI) | http://duc.lan |
-| **qbit-scheduler** | Pauses torrents overnight for disk spin-down | Internal |
 | **Configarr** | Syncs TRaSH Guides quality profiles to Sonarr/Radarr | Run manually |
 
 > **Want Docker log viewing?** [Dozzle](https://dozzle.dev/) is a lightweight web UI for viewing container logs in real-time. Not included in the stack, but easy to add if you want it.
@@ -84,29 +83,6 @@ BESZEL_KEY=ssh-ed25519 AAAA...your-key-here
 **Deploy the agent:**
 ```bash
 docker compose -f docker-compose.utilities.yml up -d beszel-agent
-```
-
-## qbit-scheduler Setup
-
-Pauses torrents overnight so NAS disks can spin down (quieter, less power).
-
-**Configure in `.env`:**
-```bash
-QBIT_USER=admin
-QBIT_PASSWORD=your_qbittorrent_password
-QBIT_PAUSE_HOUR=20    # Optional: hour to pause (default 20 = 8pm)
-QBIT_RESUME_HOUR=6    # Optional: hour to resume (default 6 = 6am)
-```
-
-**Manual control:**
-```bash
-docker exec qbit-scheduler /app/pause-resume.sh pause   # Stop all torrents
-docker exec qbit-scheduler /app/pause-resume.sh resume  # Start all torrents
-```
-
-**View logs:**
-```bash
-docker logs qbit-scheduler
 ```
 
 ## Configarr Setup

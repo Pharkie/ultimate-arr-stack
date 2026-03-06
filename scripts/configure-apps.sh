@@ -212,7 +212,7 @@ configure_qbittorrent() {
         dry "Authenticate to qBittorrent"
         dry "Create category 'tv' → /data/torrents/tv"
         dry "Create category 'movies' → /data/torrents/movies"
-        dry "Set preferences: auto TMM, disable UPnP, encryption, stall timeout"
+        dry "Set preferences: auto TMM, disable UPnP, encryption, stall timeout, concurrent limits"
         return
     fi
 
@@ -255,17 +255,20 @@ if p.get('encryption', 0) != 1: sys.exit(1)
 if not p.get('max_inactive_seeding_time_enabled', False): sys.exit(1)
 if p.get('max_inactive_seeding_time', -1) != 30: sys.exit(1)
 if p.get('max_ratio_act', -1) != 0: sys.exit(1)
+if p.get('max_active_downloads', -1) != 5: sys.exit(1)
+if p.get('max_active_torrents', -1) != 10: sys.exit(1)
+if p.get('max_active_uploads', -1) != 5: sys.exit(1)
 "; then
         skip "qBittorrent: preferences"
     else
-        local prefs='{"auto_tmm_enabled":true,"upnp":false,"limit_utp_rate":true,"limit_lan_peers":true,"encryption":1,"max_inactive_seeding_time_enabled":true,"max_inactive_seeding_time":30,"max_ratio_act":0}'
+        local prefs='{"auto_tmm_enabled":true,"upnp":false,"limit_utp_rate":true,"limit_lan_peers":true,"encryption":1,"max_inactive_seeding_time_enabled":true,"max_inactive_seeding_time":30,"max_ratio_act":0,"max_active_downloads":5,"max_active_torrents":10,"max_active_uploads":5}'
         http_code=$(curl -s -o /dev/null -w '%{http_code}' \
             -b "$QBIT_COOKIE" \
             --data-urlencode "json=${prefs}" \
             "${QBIT_URL}/api/v2/app/setPreferences")
 
         if [[ "$http_code" == "200" ]]; then
-            ok "qBittorrent: set preferences (auto TMM, UPnP off, encryption, stall timeout)"
+            ok "qBittorrent: set preferences (auto TMM, UPnP off, encryption, stall timeout, concurrent limits)"
         else
             fail "qBittorrent: set preferences (HTTP $http_code)"
         fi

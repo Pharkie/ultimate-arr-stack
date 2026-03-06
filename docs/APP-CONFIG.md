@@ -76,6 +76,7 @@ Receives download requests from Sonarr and Radarr and downloads files via torren
    > **Why categories matter:** Sonarr/Radarr tell qBittorrent which category to use when requesting downloads. qBittorrent puts files in the category's save path. After download completes, Sonarr/Radarr create hardlinks from `/data/torrents/tv` or `/data/torrents/movies` to your library (`/data/media/tv` or `/data/media/movies`). If categories don't match, downloads won't be found.
 
 7. **Set stall timeout:** Tools → Options → BitTorrent → Seeding Limits → **When inactive for:** `30` minutes → **Pause torrent**. This lets Sonarr/Radarr detect stalled downloads and automatically search for alternatives.
+8. **Set concurrent limits:** Tools → Options → Speed → Queue → **Maximum active downloads:** `5`, **Maximum active uploads:** `5`, **Maximum active torrents:** `10`. Prevents overloading the NAS when many torrents are queued.
 
 > **Optional:** [qBittorrent tuning](APP-CONFIG-ADVANCED.md#qbittorrent-tuning-trash-recommended) (TRaSH recommended settings for encryption, UPnP, VueTorrent mobile UI).
 

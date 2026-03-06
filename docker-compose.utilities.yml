@@ -104,23 +104,6 @@ services:
     restart: always
     logging: *default-logging
 
-  # ═══════════════════════════════════════════════════════════════════════════
-  # QBIT-SCHEDULER - Pauses torrents overnight to let disks spin down.
-  # Default: pause at 20:00, resume at 06:00. No web UI.
-  # ═══════════════════════════════════════════════════════════════════════════
-  qbit-scheduler:
-    build: ./scripts/qbit-scheduler
-    container_name: qbit-scheduler
-    environment:
-      - TZ=${TZ}
-      - QBIT_HOST=${NAS_IP}
-      - QBIT_PORT=8085
-      - QBIT_USER=${QBIT_USER}
-      - QBIT_PASS=${QBIT_PASSWORD}
-      - PAUSE_HOUR=${QBIT_PAUSE_HOUR}
-      - RESUME_HOUR=${QBIT_RESUME_HOUR}
-    restart: always
-    logging: *default-logging
 
   # ═══════════════════════════════════════════════════════════════════════════
   # BESZEL - Lightweight server monitoring with historical data and alerts.

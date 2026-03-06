@@ -45,9 +45,6 @@ docker compose -f docker-compose.arr-stack.yml -f docker-compose.traefik.yml -f 
 # Start utilities
 docker compose -f docker-compose.utilities.yml up -d
 
-# Rebuild qbit-scheduler after editing pause-resume.sh
-docker compose -f docker-compose.utilities.yml build qbit-scheduler
-docker compose -f docker-compose.utilities.yml up -d qbit-scheduler
 ```
 
 ### All Stacks

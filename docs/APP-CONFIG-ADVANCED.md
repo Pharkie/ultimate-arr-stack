@@ -168,7 +168,12 @@ Tools → Options → BitTorrent:
 - **Encryption mode:** Allow encryption
 - **Seeding Limits → When inactive for:** `30` minutes → **Pause torrent**
 
-> These follow [TRaSH Guides qBittorrent recommendations](https://trash-guides.info/Downloaders/qBittorrent/Basic-Setup/). Speed limits are left at unlimited since the VPN is the bottleneck. The inactivity timeout pauses stalled torrents so Sonarr/Radarr can detect them and automatically search for alternatives.
+Tools → Options → Speed → Queue:
+- **Maximum active downloads:** `5`
+- **Maximum active uploads:** `5`
+- **Maximum active torrents:** `10`
+
+> These follow [TRaSH Guides qBittorrent recommendations](https://trash-guides.info/Downloaders/qBittorrent/Basic-Setup/). Speed limits are left at unlimited since the VPN is the bottleneck. The inactivity timeout pauses stalled torrents so Sonarr/Radarr can detect them and automatically search for alternatives. Concurrent limits prevent overloading the NAS when many torrents are queued — the rest wait in line.
 
 > **Mobile access?** The default UI is poor on mobile. This stack includes [VueTorrent](https://github.com/VueTorrent/VueTorrent)—enable it at Tools → Options → Web UI → Use alternative WebUI → `/vuetorrent`.
 
