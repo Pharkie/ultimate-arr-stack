@@ -124,13 +124,13 @@ To add Plex to `docker-compose.arr-stack.yml`:
 
 1. **Add a Plex service** using `lscr.io/linuxserver/plex`, port `32400`, and `PLEX_CLAIM` env var (get from https://plex.tv/claim — expires in 4 minutes)
 2. **Add a `plex-config` volume** and mount your media directories read-only (`${MEDIA_ROOT}/movies:/media/movies:ro`, `${MEDIA_ROOT}/tv:/media/tv:ro`)
-3. **Give Plex a static IP** on the `arr-stack` network (e.g. `172.20.0.11`)
+3. **Assign a static IP** in the service's `networks` block (e.g. `arr-stack: ipv4_address: 172.20.0.11`) — see other services in the compose file for the pattern
 4. **Add Traefik route** for `plex.lan` → port `32400` and **Pi-hole DNS** entry in `pihole/02-local-dns.conf`
 5. **Hardware transcoding**: add `devices: [/dev/dri:/dev/dri]` and enable "Use hardware acceleration when available" in Plex Settings → Transcoder (requires Plex Pass). Jellyfin and Plex can share the iGPU
 
 If you're **replacing** Jellyfin rather than running both, also remove the Jellyfin service, its volumes (`jellyfin-config`/`jellyfin-cache`), and rename its Traefik routes to Plex. If running **both**, add Plex as a media server in Seerr settings alongside Jellyfin.
 
-Both options are untested and unsupported.
+Plex support remains untested.
 
 </details>
 
