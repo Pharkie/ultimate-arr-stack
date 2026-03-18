@@ -17,7 +17,7 @@ Works on Ugreen, Synology, QNAP, or any Docker host.
 - **Best practices built in** — Downloads appear instantly without using extra disk space, files are named consistently, and download settings are tuned for security and performance. Based on [TRaSH Guides](https://trash-guides.info/).
 - **Everything you need** — Jellyfin, Sonarr, Radarr, Prowlarr, Bazarr, Seerr, qBittorrent, SABnzbd, Pi-hole, Cloudflare Tunnel. Modular — skip what you don't need, add what you do (e.g. Lidarr).
 - **Step-by-step guide** — Not just a docker-compose file in a repo.
-- **Flexible** — Supports 30+ VPN providers. Plex users can swap Jellyfin (see [setup guide](docs/SETUP.md)).
+- **Flexible** — Supports 30+ VPN providers. Plex users can swap or add Jellyfin (see [Plex guide](docs/SETUP.md#plex)).
 - **Privacy by default** — All downloads route through your VPN.
 
 <details>

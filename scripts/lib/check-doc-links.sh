@@ -21,9 +21,12 @@ _heading_to_anchor() {
 # Returns: newline-separated list of anchor IDs
 _get_file_anchors() {
     local file="$1"
+    # Markdown headings
     grep -E '^#{1,6} ' "$file" 2>/dev/null | while IFS= read -r line; do
         _heading_to_anchor "$line"
     done
+    # HTML anchor tags: <a id="name"> or <a name="name">
+    grep -oE '<a\s+(id|name)="[^"]+"' "$file" 2>/dev/null | sed 's/.*="//' | sed 's/"$//'
 }
 
 check_doc_links() {
