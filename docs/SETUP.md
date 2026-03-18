@@ -120,13 +120,45 @@ See [Quick Reference](REFERENCE.md) for full service lists, .lan URLs, and netwo
 
 This stack uses Jellyfin by default, but Plex works too — either as a replacement or alongside it. Seerr supports both natively. For reference, there's an [old Plex compose file](https://github.com/Pharkie/ultimate-arr-stack/blob/10ea05a/docker-compose.plex-arr-stack.yml) in the git history.
 
-To add Plex to `docker-compose.arr-stack.yml`:
+Add this to `docker-compose.arr-stack.yml` (add `plex-config` to the `volumes:` section too):
 
-1. **Add a Plex service** using `lscr.io/linuxserver/plex`, port `32400`, and `PLEX_CLAIM` env var (get from https://plex.tv/claim — expires in 4 minutes)
-2. **Add a `plex-config` volume** and mount your media directories read-only (`${MEDIA_ROOT}/movies:/media/movies:ro`, `${MEDIA_ROOT}/tv:/media/tv:ro`)
-3. **Assign a static IP** in the service's `networks` block (e.g. `arr-stack: ipv4_address: 172.20.0.11`) — see other services in the compose file for the pattern
-4. **Add Traefik route** for `plex.lan` → port `32400` and **Pi-hole DNS** entry in `pihole/02-local-dns.conf`
-5. **Hardware transcoding**: add `devices: [/dev/dri:/dev/dri]` and enable "Use hardware acceleration when available" in Plex Settings → Transcoder (requires Plex Pass). Jellyfin and Plex can share the iGPU
+```yaml
+  plex:
+    image: lscr.io/linuxserver/plex:latest
+    container_name: plex
+    ports:
+      - "32400:32400"
+    environment:
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - TZ=${TZ}
+      - VERSION=docker
+      - PLEX_CLAIM=${PLEX_CLAIM}  # Get from https://plex.tv/claim (expires in 4 mins)
+    # Hardware transcoding (Intel Quick Sync) - remove if no Intel GPU
+    devices:
+      - /dev/dri:/dev/dri
+    volumes:
+      - plex-config:/config
+      - ${MEDIA_ROOT}/movies:/media/movies:ro
+      - ${MEDIA_ROOT}/tv:/media/tv:ro
+    networks:
+      arr-stack:
+        ipv4_address: 172.20.0.11
+    restart: always
+    logging: *default-logging
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:32400/identity"]
+      interval: 1m
+      timeout: 30s
+      retries: 2
+      start_period: 30s
+```
+
+You'll also need to:
+- **Add `PLEX_CLAIM`** to your `.env` file (only needed on first run)
+- **Add a Traefik route** for `plex.lan` → port `32400`
+- **Add a Pi-hole DNS entry** for `plex.lan` in `pihole/02-local-dns.conf`
+- **Enable hardware transcoding** in Plex Settings → Transcoder → "Use hardware acceleration when available" (requires Plex Pass). Jellyfin and Plex can share the iGPU
 
 If you're **replacing** Jellyfin rather than running both, also remove the Jellyfin service, its volumes (`jellyfin-config`/`jellyfin-cache`), and rename its Traefik routes to Plex. If running **both**, add Plex as a media server in Seerr settings alongside Jellyfin.
 
