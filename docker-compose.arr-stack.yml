@@ -52,6 +52,28 @@ x-logging: &default-logging
     max-file: "3"
 
 #########################
+# Security Defaults     #
+#########################
+x-security: &default-security
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+
+# LinuxServer.io images use s6-overlay which needs CHOWN/SETUID/SETGID/DAC_OVERRIDE
+# to switch users during init. Extend default-security with these caps.
+x-security-lsio: &lsio-security
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+  cap_add:
+    - CHOWN
+    - SETUID
+    - SETGID
+    - DAC_OVERRIDE
+
+#########################
 # Services              #
 #########################
 services:
@@ -62,6 +84,7 @@ services:
   gluetun:
     image: qmcgaw/gluetun:v3.41
     container_name: gluetun
+    <<: *default-security
     depends_on:
       pihole:
         condition: service_healthy  # Wait for Pi-hole DNS before VPN connects
@@ -110,6 +133,7 @@ services:
   qbittorrent:
     image: lscr.io/linuxserver/qbittorrent:5.1.4
     container_name: qbittorrent
+    <<: *lsio-security
     network_mode: "service:gluetun"
     depends_on:
       gluetun:
@@ -142,6 +166,7 @@ services:
   sabnzbd:
     image: lscr.io/linuxserver/sabnzbd:4.5.5
     container_name: sabnzbd
+    <<: *lsio-security
     network_mode: "service:gluetun"
     depends_on:
       gluetun:
@@ -172,6 +197,7 @@ services:
   sonarr:
     image: lscr.io/linuxserver/sonarr:4.0.16
     container_name: sonarr
+    <<: *lsio-security
     network_mode: "service:gluetun"
     depends_on:
       gluetun:
@@ -202,6 +228,7 @@ services:
   prowlarr:
     image: lscr.io/linuxserver/prowlarr:2.3.0
     container_name: prowlarr
+    <<: *lsio-security
     network_mode: "service:gluetun"
     depends_on:
       gluetun:
@@ -231,6 +258,7 @@ services:
   radarr:
     image: lscr.io/linuxserver/radarr:6.0.4
     container_name: radarr
+    <<: *lsio-security
     network_mode: "service:gluetun"
     depends_on:
       gluetun:
@@ -261,6 +289,7 @@ services:
   jellyfin:
     image: jellyfin/jellyfin:10.11
     container_name: jellyfin
+    <<: *default-security
     ports:
       - "8096:8096"     # Web UI
       - "7359:7359/udp" # Client discovery (auto-detect on LAN)
@@ -311,8 +340,19 @@ services:
       - pihole-etc-pihole:/etc/pihole
       - pihole-etc-dnsmasq:/etc/dnsmasq.d
       - ./pihole/02-local-dns.conf:/etc/dnsmasq.d/02-local-dns.conf:ro
+    security_opt:
+      - no-new-privileges:false  # Pi-hole FTL needs setcap to apply capabilities
+    cap_drop:
+      - ALL
     cap_add:
-      - NET_ADMIN
+      - CHOWN           # File ownership during startup
+      - NET_ADMIN       # DNS server binding
+      - NET_RAW         # Raw socket access for DHCP/DNS
+      - SYS_NICE        # Priority scheduling for FTL
+      - SETUID          # Drop privileges after startup
+      - SETGID          # Drop privileges after startup
+      - SETFCAP         # Apply capabilities to FTL binary
+      - DAC_OVERRIDE    # Access config files during startup
     restart: always
     logging: *default-logging
     healthcheck:
@@ -330,6 +370,7 @@ services:
     image: ghcr.io/seerr-team/seerr:v3.1.0
     init: true
     container_name: seerr
+    <<: *default-security
     depends_on:
       gluetun:
         condition: service_healthy  # Needs gluetun to reach Sonarr/Radarr
@@ -361,6 +402,7 @@ services:
   bazarr:
     image: lscr.io/linuxserver/bazarr:1.5.6
     container_name: bazarr
+    <<: *lsio-security
     depends_on:
       gluetun:
         condition: service_healthy  # Needs gluetun to reach Sonarr/Radarr
@@ -394,6 +436,7 @@ services:
   flaresolverr:
     image: ghcr.io/flaresolverr/flaresolverr:v3.4.6
     container_name: flaresolverr
+    <<: *default-security
     network_mode: "service:gluetun"
     depends_on:
       gluetun:

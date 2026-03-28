@@ -21,6 +21,10 @@ services:
   cloudflared:
     image: cloudflare/cloudflared:2026.3.0
     container_name: cloudflared
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
     command: tunnel --config /home/nonroot/.cloudflared/config.yml run
     volumes:
       - ./cloudflared:/home/nonroot/.cloudflared:ro

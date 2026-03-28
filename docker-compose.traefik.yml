@@ -20,6 +20,8 @@ services:
     restart: always
     security_opt:
       - no-new-privileges:true
+    cap_drop:
+      - ALL
     networks:
       arr-stack:
         ipv4_address: 172.20.0.2

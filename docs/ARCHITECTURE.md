@@ -134,6 +134,24 @@ arr-stack network (172.20.0.0/24)
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
+## Container Security
+
+All containers run with hardened defaults:
+
+- **`no-new-privileges`** — Prevents processes from gaining additional privileges via `setuid`/`setgid` binaries
+- **`cap_drop: ALL`** — Drops all Linux capabilities by default
+
+Two YAML anchors define security profiles in each compose file:
+
+| Anchor | Used by | Capabilities |
+|--------|---------|-------------|
+| `x-security` | Jellyfin, Seerr, FlareSolverr, Cloudflared, Traefik, utilities | None (fully locked down) |
+| `x-security-lsio` | Sonarr, Radarr, Prowlarr, qBittorrent, SABnzbd, Bazarr | `CHOWN`, `SETUID`, `SETGID`, `DAC_OVERRIDE` (s6-overlay needs these to switch users during init) |
+
+Two services have additional requirements:
+- **Gluetun** — adds `NET_ADMIN` (required to create VPN tunnel interfaces)
+- **Pi-hole** — adds `NET_ADMIN`, `NET_RAW`, `CHOWN`, `SETUID`, `SETGID`, `SETFCAP`, `SYS_NICE`, `DAC_OVERRIDE`, and disables `no-new-privileges` (FTL uses `setcap` at startup)
+
 ## Design Decisions
 
 **Static IPs:** Prevents "container not found" errors after restarts. Services always know where to find each other.

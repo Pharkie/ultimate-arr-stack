@@ -32,6 +32,15 @@ x-logging: &default-logging
     max-file: "3"
 
 #########################
+# Security Defaults     #
+#########################
+x-security: &default-security
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+
+#########################
 # Services              #
 #########################
 services:
@@ -43,6 +52,7 @@ services:
   deunhealth:
     image: qmcgaw/deunhealth:v0.3.0
     container_name: deunhealth
+    <<: *default-security
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
     environment:
@@ -63,6 +73,7 @@ services:
   uptime-kuma:
     image: louislam/uptime-kuma:2
     container_name: uptime-kuma
+    <<: *default-security
     restart: always
     ports:
       - "3001:3001"  # Local network access only
@@ -90,6 +101,7 @@ services:
   duc:
     image: mkoestler/duc-service:v1.1.0
     container_name: duc
+    <<: *default-security
     networks:
       arr-stack:
         ipv4_address: 172.20.0.14
@@ -112,6 +124,7 @@ services:
   beszel:
     image: henrygd/beszel:0.18
     container_name: beszel
+    <<: *default-security
     restart: always
     ports:
       - "8090:8090"
@@ -135,6 +148,7 @@ services:
   beszel-agent:
     image: henrygd/beszel-agent:0.18
     container_name: beszel-agent
+    <<: *default-security
     restart: always
     network_mode: host
     volumes:
@@ -158,6 +172,7 @@ services:
   diun:
     image: crazymax/diun:4.31.0
     container_name: diun
+    <<: *default-security
     restart: always
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
@@ -186,6 +201,7 @@ services:
   configarr:
     image: ghcr.io/raydak-labs/configarr:1.24.0
     container_name: configarr
+    <<: *default-security
     restart: "no"
     networks:
       - arr-stack

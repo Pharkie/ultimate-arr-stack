@@ -35,8 +35,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       sshpass dnsutils \
     && rm -rf /var/lib/apt/lists/*
 
-# Claude Code CLI (update npm first to suppress version warnings)
-RUN npm install -g npm@latest && npm install -g @anthropic-ai/claude-code
+# Claude Code CLI — install as vscode user to avoid npm permission errors
+USER vscode
+RUN mkdir -p /home/vscode/.npm-global \
+    && npm config set prefix /home/vscode/.npm-global \
+    && npm install -g npm@latest \
+    && npm install -g @anthropic-ai/claude-code
+ENV PATH="/home/vscode/.npm-global/bin:${PATH}"
+USER root
 
 # Playwright system deps (for running e2e tests)
 RUN npx playwright install-deps chromium 2>/dev/null || true

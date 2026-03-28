@@ -28,6 +28,7 @@ Works on Ugreen, Synology, QNAP, or any Docker host.
 - **Local `.lan` domains** — `http://sonarr.lan` instead of port numbers
 - **Intel Quick Sync** — GPU-accelerated transcoding on Intel NAS (Ugreen DXP4800+, etc.). Remove 4 lines from compose file if no Intel GPU.
 - **Auto-recovery** — Services restart when VPN reconnects
+- **Container hardening** — All capabilities dropped, `no-new-privileges` enforced, re-added only where required
 - **Production healthchecks** — Not just "is the process running?"
 - **One-command backup script** — Essential configs to ~13MB
 - **Pre-commit hooks** — For contributors: validates secrets, YAML, port conflicts

@@ -38,6 +38,14 @@ docker compose -f docker-compose.arr-stack.yml up -d  # Restarts containers with
 
 When upgrading across versions, check below for any action required.
 
+### Container Security Hardening
+
+All containers now run with hardened Linux defaults:
+- **`cap_drop: ALL`** — All Linux capabilities dropped, re-added only where needed
+- **`no-new-privileges: true`** — Prevents privilege escalation via setuid/setgid binaries
+
+This applies automatically when you pull and redeploy. No action required unless you've customized the compose files to add services or capabilities — in that case, review the [Container Security](ARCHITECTURE.md#container-security) section in the architecture docs.
+
 ### v1.7.2 → v1.7.3
 
 Fixes `.lan` DNS resolution inside VPN-tunneled containers, adds a script to fix duplicate Jellyfin entries after enabling TRaSH naming, and improves Seerr configuration.
