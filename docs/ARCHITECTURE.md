@@ -163,3 +163,5 @@ Two services have additional requirements:
 **Pi-hole for DNS:** Provides internal Docker DNS and ad-blocking. Optionally enables `.lan` domains (+ local DNS).
 
 **Named volumes:** Data persists across container updates. Easy to backup with the included script.
+
+**No fail2ban:** External access goes through Cloudflare Tunnel, which handles rate limiting and bot protection at the edge. LAN services aren't exposed to the internet. Services with auth (qBittorrent, Pi-hole, Traefik dashboard) have their own brute-force protections. fail2ban would add complexity with no practical benefit.
