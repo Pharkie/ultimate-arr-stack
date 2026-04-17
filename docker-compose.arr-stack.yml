@@ -327,18 +327,12 @@ services:
   # Protocols: DoH (DNS over HTTPS), DNSCrypt, Anonymized DNS
   # ═══════════════════════════════════════════════════════════════════════════
   dnscrypt-proxy:
-    image: klutchell/dnscrypt-proxy:latest
+    image: klutchell/dnscrypt-proxy:2.1.14
     container_name: dnscrypt-proxy
-    cap_add:
-      - NET_ADMIN  # Bind to privileged ports
-      - NET_RAW    # Raw socket access for DNS
     cap_drop:
       - ALL
     security_opt:
-      - no-new-privileges:false  # Pi-hole FTL needs setcap to apply capabilities
-    ports:
-      - "${NAS_IP}:5053:5053/tcp"
-      - "${NAS_IP}:5053:5053/udp"
+      - no-new-privileges:true
     networks:
       arr-stack:
         ipv4_address: 172.20.0.6
