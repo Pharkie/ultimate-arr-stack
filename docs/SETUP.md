@@ -301,7 +301,9 @@ sudo chown -R 1000:1000 /srv/docker/arr-stack
 
 > Only `traefik/` and `cloudflared/` appear as folders on your NAS. Everything else is managed by Docker internally.
 >
-> **Why this structure?** All media directories live under one `MEDIA_ROOT`, mounted as a single `/data` volume in containers that need both downloads and library access (qBittorrent, SABnzbd, Sonarr, Radarr). This enables **hardlinks** — when Sonarr/Radarr import a file, they create a hardlink instead of copying, making imports instant and using zero extra disk space. See [TRaSH Guides: Hardlinks](https://trash-guides.info/Hardlinks/Hardlinks-and-Instant-Moves/).
+> **Multi-volume NAS?** You can keep your Docker install (the arr-stack files, set via `NAS_STACK_DIR`) on one volume and your media library (set via `MEDIA_ROOT`) on another. For example: Docker on `/volume1/docker/arr-stack` with media on `/volume2/data`, or vice versa. Both are set in `.env` (see Step 2.2 for `MEDIA_ROOT`).
+>
+> **Why this structure?** All media directories live under one `MEDIA_ROOT`, mounted as a single `/data` volume in containers that need both downloads and library access (qBittorrent, SABnzbd, Sonarr, Radarr). This enables **hardlinks**: when Sonarr/Radarr import a file, they create a hardlink instead of copying, making imports instant and using zero extra disk space. See [TRaSH Guides: Hardlinks](https://trash-guides.info/Hardlinks/Hardlinks-and-Instant-Moves/).
 
 ---
 
