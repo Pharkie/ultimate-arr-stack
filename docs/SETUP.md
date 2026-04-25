@@ -329,6 +329,13 @@ The stack needs your media path, timezone, VPN credentials, and a few passwords.
 cp .env.example .env
 ```
 
+**How to edit `.env`:** The next sections show lines to find and edit *inside* the file — they're not commands to paste into the shell. Pick whichever editor you're comfortable with:
+
+- **In the SSH terminal:** `nano .env` is the friendliest option (shortcuts shown at the bottom of the screen). Save with `Ctrl+O`, `Enter`, then exit with `Ctrl+X`. Pre-installed on Ugreen, Synology, and QNAP.
+- **GUI editor:** Edit via your NAS's web file manager, or use VS Code with the [Remote-SSH extension](https://code.visualstudio.com/docs/remote/ssh) if you'd rather have syntax highlighting and a familiar interface.
+
+Keep `.env` open as you work through the rest of Step 2.
+
 ### 2.2 Media Storage Path
 
 Set `MEDIA_ROOT` in `.env` to match your media folder location:

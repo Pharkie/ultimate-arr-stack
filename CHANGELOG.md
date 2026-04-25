@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.7.11] - 2026-04-25
+
+### Documentation
+- **SETUP.md Step 2.1**: Added a short "How to edit `.env`" note covering `nano` for SSH users and GUI options (NAS web file manager, VS Code Remote-SSH). Beginners were trying to paste `.env` line snippets straight into the shell because the docs never said which editor to use. Reported on Reddit
+
+---
+
 ## [1.7.10] - 2026-04-21
 
 ### Fixed
