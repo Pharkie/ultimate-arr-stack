@@ -98,6 +98,34 @@ sudo reboot
 
 **Keep the DHCP reservation too:** After switching to a static IP, keep the reservation on your router. The static IP means the NAS claims it instantly at boot; the reservation means the router won't hand out that same IP to another device via DHCP. Both together prevent IP conflicts.
 
+## Pi-hole: Gravity Update Fails With Empty Status
+
+**Symptom:** Running `pihole -g` (or "Update Gravity" in the web UI) shows a blocklist with a blank status and falls back to cache:
+
+```
+[i] Target: https://raw.githubusercontent.com/.../SmartTV.txt
+[✗] Status: https://raw.githubusercontent.com/.../SmartTV.txt ()
+[✗] List download failed: using previously cached list
+```
+
+The empty `()` is the curl HTTP code — empty means curl never got a response. Other lists from the same domain succeed, so it isn't network or DNS.
+
+**Cause:** A file in `/etc/pihole/listsCache/` is owned by `root` instead of `pihole`. Gravity runs as the `pihole` user and uses curl's `--etag-save` to update the etag file; if that file is root-owned, curl can't overwrite it and exits before producing an HTTP code. `gravity.sh` swallows curl's stderr (`2>/dev/null`), so the only visible symptom is the empty status. This typically comes from an old Pi-hole image version that didn't chown files back to `pihole` after running gravity as root.
+
+**Diagnose:**
+```bash
+docker exec pihole ls -la /etc/pihole/listsCache/
+# Files owned by root: that's the problem. Should all be pihole:pihole.
+```
+
+**Fix:**
+```bash
+docker exec -u root pihole chown -R pihole:pihole /etc/pihole/listsCache
+docker exec pihole pihole -g   # confirm both lists succeed
+```
+
+Current Pi-hole versions chown files back to `pihole` after each gravity run, so once corrected this shouldn't recur.
+
 ## Jellyfin: Video Stutters/Freezes Every Few Minutes
 
 **Symptom:** Playing large video files (especially 4K remuxes, 50-100+ GB) causes playback to freeze for a few seconds every 2-3 minutes, then resume. Happens on both Jellyfin apps and Kodi with Jellyfin plugin. Jellyfin dashboard may show "Direct Play" (no transcoding).

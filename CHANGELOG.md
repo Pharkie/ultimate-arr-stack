@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.7.12] - 2026-04-27
+
+### Changed
+- **Pi-hole** 2026.04.0 → 2026.04.1 (Core 6.4.1 → 6.4.2, FTL 6.6 → 6.6.1)
+
+### Documentation
+- **TROUBLESHOOTING.md**: Added "Pi-hole: Gravity Update Fails With Empty Status" — the empty `Status: ()` symptom comes from a root-owned file in `/etc/pihole/listsCache/` (a relic from older Pi-hole images). Includes diagnose and `chown` fix
+
+---
+
 ## [1.7.11] - 2026-04-25
 
 ### Documentation

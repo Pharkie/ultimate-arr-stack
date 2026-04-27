@@ -355,7 +355,7 @@ services:
   # Configure upstream DNS: Settings → DNS → Custom = 172.20.0.6#5053
   # ═══════════════════════════════════════════════════════════════════════════
   pihole:
-    image: pihole/pihole:2026.04.0
+    image: pihole/pihole:2026.04.1
     container_name: pihole
     depends_on:
       dnscrypt-proxy:
