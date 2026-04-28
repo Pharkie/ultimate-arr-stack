@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## [1.7.12] - 2026-04-27
+## [1.7.12] - 2026-04-28
 
 ### Changed
 - **Pi-hole** 2026.04.0 → 2026.04.1 (Core 6.4.1 → 6.4.2, FTL 6.6 → 6.6.1)
