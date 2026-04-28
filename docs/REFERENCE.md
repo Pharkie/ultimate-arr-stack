@@ -8,6 +8,7 @@
 > **Tip:** When doing full stack restarts, use mobile hotspot first, or restart with a single command:
 > ```bash
 > docker compose -f docker-compose.arr-stack.yml up -d  # Recreates without full down
+> # Add `-f docker-compose.utilities.yml` after the first `-f` if you also run utilities (beszel, configarr, etc.)
 > ```
 
 ## Service Access
@@ -113,9 +114,11 @@ docker compose -f docker-compose.arr-stack.yml up -d --force-recreate
 git pull origin main
 docker compose -f docker-compose.arr-stack.yml up -d --force-recreate
 
-# Update container images
+# Update container images (core stack only)
 docker compose -f docker-compose.arr-stack.yml pull
 docker compose -f docker-compose.arr-stack.yml up -d
+
+# If you also run utilities (beszel, configarr, etc.), add -f docker-compose.utilities.yml to both commands
 ```
 
 > ⚠️ **Never use `docker compose down` (+ local DNS users)** - if your router uses Pi-hole for DNS, stopping it kills DNS for your entire network. Use `up -d --force-recreate` instead.

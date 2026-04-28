@@ -9,6 +9,7 @@ All notable changes to this project will be documented in this file.
 
 ### Documentation
 - **TROUBLESHOOTING.md**: Added "Pi-hole: Gravity Update Fails With Empty Status" — the empty `Status: ()` symptom comes from a root-owned file in `/etc/pihole/listsCache/` (a relic from older Pi-hole images). Includes diagnose and `chown` fix
+- **Routine `up -d` examples** (REFERENCE.md, UPGRADING.md): Note that users who also run utilities (beszel, configarr, duc, diun, deunhealth, uptime-kuma) should add `-f docker-compose.utilities.yml` to suppress the "orphan containers" warning. Core-only users can ignore. MAINTENANCE.md already has a dedicated "All Stacks" section for the multi-file invocation
 
 ---
 
