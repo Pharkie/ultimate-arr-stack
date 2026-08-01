@@ -109,6 +109,19 @@ async def listen(request: web.Request) -> web.StreamResponse:
         "-timeout", str(CONNECT_TIMEOUT * 1_000_000),
         "-i", rtsp_url(CAMERAS[name]),
         "-vn",                      # throw the video away; we only want the mic
+        # *** THESE MICROPHONES ARE VERY QUIET, AND THE PANEL CANNOT FIX IT. ***
+        # Measured off cam1 with ffmpeg volumedetect: mean -36.7 dB, peak
+        # -19.3 dB. That is nearly 20 dB of unused headroom, so the sofa panel
+        # sounded faint even with its own volume at 5 of 5 — and turning the
+        # panel up cannot help, because the quiet is in the source, not the
+        # playback. Raising it here fixes it for every consumer at once.
+        #
+        # The limiter is what makes +18 dB safe rather than a gamble: gain is
+        # applied blind to a live stream whose level varies by camera and by
+        # time of day, and a doorway at close range can be very much louder
+        # than the ambient this was measured on. alimiter catches those peaks
+        # instead of letting them clip into the FLAC.
+        "-af", "volume=18dB,alimiter=limit=0.95",
         # *** THE PANEL CAN ONLY DECODE WHAT WAS COMPILED INTO IT. ***
         # ESPHome builds exactly the codecs its pipelines declare, and the
         # sofa panel's announcement pipeline is FLAC — so the firmware has
