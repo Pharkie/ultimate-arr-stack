@@ -22,6 +22,11 @@ http:
       entryPoints: [web]
       service: seerr-lan
 
+    kavita-lan:
+      rule: "Host(`kavita.lan`)"
+      entryPoints: [web]
+      service: kavita-lan
+
     # Legacy redirects (jellyseerr/jellyseer → seerr)
     jellyseerr-lan:
       rule: "Host(`jellyseerr.lan`)"
@@ -55,6 +60,11 @@ http:
       rule: "Host(`bazarr.lan`)"
       entryPoints: [web]
       service: bazarr-lan
+
+    suwayomi-lan:
+      rule: "Host(`suwayomi.lan`)"
+      entryPoints: [web]
+      service: suwayomi-lan
 
     # === Download Clients ===
     qbit-lan:
@@ -113,6 +123,11 @@ http:
         servers:
           - url: "http://172.20.0.8:5055"
 
+    kavita-lan:
+      loadBalancer:
+        servers:
+          - url: "http://172.20.0.17:5000"
+
     # === *arr Stack ===
     # Sonarr/Radarr now run on the arr-stack bridge with their own IPs
     # (no longer behind Gluetun). Prowlarr stays behind Gluetun (172.20.0.3).
@@ -135,6 +150,12 @@ http:
       loadBalancer:
         servers:
           - url: "http://172.20.0.9:6767"
+
+    # Suwayomi runs in Gluetun's namespace, so it answers on Gluetun's IP
+    suwayomi-lan:
+      loadBalancer:
+        servers:
+          - url: "http://172.20.0.3:4567"
 
     # === Download Clients (via Gluetun) ===
     qbit-lan:

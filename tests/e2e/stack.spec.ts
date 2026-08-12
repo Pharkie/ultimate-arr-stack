@@ -12,6 +12,7 @@ function screenshotPath(name: string) {
 
 const PORTS = {
   jellyfin: 8096,
+  kavita: 5000,
   sonarr: 8989,
   radarr: 7878,
   prowlarr: 9696,
@@ -19,6 +20,7 @@ const PORTS = {
   sabnzbd: 8082,
   seerr: 5055,
   bazarr: 6767,
+  suwayomi: 4567,
   pihole: 8081,
 } as const;
 
@@ -294,6 +296,39 @@ test.describe('UI screenshots', () => {
     await page.screenshot({ path: screenshotPath('bazarr'), fullPage: true });
   });
 
+  test('Kavita — login and screenshot library', async ({ page }) => {
+    const username = process.env.KAVITA_USERNAME;
+    const password = process.env.KAVITA_PASSWORD;
+    test.skip(!username || !password, 'KAVITA_USERNAME / KAVITA_PASSWORD not set');
+
+    await page.goto(url('kavita', '/login'));
+    await page.waitForLoadState('networkidle');
+
+    // Angular reactive form — formcontrolname is the stable hook
+    await page.fill('input[formcontrolname="username"], input[name="username"]', username!);
+    await page.fill('input[formcontrolname="password"], input[type="password"]', password!);
+    await page.click('button[type="submit"]');
+
+    // Kavita redirects to /home (or /library) once the JWT is stored
+    await page.waitForURL(/\/(home|library)/, { timeout: 15_000 });
+    await page.waitForLoadState('networkidle');
+
+    expect(page.url()).not.toContain('login');
+    await page.screenshot({ path: screenshotPath('kavita'), fullPage: true });
+  });
+
+  test('Suwayomi — screenshot library', async ({ page }) => {
+    // AUTH_MODE defaults to none, so there is no login step
+    await page.goto(url('suwayomi', '/'));
+    await page.waitForLoadState('domcontentloaded');
+
+    // React SPA — give it a moment to hydrate
+    await page.waitForTimeout(3_000);
+
+    await expect(page.locator('#root, #app, main').first()).toBeVisible({ timeout: 10_000 });
+    await page.screenshot({ path: screenshotPath('suwayomi'), fullPage: true });
+  });
+
   test('Pi-hole — login and screenshot admin', async ({ page }) => {
     const password = process.env.PIHOLE_PASSWORD;
     test.skip(!password, 'PIHOLE_PASSWORD not set');
@@ -411,5 +446,40 @@ test.describe('API assertions', () => {
     expect(res.ok()).toBeTruthy();
     const series = await res.json();
     expect(series.length).toBeGreaterThan(0);
+  });
+
+  test('Kavita — libraries live under /data/media', async ({ request }) => {
+    const username = process.env.KAVITA_USERNAME;
+    const password = process.env.KAVITA_PASSWORD;
+    test.skip(!username || !password, 'KAVITA_USERNAME / KAVITA_PASSWORD not set');
+
+    // Kavita issues a JWT rather than a static API key
+    const loginRes = await request.post(url('kavita', '/api/account/login'), {
+      data: { username, password },
+    });
+    expect(loginRes.ok()).toBeTruthy();
+    const { token } = await loginRes.json();
+
+    const res = await request.get(url('kavita', '/api/library/libraries'), {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    expect(res.ok()).toBeTruthy();
+    const libraries: Array<{ folders: string[] }> = await res.json();
+    expect(libraries.length).toBeGreaterThan(0);
+    expect(libraries.flatMap((l) => l.folders)).toEqual(
+      expect.arrayContaining([expect.stringMatching(/^\/data\/media\//)]),
+    );
+  });
+
+  test('Suwayomi — GraphQL API responds through the VPN namespace', async ({ request }) => {
+    // No auth: AUTH_MODE defaults to none, and aboutServer is unauthenticated.
+    // Reaching it at all also proves Gluetun is publishing 4567.
+    const res = await request.post(url('suwayomi', '/api/graphql'), {
+      data: { query: '{ aboutServer { version github } }' },
+    });
+    expect(res.ok()).toBeTruthy();
+    const body = await res.json();
+    expect(body.data.aboutServer.github).toBe('https://github.com/Suwayomi/Suwayomi-Server');
+    expect(body.data.aboutServer.version).toBeTruthy();
   });
 });

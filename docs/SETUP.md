@@ -202,7 +202,7 @@ ssh your-username@nas-ip
 sudo apt-get update && sudo apt-get install -y git
 
 # Create media and download directories
-sudo mkdir -p /volume1/data/media/{tv,movies}
+sudo mkdir -p /volume1/data/media/{tv,movies,books,manga}
 sudo mkdir -p /volume1/data/torrents/{tv,movies}
 sudo mkdir -p /volume1/data/usenet/{incomplete,complete/{tv,movies}}
 sudo chown -R 1000:1000 /volume1/data/media /volume1/data/torrents /volume1/data/usenet
@@ -239,7 +239,7 @@ Scanning media files for viruses is unnecessary - video/audio files can't contai
 <summary><strong>Synology / QNAP</strong></summary>
 
 Use File Station to create:
-- **data** shared folder with subfolder: **media** (containing **tv** and **movies**)
+- **data** shared folder with subfolder: **media** (containing **tv**, **movies**, **books** and **manga**)
 - **docker** shared folder
 
 Then via SSH:
@@ -250,7 +250,7 @@ ssh your-username@nas-ip
 sudo synopkg install Git
 
 # Create media and download directories
-sudo mkdir -p /volume1/data/media/{tv,movies}
+sudo mkdir -p /volume1/data/media/{tv,movies,books,manga}
 sudo mkdir -p /volume1/data/torrents/{tv,movies}
 sudo mkdir -p /volume1/data/usenet/{incomplete,complete/{tv,movies}}
 sudo chown -R 1000:1000 /volume1/data/media /volume1/data/torrents /volume1/data/usenet
@@ -276,7 +276,7 @@ sudo chown -R 1000:1000 "$NAS_STACK_DIR"
 sudo apt-get update && sudo apt-get install -y git
 
 # Create media and download directories
-sudo mkdir -p /srv/data/media/{tv,movies}
+sudo mkdir -p /srv/data/media/{tv,movies,books,manga}
 sudo mkdir -p /srv/data/torrents/{tv,movies}
 sudo mkdir -p /srv/data/usenet/{incomplete,complete/{tv,movies}}
 sudo chown -R 1000:1000 /srv/data

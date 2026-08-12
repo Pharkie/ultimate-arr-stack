@@ -35,12 +35,14 @@ check_domains() {
     # .lan domains to check (via Pi-hole DNS)
     local lan_domains=(
         "jellyfin.lan"
+        "kavita.lan"
         "seerr.lan"
         "jellyseerr.lan"
         "sonarr.lan"
         "radarr.lan"
         "prowlarr.lan"
         "bazarr.lan"
+        "suwayomi.lan"
         "qbit.lan"
         "sabnzbd.lan"
         "traefik.lan"

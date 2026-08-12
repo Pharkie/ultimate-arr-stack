@@ -36,6 +36,8 @@ Copy this file to `config.local.md` and fill in your values.
 | Cloudflared | 172.20.0.12 |
 | Uptime Kuma | 172.20.0.13 |
 | duc | 172.20.0.14 |
+| Kavita | 172.20.0.17 |
+| Suwayomi | (via Gluetun, 172.20.0.3:4567) |
 
 ## Service URLs
 
@@ -67,6 +69,8 @@ NAS LAN IP: `YOUR_NAS_LAN_IP` (or `your-nas.local`)
 | Radarr | http://your-nas.local:7878 |
 | Prowlarr | http://your-nas.local:9696 |
 | qBittorrent | http://your-nas.local:8085 |
+| Kavita | http://your-nas.local:5000 |
+| Suwayomi | http://your-nas.local:4567 |
 
 ## VPN
 
@@ -81,6 +85,6 @@ NAS LAN IP: `YOUR_NAS_LAN_IP` (or `your-nas.local`)
 | Path | Contents |
 |------|----------|
 | `/volume1/docker/arr-stack/` | Docker compose files and configs |
-| `/volume1/data/media/` | Media library (movies, tv) |
+| `/volume1/data/media/` | Media library (movies, tv, books, manga) |
 | `/volume1/data/torrents/` | qBittorrent downloads |
 | `/volume1/data/usenet/` | SABnzbd downloads |

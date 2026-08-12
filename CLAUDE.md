@@ -39,4 +39,4 @@ Back up a service's config volume before any version bump with a DB migration (`
 
 ## E2E Tests
 
-Run `npm run test:e2e` after any change to Docker Compose files, service config, networks, or ports. All 14 tests must pass. They screenshot every service UI and verify API responses.
+Run `npm run test:e2e` after any change to Docker Compose files, service config, networks, or ports. All 18 tests must pass. They screenshot every service UI and verify API responses.

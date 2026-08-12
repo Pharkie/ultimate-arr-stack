@@ -28,6 +28,27 @@ When someone requests a movie or TV show, here's what happens:
 
 > **Why both qBittorrent and SABnzbd?** Torrents are free but can be slow/unreliable. Usenet costs ~$5/month but is faster, more reliable, and has no ratio requirements. Most users configure both - Sonarr/Radarr will try Usenet first, fall back to torrents.
 
+## The Reading Flow
+
+Comics, manga and ebooks follow the same shape with two services instead of five:
+
+```
+┌──────────────┐     ┌──────────────────────────┐     ┌──────────┐
+│  Suwayomi    │────▶│  MEDIA_ROOT/media/manga  │────▶│  Kavita  │
+│ (track +     │     │  mangas/<Src>/<Title>/   │     │  (read)  │
+│  download)   │     │  <Chapter>.cbz           │     │          │
+└──────────────┘     └──────────────────────────┘     └──────────┘
+       │
+  Through VPN (Gluetun)                                Not through VPN
+```
+
+1. **Suwayomi** — install source extensions, track series, download new chapters as `.cbz`
+2. **Kavita** — scans that folder and serves it to browsers, tablets and OPDS readers
+
+Ebooks skip step 1 entirely: drop `.epub`/`.pdf` files into `MEDIA_ROOT/media/books` and Kavita picks them up.
+
+> **Why is Suwayomi behind the VPN but Kavita isn't?** Suwayomi scrapes public scanlation sources — the same traffic class as Prowlarr's indexer scraping. Kavita only ever reads files that are already on your disk, exactly like Jellyfin.
+
 ## VPN Protection
 
 **Why VPN?** Your ISP can see BitTorrent traffic. The VPN encrypts this so they only see "encrypted traffic to VPN server".
@@ -35,32 +56,32 @@ When someone requests a movie or TV show, here's what happens:
 **Why not everything through VPN?** Streaming from Jellyfin doesn't need protection (you're watching your own files) and VPN would slow it down.
 
 ```
-                              ┌─────────────────────────────────────────┐
-                              │            GLUETUN (VPN)                │
-                              │                                         │
-Internet ◄───VPN Tunnel───────│  qBit   SABnzbd   Prowlarr   Flare      │
-                              │    ▲        ▲         ▲        ▲        │
-                              │    │        │         │        │        │
-                              │    └────────┴─────────┴────────┘        │
-                              │         All share localhost             │
-                              └─────────────────────────────────────────┘
+                              ┌──────────────────────────────────────────────┐
+                              │              GLUETUN (VPN)                   │
+                              │                                              │
+Internet ◄───VPN Tunnel───────│  qBit  SABnzbd  Prowlarr  Flare  Suwayomi   │
+                              │    ▲       ▲        ▲       ▲        ▲       │
+                              │    │       │        │       │        │       │
+                              │    └───────┴────────┴───────┴────────┘       │
+                              │            All share localhost               │
+                              └──────────────────────────────────────────────┘
                                                  │
                                     ─ ─ ─ ─ ─ ─ ─│─ ─ ─ ─ ─ ─ ─
                                                  │
-                              ┌──────────────────┴──────────────────────┐
-Internet ◄──Cloudflare Tunnel─│  Jellyfin    Seerr                     │
-  (remote)                    │  (stream)    (requests)                 │
-                              │                                         │
-LAN only ◄────────────────────│  Pi-hole   Sonarr    Radarr   Bazarr   │
-  (local)                     │  (DNS)     (manage)  (manage)  (subs)   │
-                              └─────────────────────────────────────────┘
+                              ┌──────────────────┴───────────────────────────┐
+Internet ◄──Cloudflare Tunnel─│  Jellyfin    Seerr                           │
+  (remote)                    │  (stream)    (requests)                      │
+                              │                                              │
+LAN only ◄────────────────────│  Pi-hole  Sonarr   Radarr   Bazarr  Kavita   │
+  (local)                     │  (DNS)    (manage) (manage) (subs)  (read)   │
+                              └──────────────────────────────────────────────┘
 ```
 
 > **Note:** Download services go through VPN to hide torrent traffic from your ISP. Streaming services don't need VPN protection. Remote access uses Cloudflare Tunnel (not VPN) - see [Access Levels](#access-levels).
 
 ## Service Connections
 
-Services behind Gluetun (qBittorrent, SABnzbd, Prowlarr, FlareSolverr) use `localhost` to talk to each other. Crossing the bridge↔VPN boundary needs care — the VPN namespace's DNS is Pi-hole, which can't resolve Docker container names, so VPN-side services must reach bridge services by **IP**.
+Services behind Gluetun (qBittorrent, SABnzbd, Prowlarr, FlareSolverr, Suwayomi) use `localhost` to talk to each other. Crossing the bridge↔VPN boundary needs care — the VPN namespace's DNS is Pi-hole, which can't resolve Docker container names, so VPN-side services must reach bridge services by **IP**.
 
 ```
 Bridge → VPN-side (use gluetun):     VPN-side → bridge (use IP):
@@ -74,7 +95,14 @@ Bridge → bridge (use name):          Behind-VPN → behind-VPN (localhost):
 ─────────────────────────────        ──────────────────────────
 Seerr/Bazarr → Sonarr                Prowlarr → FlareSolverr
   └── sonarr:8989 / radarr:7878        └── localhost:8191
+                                     Suwayomi → FlareSolverr
+                                       └── localhost:8191
 ```
+
+**Kavita ↔ Suwayomi is the one pair that doesn't talk over the network at all.**
+Suwayomi writes `.cbz` chapters into `MEDIA_ROOT/media/manga/mangas/<Source>/<Title>/`
+and Kavita mounts that same tree read-only. Suwayomi downloads, Kavita reads —
+the handoff is the filesystem, exactly like Sonarr → Jellyfin.
 
 ## Network Layout
 
@@ -87,6 +115,7 @@ arr-stack network (172.20.0.0/24)
 ├──────────────┼──────────────┼────────────────────────────────┼──────────────────│
 │ 172.20.0.3   │ Gluetun      │ VPN gateway (qBit/SAB/Prowlarr)│ Core             │
 │ 172.20.0.4   │ Jellyfin     │ Media server                   │ Core             │
+│ 172.20.0.17  │ Kavita       │ Comic/manga/ebook reader       │ Core             │
 │ 172.20.0.8   │ Seerr        │ Request portal                 │ Core             │
 │ 172.20.0.9   │ Bazarr       │ Subtitles                      │ Core             │
 │ 172.20.0.10  │ Sonarr       │ TV manager (bridge, not VPN)   │ Core             │
@@ -101,6 +130,9 @@ arr-stack network (172.20.0.0/24)
 │ 172.20.0.16  │ DIUN         │ Image update notifier          │ Optional         │
 ───────────────────────────────────────────────────────────────────────────────────
 ```
+
+> **Suwayomi** has no IP of its own — it runs in Gluetun's network namespace, so it
+> answers on `172.20.0.3:4567` like the other VPN-side services.
 
 ## Access Levels
 
@@ -165,9 +197,11 @@ Two YAML anchors define security profiles in each compose file:
 | Anchor | Used by | Capabilities |
 |--------|---------|-------------|
 | `x-security` | All non-LSIO services | None by default (services add back only what they need) |
-| `x-security-lsio` | Sonarr, Radarr, Prowlarr, qBittorrent, SABnzbd, Bazarr | `CHOWN`, `SETUID`, `SETGID`, `DAC_OVERRIDE` (s6-overlay needs these to switch users during init) |
+| `x-security-lsio` | Sonarr, Radarr, Prowlarr, qBittorrent, SABnzbd, Bazarr, Kavita | `CHOWN`, `SETUID`, `SETGID`, `DAC_OVERRIDE` (s6-overlay needs these to switch users during init) |
 
 Services that write to Docker volumes as root add back `CHOWN` + `DAC_OVERRIDE` (Jellyfin, Seerr, Uptime Kuma, DUC, Beszel, DIUN, Configarr). Services with read-only or no volumes don't need any (FlareSolverr, Cloudflared, Traefik, Deunhealth, Beszel-agent).
+
+**Suwayomi** needs no capabilities at all: it already runs as a non-root user in its image, and this stack pins that user to `PUID:PGID` so it never has to switch. The trade-off is that its bundled Chromium WebView (KCEF) can't sandbox itself under `no-new-privileges`, so `KCEF_ENABLED=false` — FlareSolverr covers the challenge-solving those sources would otherwise need.
 
 Additional requirements:
 - **Gluetun** — adds `NET_ADMIN` (required to create VPN tunnel interfaces)

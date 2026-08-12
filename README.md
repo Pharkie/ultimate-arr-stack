@@ -15,7 +15,7 @@ Works on Ugreen, Synology, QNAP, or any Docker host.
 - **Production-ready** — Real healthchecks, auto-recovery when VPN reconnects, backup script. Not just "it runs."
 - **Battle-tested** — Edge cases found and fixed across multiple NAS setups. More resilient than most.
 - **Best practices built in** — Downloads appear instantly without using extra disk space, files are named consistently, and download settings are tuned for security and performance. Based on [TRaSH Guides](https://trash-guides.info/).
-- **Everything you need** — Jellyfin, Sonarr, Radarr, Prowlarr, Bazarr, Seerr, qBittorrent, SABnzbd, Pi-hole, Cloudflare Tunnel, Tailscale. Modular — skip what you don't need, add what you do (e.g. Lidarr).
+- **Everything you need** — Jellyfin, Sonarr, Radarr, Prowlarr, Bazarr, Seerr, qBittorrent, SABnzbd, Kavita, Suwayomi, Pi-hole, Cloudflare Tunnel, Tailscale. Modular — skip what you don't need, add what you do (e.g. Lidarr).
 - **Step-by-step guide** — Not just a docker-compose file in a repo.
 - **Flexible** — Supports 30+ VPN providers. Plex users can swap or add Jellyfin (see [Plex guide](docs/SETUP.md#plex)).
 - **Privacy by default** — All downloads route through your VPN.
@@ -42,6 +42,8 @@ Works on Ugreen, Synology, QNAP, or any Docker host.
 Request: Seerr → Sonarr/Radarr → Prowlarr
 Download: qBittorrent (torrents) or SABnzbd (Usenet) — both via VPN (Gluetun)
 Watch: Jellyfin — locally or remotely via Traefik
+
+**And for reading:** Suwayomi tracks and downloads manga (also via VPN) → Kavita serves it, plus your comics and ebooks, to any browser or OPDS reader.
 
 **Choose your setup:**
 | Setup | How you access | What you need |

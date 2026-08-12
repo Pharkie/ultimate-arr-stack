@@ -236,7 +236,7 @@ Every version-changing release follows this order. Doing it as one unbroken flow
    ```bash
    npm run test:e2e
    ```
-   This logs into each service, takes screenshots of every dashboard, and asserts root folders and media libraries are present. All 14 tests must pass. Screenshots are saved to `tests/e2e/screenshots/` for visual review.
+   This logs into each service, takes screenshots of every dashboard, and asserts root folders and media libraries are present. All 18 tests must pass. Screenshots are saved to `tests/e2e/screenshots/` for visual review.
 
 ### Tagging and Publishing
 

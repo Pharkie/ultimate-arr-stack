@@ -13,12 +13,14 @@ check_uptime_monitors() {
         "duc"
         "FlareSolverr"
         "Jellyfin"
+        "Kavita"
         "Seerr"
         "Pi-hole"
         "Prowlarr"
         "qBittorrent"
         "Radarr"
         "Sonarr"
+        "Suwayomi"
         "Traefik"
     )
 

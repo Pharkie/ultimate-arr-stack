@@ -199,6 +199,8 @@ VOLUME_SUFFIXES=(
   prowlarr-config         # Indexer configs and API keys
   bazarr-config           # Subtitle provider credentials
   uptime-kuma-data        # Monitor configurations
+  kavita-config           # Users, libraries, reading progress (not re-scannable)
+  suwayomi-config         # Tracked series, installed extensions, reading progress
 )
 
 # Request manager - detect which volume exists

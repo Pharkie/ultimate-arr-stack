@@ -13,6 +13,8 @@ Your stack is running! Now configure each app to work together.
 6. Seerr (requests — needs Jellyfin + Sonarr/Radarr configured first)
 7. Bazarr (subtitles — needs Sonarr/Radarr configured first)
 8. Pi-hole (DNS — independent, do anytime)
+9. Suwayomi (manga downloads — independent, needed before Kavita's manga library)
+10. Kavita (reading server — reads what Suwayomi downloads)
 
 See **[Quick Reference → Service Connection Guide](REFERENCE.md#service-connection-guide)** for how services connect to each other.
 
@@ -306,6 +308,48 @@ Automatically downloads subtitles for your media.
 **Optional:** Set your router's DHCP DNS to your NAS IP for network-wide ad-blocking.
 
 > **Warning:** If your NAS goes down, every device on your network will lose internet (DNS stops resolving). To recover: temporarily change your device's DNS to `1.1.1.1` (or enable a VPN) so you can access your router and revert the DHCP DNS setting until Pi-hole is back up.
+
+## 4.10 Suwayomi (Manga Downloads)
+
+The Sonarr/Radarr of manga: tracks series from scanlation sources and downloads new chapters. Runs behind the VPN, so configure it before Kavita — Kavita reads what this writes.
+
+1. **Access:** `http://NAS_IP:4567`
+2. **Install sources:** Browse → Extensions → install the source extensions you want
+3. **Add series:** Browse → pick a source → search → open a series → **Add to library**
+4. **Turn on auto-download:** Settings → Downloads → enable **Auto download new chapters**
+5. **Set a login (recommended):** Suwayomi ships with `AUTH_MODE=none`. To require one, add to the `suwayomi` service in `docker-compose.arr-stack.yml`:
+   ```yaml
+   - AUTH_MODE=simple_login
+   - AUTH_USERNAME=your_username
+   - AUTH_PASSWORD=your_password
+   ```
+
+**Already configured for you in compose** — don't change these:
+
+| Setting | Value | Why |
+|---------|-------|-----|
+| `DOWNLOAD_AS_CBZ` | `true` | Kavita reads `.cbz`; loose image folders show up as no series at all |
+| `FLARESOLVERR_URL` | `http://localhost:8191` | Shares Gluetun's namespace with FlareSolverr, same as Prowlarr |
+| `KCEF_ENABLED` | `false` | The bundled Chromium can't sandbox under this stack's hardening — FlareSolverr covers it |
+
+> **Where files land:** `MEDIA_ROOT/media/manga/mangas/<Source>/<Series>/<Chapter>.cbz`. The downloads path isn't configurable via env — upstream expects it to be mounted, which compose already does.
+
+## 4.11 Kavita (Reading Server)
+
+Serves comics, manga and ebooks to any browser, tablet, or OPDS reader.
+
+1. **Access:** `http://NAS_IP:5000` *(Synology: DSM owns port 5000 — remap the host side in compose first)*
+2. **Create the admin account:** first load prompts for it. There is no default login.
+3. **Add a Manga library:** Libraries → Add Library → Type **Manga** → add one folder per Suwayomi source:
+   `/data/media/manga/mangas/<SourceName>`
+
+   > **Why not just `/data/media/manga`?** Kavita treats each immediate subfolder of a library root as a series. Point it at the top and you get one "series" called `mangas`. Pointing it at the per-source folder makes each manga a series, correctly.
+
+4. **Add a Books library:** Libraries → Add Library → Type **Book** → folder `/data/media/books`
+5. **Scan:** Libraries → ⋮ → Scan Library
+6. **Read on a tablet:** Settings → Users → your user → copy the OPDS URL into Panels, Chunky, KOReader, etc.
+
+> **Libraries are mounted read-only.** Kavita never writes to the media tree — covers, reading progress and bookmarks all live in its `/config` volume. If you need Kavita to write (e.g. metadata files), drop the `:ro` from its volume lines in `docker-compose.arr-stack.yml`.
 
 ---
 

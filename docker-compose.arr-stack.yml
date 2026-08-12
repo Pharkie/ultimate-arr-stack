@@ -19,6 +19,8 @@ volumes:
   radarr-config:
   jellyfin-config:
   jellyfin-cache:
+  kavita-config:
+  suwayomi-config:
   seerr-config:
   bazarr-config:
   dnscrypt-config:
@@ -113,6 +115,7 @@ services:
       - "8085:8085"   # qBittorrent
       - "8082:8080"   # SABnzbd
       - "8191:8191"   # FlareSolverr
+      - "4567:4567"   # Suwayomi
     networks:
       arr-stack:
         ipv4_address: 172.20.0.3
@@ -330,6 +333,110 @@ services:
       timeout: 30s
       retries: 2
       start_period: 30s
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # KAVITA - Reading server for comics, manga and ebooks. The Jellyfin of the
+  # bookshelf: it only serves files that are already on disk.
+  # Access: kavita.lan | NAS_IP:5000
+  # Runs on the arr-stack bridge (own IP 172.20.0.17), NOT behind the VPN —
+  # same rationale as Jellyfin: it never talks to indexers or peers.
+  # Libraries are mounted read-only; Kavita writes nothing to the media tree
+  # (covers, reading progress and bookmarks all live in /config).
+  #   /data/media/books              → Books library
+  #   /data/media/manga/mangas/<Src> → Manga library (filled by Suwayomi below)
+  # ═══════════════════════════════════════════════════════════════════════════
+  kavita:
+    image: lscr.io/linuxserver/kavita:0.9.0
+    container_name: kavita
+    <<: *lsio-security
+    environment:
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - TZ=${TZ}
+    ports:
+      # Synology users: DSM owns host port 5000 — remap the host side (e.g. "5002:5000")
+      - "5000:5000"   # Direct local access (http://NAS_IP:5000)
+    networks:
+      arr-stack:
+        ipv4_address: 172.20.0.17
+    volumes:
+      - kavita-config:/config
+      - ${MEDIA_ROOT}/media/books:/data/media/books:ro
+      - ${MEDIA_ROOT}/media/manga:/data/media/manga:ro
+    labels:
+      - deunhealth.restart.on.unhealthy=true
+    restart: always
+    logging: *default-logging
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:5000/api/health"]
+      interval: 2m
+      timeout: 15s
+      retries: 3
+      start_period: 60s
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # SUWAYOMI - Manga library manager + downloader (the Sonarr/Radarr of manga).
+  # Tracks series from scanlation sources and downloads new chapters.
+  # Access: suwayomi.lan | NAS_IP:4567
+  #
+  # Runs behind the VPN (network_mode: service:gluetun) because it scrapes
+  # public manga sources directly — same traffic class as Prowlarr's indexer
+  # scraping, so it gets the same protection. Two consequences:
+  #   - Its port is published on gluetun above, not here.
+  #   - It reaches FlareSolverr on localhost:8191, exactly like Prowlarr does.
+  #
+  # Downloads land in the media tree (not the config volume) so Kavita can read
+  # them: ${MEDIA_ROOT}/media/manga/mangas/<Source>/<Title>/<Chapter>.cbz
+  # The downloads path is NOT configurable via env — upstream mounts it instead,
+  # and the mount MUST be listed before the config volume. See:
+  # https://github.com/Suwayomi/docker-tachidesk#downloads-folder
+  # ═══════════════════════════════════════════════════════════════════════════
+  suwayomi:
+    image: ghcr.io/suwayomi/suwayomi-server:v2.3.2243
+    container_name: suwayomi
+    <<: *default-security
+    # Image runs as its own `suwayomi` user (uid 1000) but chmods its tree 777,
+    # so it honours an arbitrary uid:gid. Match the rest of the stack so the
+    # downloads bind-mount is written with the same ownership as other media.
+    user: "${PUID}:${PGID}"
+    network_mode: "service:gluetun"
+    depends_on:
+      gluetun:
+        condition: service_healthy
+        restart: true
+    environment:
+      - TZ=${TZ}
+      # CBZ is what Kavita reads natively — without this, chapters are written
+      # as loose image folders and Kavita sees no series.
+      - DOWNLOAD_AS_CBZ=true
+      # Shares gluetun's namespace with FlareSolverr, so localhost reaches it.
+      - FLARESOLVERR_ENABLED=true
+      - FLARESOLVERR_URL=http://localhost:8191
+      # KCEF is a bundled Chromium used as a fallback WebView. Its sandbox needs
+      # privileges this stack drops (no-new-privileges + cap_drop ALL), and a
+      # failed KCEF download is a known startup hang upstream. FlareSolverr
+      # above covers the challenge-solving case, so keep it off.
+      - KCEF_ENABLED=false
+    volumes:
+      # ORDER MATTERS: downloads before the config volume, or the bind is ignored.
+      - ${MEDIA_ROOT}/media/manga:/home/suwayomi/.local/share/Tachidesk/downloads
+      - suwayomi-config:/home/suwayomi/.local/share/Tachidesk
+    labels:
+      - deunhealth.restart.on.unhealthy=true
+      - gluetun.dependent=true  # gluetun-recover restarts this if SIGKILLed by a gluetun restart
+    restart: always
+    logging: *default-logging
+    healthcheck:
+      # Query the GraphQL API rather than "/" — the web UI is downloaded at
+      # first boot and served separately, so "/" can 404 while the server is
+      # fine. aboutServer needs no auth.
+      test: ["CMD", "curl", "-sf", "-X", "POST", "-H", "Content-Type: application/json",
+             "-d", "{\"query\":\"{aboutServer{name}}\"}",
+             "http://localhost:4567/api/graphql"]
+      interval: 3m
+      timeout: 15s
+      retries: 3
+      start_period: 120s  # JVM start + first-run web UI download
 
 # ═══════════════════════════════════════════════════════════════════════════
   # DNSCRYPT-PROXY - DNS over HTTPS/DNSCrypt proxy. Encrypts DNS queries.

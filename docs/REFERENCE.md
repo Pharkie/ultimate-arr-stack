@@ -16,11 +16,13 @@
 | Service | Core (IP:port) | + local DNS | + remote access |
 |---------|----------------|-------------|-----------------|
 | Jellyfin | `NAS_IP:8096` | `http://jellyfin.lan` | `https://jellyfin.DOMAIN` |
+| Kavita | `NAS_IP:5000` | `http://kavita.lan` | — |
 | Seerr | `NAS_IP:5055` | `http://seerr.lan` | `https://seerr.DOMAIN` |
 | Sonarr | `NAS_IP:8989` | `http://sonarr.lan` | — |
 | Radarr | `NAS_IP:7878` | `http://radarr.lan` | — |
 | Prowlarr | `NAS_IP:9696` | `http://prowlarr.lan` | — |
 | Bazarr | `NAS_IP:6767` | `http://bazarr.lan` | — |
+| Suwayomi | `NAS_IP:4567` | `http://suwayomi.lan` | — |
 | qBittorrent | `NAS_IP:8085` | `http://qbit.lan` | — |
 | SABnzbd | `NAS_IP:8082` | `http://sabnzbd.lan` | — |
 | Pi-hole | `NAS_IP:8081/admin` | `http://pihole.lan/admin` | — |
@@ -42,9 +44,11 @@
 | ↳ qBittorrent | (via Gluetun) | 8085 | Torrent downloads |
 | ↳ SABnzbd | (via Gluetun) | 8082 | Usenet downloads |
 | ↳ Prowlarr | (via Gluetun) | 9696 | Indexer manager |
+| ↳ Suwayomi | (via Gluetun) | 4567 | Manga library + downloader |
 | Sonarr | 172.20.0.10 | 8989 | TV shows (own IP — not via VPN) |
 | Radarr | 172.20.0.11 | 7878 | Movies (own IP — not via VPN) |
 | Jellyfin | 172.20.0.4 | 8096 | Media server |
+| Kavita | 172.20.0.17 | 5000 | Comics/manga/ebook reader |
 | Pi-hole | 172.20.0.5 | 8081 | DNS ad-blocking (`/admin`) |
 | Seerr | 172.20.0.8 | 5055 | Request management |
 | Bazarr | 172.20.0.9 | 6767 | Subtitles |
@@ -80,9 +84,9 @@
 
 ### Service Connection Guide
 
-**VPN-protected services** (qBittorrent, SABnzbd, Prowlarr, FlareSolverr) share Gluetun's network via `network_mode: service:gluetun` — these carry the traffic that must stay hidden (peers + indexer scraping).
+**VPN-protected services** (qBittorrent, SABnzbd, Prowlarr, FlareSolverr, Suwayomi) share Gluetun's network via `network_mode: service:gluetun` — these carry the traffic that must stay hidden (peers + indexer/source scraping).
 
-**Bridge services** (Sonarr, Radarr, Jellyfin, Seerr, Bazarr, …) run on the `arr-stack` bridge with their own IPs. Sonarr (172.20.0.10) and Radarr (172.20.0.11) are *not* behind the VPN: they only contact metadata providers (TVDB/TMDB) and internal services, so they need no VPN — and staying on the bridge keeps them reachable when a gluetun/VPN reconnect happens.
+**Bridge services** (Sonarr, Radarr, Jellyfin, Kavita, Seerr, Bazarr, …) run on the `arr-stack` bridge with their own IPs. Sonarr (172.20.0.10) and Radarr (172.20.0.11) are *not* behind the VPN: they only contact metadata providers (TVDB/TMDB) and internal services, so they need no VPN — and staying on the bridge keeps them reachable when a gluetun/VPN reconnect happens.
 
 | From | To | Use | Why |
 |------|-----|-----|-----|
@@ -98,6 +102,8 @@
 | Seerr | Jellyfin | `jellyfin:8096` | Both have own IPs |
 | Bazarr | Sonarr | `sonarr:8989` | Both on the bridge |
 | Bazarr | Radarr | `radarr:7878` | Both on the bridge |
+| Suwayomi | FlareSolverr | `localhost:8191` | Same network stack (both behind Gluetun) |
+| Kavita | Suwayomi | (filesystem) | Kavita reads the `.cbz` files Suwayomi writes — no HTTP between them |
 
 > **Reaching VPN-side services from the bridge:** use the `gluetun` hostname (or `172.20.0.3`) — qBittorrent/SABnzbd/Prowlarr listen inside gluetun's namespace, so they have no Docker DNS name of their own. Gluetun's `FIREWALL_OUTBOUND_SUBNETS` includes `172.20.0.0/24`, so Prowlarr (in the VPN namespace) can reach Sonarr/Radarr on the bridge.
 
@@ -160,12 +166,14 @@ Services start in dependency order (handled automatically by `depends_on`):
 | Service | Description |
 |---------|-------------|
 | Jellyfin | Media streaming |
+| Kavita | Comic/manga/ebook reading server |
 | Seerr | Request system |
 | Sonarr | TV management |
 | Radarr | Movie management |
 | Prowlarr | Indexer manager |
 | qBittorrent | Torrent client |
 | SABnzbd | Usenet client |
+| Suwayomi | Manga library + downloader |
 | Bazarr | Subtitles |
 | Gluetun | VPN gateway |
 | Pi-hole | DNS/ad-blocking |

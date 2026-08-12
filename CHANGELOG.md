@@ -2,6 +2,30 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+> **Not yet verified on the NAS.** Per CLAUDE.md this must be deployed from the
+> `feat/kavita-suwayomi` branch and confirmed working before it reaches `main`.
+
+### Added
+- **Kavita** (`lscr.io/linuxserver/kavita:0.9.0`) — reading server for comics, manga and ebooks. Bridge service on `172.20.0.17:5000`, **not** behind the VPN: like Jellyfin it only ever serves files already on disk. Libraries are mounted read-only (`/data/media/books`, `/data/media/manga`) because Kavita keeps covers, reading progress and bookmarks in its `/config` volume and writes nothing to the media tree. Uses the existing `x-security-lsio` anchor. Healthcheck hits `/api/health`, which is anonymous.
+- **Suwayomi** (`ghcr.io/suwayomi/suwayomi-server:v2.3.2243`) — manga library manager and downloader. Runs **behind Gluetun** (`network_mode: service:gluetun`, port `4567` published on gluetun, `gluetun.dependent=true` so `gluetun-recover` revives it after a VPN flap). It scrapes public scanlation sources directly, which is the same traffic class as Prowlarr's indexer scraping, so it gets the same protection. Being in gluetun's namespace also means it reaches **FlareSolverr on `localhost:8191`** exactly as Prowlarr does.
+- **`kavita.lan` and `suwayomi.lan`** — Traefik routers plus dnsmasq entries. Suwayomi routes to `172.20.0.3:4567` (gluetun's IP) since it has no IP of its own.
+- **Four new E2E tests** (14 → 18): UI screenshots for both, a Kavita assertion that its libraries live under `/data/media`, and a Suwayomi GraphQL `aboutServer` check that doubles as proof gluetun is publishing 4567.
+
+### Changed
+- **`MEDIA_ROOT/media` gains `books/` and `manga/`.** SETUP.md's `mkdir` commands now create them. **Existing installs must create them by hand before deploying** — if Docker auto-creates the bind-mount targets they land as `root:root` and Suwayomi, which runs as `PUID:PGID`, cannot write:
+  ```bash
+  sudo mkdir -p /volume1/data/media/{books,manga}
+  sudo chown -R 1000:1000 /volume1/data/media/books /volume1/data/media/manga
+  ```
+- **`scripts/arr-backup.sh`** now backs up `kavita-config` and `suwayomi-config`. Both hold state that no re-scan can rebuild: Kavita's users and reading progress, Suwayomi's tracked series and installed extensions.
+
+### Notes on the two non-obvious config choices
+- **`DOWNLOAD_AS_CBZ=true`** is not cosmetic. Suwayomi's default writes each chapter as a folder of loose images, which Kavita does not recognise as a series at all — the manga library would scan to empty.
+- **`KCEF_ENABLED=false`.** Suwayomi bundles a Chromium (KCEF) as a fallback WebView. Its sandbox needs privileges this stack drops (`no-new-privileges` + `cap_drop: ALL`), and a failed KCEF download is a known upstream startup hang. FlareSolverr covers the challenge-solving those sources need, so it is off deliberately.
+- **Downloads are mounted, not configured.** Upstream does not expose the downloads path as an env var — it expects a bind mount, and the mount must be listed *before* the config volume or it is ignored. Chapters land at `MEDIA_ROOT/media/manga/mangas/<Source>/<Series>/<Chapter>.cbz`, so Kavita's manga library folders are the per-source directories (`/data/media/manga/mangas/<Source>`), not the top of the tree — Kavita treats each immediate subfolder of a library root as a series.
+
 ## [1.7.26] - 2026-08-05
 
 ### Changed

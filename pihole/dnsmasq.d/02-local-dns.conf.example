@@ -11,6 +11,7 @@
 
 # Media services
 address=/jellyfin.lan/TRAEFIK_LAN_IP
+address=/kavita.lan/TRAEFIK_LAN_IP
 address=/seerr.lan/TRAEFIK_LAN_IP
 address=/jellyseerr.lan/TRAEFIK_LAN_IP
 address=/jellyseer.lan/TRAEFIK_LAN_IP
@@ -20,6 +21,7 @@ address=/sonarr.lan/TRAEFIK_LAN_IP
 address=/radarr.lan/TRAEFIK_LAN_IP
 address=/prowlarr.lan/TRAEFIK_LAN_IP
 address=/bazarr.lan/TRAEFIK_LAN_IP
+address=/suwayomi.lan/TRAEFIK_LAN_IP
 
 # Download clients
 address=/qbit.lan/TRAEFIK_LAN_IP
