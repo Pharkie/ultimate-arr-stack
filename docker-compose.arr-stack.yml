@@ -313,24 +313,22 @@ services:
     # Hardware transcoding: DH4300 Plus is Rockchip RK3588C, not Intel, so Quick
     # Sync (/dev/dri + render group) does not apply here.
     #
-    # RK3588 RKMPP hw transcoding (Jellyfin 10.9+) needs a Rockchip BSP kernel
-    # (5.10/6.1 LTS) exposing these device nodes, plus a relaxed security profile.
-    # UNVERIFIED on UGOS Pro - before enabling, SSH in and check which of these
-    # actually exist:
-    #   ls -la /dev/dri /dev/dma_heap /dev/mali0 /dev/rga /dev/mpp_service 2>&1
-    # If they're missing, UGOS Pro's kernel doesn't expose the VPU to containers
-    # and Jellyfin will fall back to CPU transcoding (works, just slower/hotter).
-    # Uncomment the two blocks below only after confirming the devices exist:
-    # security_opt:
-    #   - no-new-privileges:true
-    #   - apparmor:unconfined
-    #   - systempaths=unconfined
-    # devices:
-    #   - /dev/dri:/dev/dri
-    #   - /dev/dma_heap:/dev/dma_heap
-    #   - /dev/mali0:/dev/mali0
-    #   - /dev/rga:/dev/rga
-    #   - /dev/mpp_service:/dev/mpp_service
+    # RK3588 RKMPP hw transcoding (Jellyfin 10.9+) via the Rockchip BSP kernel's
+    # VPU. Confirmed present on this NAS (kernel 6.1.84, all device nodes exist):
+    #   /dev/dri/{card0,card1,renderD128,renderD129} /dev/dma_heap/{cma,system}
+    #   /dev/mali0 /dev/rga /dev/mpp_service
+    # After the stack is up, enable RKMPP in Jellyfin dashboard > Playback and
+    # uncheck any codecs the RK3588 doesn't support.
+    security_opt:
+      - no-new-privileges:true
+      - apparmor:unconfined
+      - systempaths=unconfined
+    devices:
+      - /dev/dri:/dev/dri
+      - /dev/dma_heap:/dev/dma_heap
+      - /dev/mali0:/dev/mali0
+      - /dev/rga:/dev/rga
+      - /dev/mpp_service:/dev/mpp_service
     volumes:
       - jellyfin-config:/config
       - jellyfin-cache:/cache
