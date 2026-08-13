@@ -310,11 +310,27 @@ services:
       - "1900:1900/udp" # DLNA
     environment:
       - TZ=${TZ}
-    # Hardware transcoding (Intel Quick Sync) - remove these 4 lines if no Intel GPU
-    devices:
-      - /dev/dri:/dev/dri
-    group_add:
-      - "${RENDER_GROUP_ID:-0}"  # Find ID: getent group render | cut -d: -f3
+    # Hardware transcoding: DH4300 Plus is Rockchip RK3588C, not Intel, so Quick
+    # Sync (/dev/dri + render group) does not apply here.
+    #
+    # RK3588 RKMPP hw transcoding (Jellyfin 10.9+) needs a Rockchip BSP kernel
+    # (5.10/6.1 LTS) exposing these device nodes, plus a relaxed security profile.
+    # UNVERIFIED on UGOS Pro - before enabling, SSH in and check which of these
+    # actually exist:
+    #   ls -la /dev/dri /dev/dma_heap /dev/mali0 /dev/rga /dev/mpp_service 2>&1
+    # If they're missing, UGOS Pro's kernel doesn't expose the VPU to containers
+    # and Jellyfin will fall back to CPU transcoding (works, just slower/hotter).
+    # Uncomment the two blocks below only after confirming the devices exist:
+    # security_opt:
+    #   - no-new-privileges:true
+    #   - apparmor:unconfined
+    #   - systempaths=unconfined
+    # devices:
+    #   - /dev/dri:/dev/dri
+    #   - /dev/dma_heap:/dev/dma_heap
+    #   - /dev/mali0:/dev/mali0
+    #   - /dev/rga:/dev/rga
+    #   - /dev/mpp_service:/dev/mpp_service
     volumes:
       - jellyfin-config:/config
       - jellyfin-cache:/cache
