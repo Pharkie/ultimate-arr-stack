@@ -634,6 +634,50 @@ Other *arr apps you can add to your Core stack:
 
 </details>
 
+<details>
+<summary>Example: Adding TorBox (Decypharr)</summary>
+
+[Decypharr](https://github.com/sirrobot01/decypharr) presents a qBittorrent-compatible API backed
+by [TorBox](https://torbox.app) (a debrid service that downloads torrents on its own servers and
+hands you the finished file over HTTPS). Sonarr/Radarr add it as a **second, separate** download
+client alongside the real qBittorrent — this doesn't replace or change your existing VPN/qBittorrent
+setup.
+
+Unlike Lidarr above, Decypharr does **not** run behind Gluetun: it never touches a torrent swarm,
+only TorBox's HTTPS API, so it gains nothing from the VPN (same reasoning as the Sonarr/Radarr
+off-VPN migration — see `docs/MIGRATION-arr-off-vpn.md`).
+
+1. Get a TorBox API key from https://torbox.app/settings and add it to `.env`:
+   ```bash
+   TORBOX_API_KEY=your_key_here
+   ```
+
+2. Create the storage folders (sibling to `torrents/` and `usenet/`):
+   ```bash
+   mkdir -p ${MEDIA_ROOT}/torbox/{tv,movies}
+   ```
+
+3. `decypharr` is already defined in `docker-compose.arr-stack.yml` (static IP `172.20.0.7`, port
+   `8282`). Redeploy:
+   ```bash
+   docker compose -f docker-compose.arr-stack.yml up -d decypharr
+   ```
+
+4. Open `http://NAS_IP:8282`, add your TorBox API key, and confirm the account authenticates
+   before configuring anything in Sonarr/Radarr. Verify the exact config field names against
+   Decypharr's own settings UI / GitHub docs — set the debrid provider's download folder to
+   `/data/torbox`, and set `download_uncached` off so it only grabs content TorBox already has
+   cached (that's the point of using it — an uncached grab just makes TorBox a slow relay).
+
+5. In Sonarr → Settings → Download Clients (and again in Radarr), add a **new** qBittorrent-type
+   client: Host `decypharr`, Port `8282`, Category `tv` (Sonarr) / `movies` (Radarr). Leave your
+   existing qBittorrent entry in place.
+
+6. **(+ local DNS)** Same optional `.lan` domain steps as the Lidarr example above, using
+   `decypharr.lan` → `172.20.0.7`.
+
+</details>
+
 ---
 
 ## Further Reading

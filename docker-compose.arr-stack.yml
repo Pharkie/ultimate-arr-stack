@@ -21,6 +21,7 @@ volumes:
   jellyfin-cache:
   seerr-config:
   bazarr-config:
+  decypharr-config:
   dnscrypt-config:
   pihole-etc-pihole:
 
@@ -489,6 +490,44 @@ services:
       interval: 3m
       timeout: 10s
       retries: 2
+      start_period: 60s
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # DECYPHARR - TorBox debrid download client. Presents a qBittorrent-compatible
+  # API so Sonarr/Radarr can add it as a second download client alongside the
+  # real qBittorrent. Downloads finished files straight to /data/torbox from
+  # TorBox's servers over HTTPS - no torrent swarm traffic from this NAS, so
+  # unlike qBittorrent/SABnzbd/Prowlarr it does NOT need the VPN (same reasoning
+  # as the Sonarr/Radarr off-VPN migration, see docs/MIGRATION-arr-off-vpn.md).
+  # ═══════════════════════════════════════════════════════════════════════════
+  decypharr:
+    image: ghcr.io/sirrobot01/decypharr:latest
+    container_name: decypharr
+    <<: *default-security
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+    ports:
+      - "8282:8282"
+    environment:
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - TZ=${TZ}
+    networks:
+      arr-stack:
+        ipv4_address: 172.20.0.7
+    volumes:
+      - decypharr-config:/app
+      - ${MEDIA_ROOT}:/data
+    labels:
+      - deunhealth.restart.on.unhealthy=true
+    restart: always
+    logging: *default-logging
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8282/"]
+      interval: 2m
+      timeout: 15s
+      retries: 3
       start_period: 60s
 
   # ═══════════════════════════════════════════════════════════════════════════
