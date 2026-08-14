@@ -43,6 +43,18 @@ Three one-time settings at [login.tailscale.com/admin](https://login.tailscale.c
 
 > **Why split DNS?** Tailscale doesn't override your device's normal DNS unless you tell it to (we set `TS_ACCEPT_DNS=false`). The split-DNS rule says "only for `.lan` queries, ask Pi-hole" — everything else keeps using the device's normal resolver.
 
+### Optional: use the NAS as an exit node
+
+The compose file also advertises the NAS as an exit node (`--advertise-exit-node`), which lets a device route **all** its internet traffic through your home connection — not just LAN traffic. Useful if you want Tailscale to double as your "encrypt my traffic on untrusted WiFi" VPN instead of running a second always-on VPN app.
+
+**Approve it** (one-time, same *Machines* page as the subnet route): click your NAS → *Edit route settings* → under *Exit node* tick both `0.0.0.0/0` and `::/0` → Save.
+
+**Enable it per-device**: in the Tailscale app, open the device list / settings and select the NAS as your exit node.
+
+> ⚠️ Android (and most mobile OSes) only run **one** VPN app at a time. If you also run an always-on VPN app (e.g. ProtonVPN), it and Tailscale will kick each other off the tunnel — including with that app's own split-tunneling/exclude-app settings enabled, since that only affects which traffic uses an *already-active* tunnel, not whether two VPN apps can hold the system tunnel concurrently. Using the NAS as an exit node is meant to **replace** that other VPN app on such devices, not run alongside it.
+
+If you host a NAS on a locked-down system (sysctls mounted read-only inside containers), you may need to enable `net.ipv6.conf.all.forwarding` and `net.ipv4.conf.all.src_valid_mark` on the host directly (`sysctl -w ...`, then persist in `/etc/sysctl.conf` or `/etc/sysctl.d/`) — check `docker exec tailscale tailscale status --json | grep -A2 Health` for a forwarding warning after enabling the exit node.
+
 ## 4. Install Tailscale on your devices
 
 - **iOS/Android**: install the Tailscale app, sign in with the same account
