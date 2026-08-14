@@ -142,6 +142,15 @@ Searches for TV shows, sends download links to qBittorrent/SABnzbd, and organize
    - API Key: (from SABnzbd Config → General)
    - Category: `tv`
 
+   **Decypharr / TorBox (debrid):** *(if configured — see [Adding TorBox](SETUP.md#adding-more-services-core))*
+   - Add → qBittorrent (Decypharr speaks the qBittorrent Web API)
+   - Host: `decypharr` (Decypharr is on the bridge, same as Sonarr — no VPN hop needed)
+   - Port: `8282`
+   - **Username:** `http://sonarr:8989` (Sonarr's own URL — not a real qBittorrent login; this is
+     how Decypharr identifies which Arr is calling, matched against its own `arrs` config)
+   - **Password:** Sonarr's API key (Settings → General → API Key)
+   - Category: `tv`
+
 5. **Enable NFO metadata:** Settings → Metadata → Kodi (XBMC) / Emby → **Enable** (see [why this matters](#nfo-metadata))
    - Series Metadata: ✅
    - Episode Metadata: ✅
@@ -185,6 +194,15 @@ Searches for movies, sends download links to qBittorrent/SABnzbd, and organizes 
    - API Key: (from SABnzbd Config → General)
    - Category: `movies`
 
+   **Decypharr / TorBox (debrid):** *(if configured — see [Adding TorBox](SETUP.md#adding-more-services-core))*
+   - Add → qBittorrent (Decypharr speaks the qBittorrent Web API)
+   - Host: `decypharr` (Decypharr is on the bridge, same as Radarr — no VPN hop needed)
+   - Port: `8282`
+   - **Username:** `http://radarr:7878` (Radarr's own URL — not a real qBittorrent login; this is
+     how Decypharr identifies which Arr is calling, matched against its own `arrs` config)
+   - **Password:** Radarr's API key (Settings → General → API Key)
+   - Category: `movies`
+
 5. **Enable NFO metadata:** Settings → Metadata → Kodi (XBMC) / Emby → **Enable** (see [why this matters](#nfo-metadata))
    - Movie Metadata: ✅
    - Movie Images: ❌ (Jellyfin handles its own artwork)
@@ -213,6 +231,14 @@ If you have both qBittorrent and SABnzbd configured, Sonarr/Radarr will grab whi
 This gives Usenet a 30-minute head start before considering torrents.
 
 > **Note:** Do this in both Sonarr and Radarr (same steps in each).
+
+**Preferring TorBox/Decypharr over qBittorrent:** *(if both are configured)* Delay profiles only
+split by protocol (Usenet vs. torrent) — Decypharr shows up as a torrent-protocol client too, so
+it shares the same Torrent Delay as real qBittorrent. To prefer one torrent client over the other,
+set each client's **Priority** instead (Settings → Download Clients → edit the client → Priority
+field, `1` = tried first, `50` = tried last). Give Decypharr a lower number than qBittorrent to
+try the cached/instant TorBox grab first, falling back to VPN-routed qBittorrent for anything
+TorBox doesn't have.
 
 ### NFO Metadata
 

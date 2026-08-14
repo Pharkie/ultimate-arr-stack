@@ -634,6 +634,72 @@ Other *arr apps you can add to your Core stack:
 
 </details>
 
+<details>
+<summary>Example: Adding TorBox (Decypharr)</summary>
+
+[Decypharr](https://github.com/sirrobot01/decypharr) presents a qBittorrent-compatible API backed
+by [TorBox](https://torbox.app) (a debrid service that downloads torrents on its own servers and
+hands you the finished file over HTTPS). Sonarr/Radarr add it as a **second, separate** download
+client alongside the real qBittorrent — this doesn't replace or change your existing VPN/qBittorrent
+setup.
+
+Unlike Lidarr above, Decypharr does **not** run behind Gluetun: it never touches a torrent swarm,
+only TorBox's HTTPS API, so it gains nothing from the VPN (same reasoning as the Sonarr/Radarr
+off-VPN migration — see `docs/MIGRATION-arr-off-vpn.md`).
+
+1. Get a TorBox API key from https://torbox.app/settings and add it to `.env`:
+   ```bash
+   TORBOX_API_KEY=your_key_here
+   ```
+
+2. Create the storage folders (sibling to `torrents/` and `usenet/`):
+   ```bash
+   mkdir -p ${MEDIA_ROOT}/torbox/{tv,movies}
+   ```
+
+3. `decypharr` is already defined in `docker-compose.arr-stack.yml` (static IP `172.20.0.7`, port
+   `8282`). Redeploy:
+   ```bash
+   docker compose -f docker-compose.arr-stack.yml up -d decypharr
+   ```
+
+4. First run auto-creates `/app/config.json` (in the `decypharr-config` volume) with no debrid
+   provider configured. Edit it directly (or via the Web UI setup wizard at `http://NAS_IP:8282`)
+   to add TorBox and point downloads at the shared `/data` mount:
+   ```json
+   {
+     "debrids": [
+       { "provider": "torbox", "name": "TorBox", "api_key": "your_torbox_key", "download_uncached": false }
+     ],
+     "mount": { "type": "none" },
+     "default_download_action": "download",
+     "categories": ["tv", "movies"],
+     "download_folder": "/data/torbox",
+     "arrs": [
+       { "name": "Sonarr", "host": "http://sonarr:8989", "token": "sonarr_api_key", "download_action": "download" },
+       { "name": "Radarr", "host": "http://radarr:7878", "token": "radarr_api_key", "download_action": "download" }
+     ]
+   }
+   ```
+   `mount.type: "none"` + `download_action: "download"` is what gives direct-download-to-disk (no
+   FUSE/rclone) — the auto-generated default is `"symlink"`, which needs a mount and won't work
+   without one. Restart Decypharr after editing (`docker compose -f docker-compose.arr-stack.yml
+   restart decypharr`) and confirm the logs show `debrids=1` with no auth errors.
+
+5. In Sonarr → Settings → Download Clients (and again in Radarr), add a **new** qBittorrent-type
+   client — Host `decypharr`, Port `8282`, Category `tv` (Sonarr) / `movies` (Radarr). **Username
+   and Password are not your qBittorrent credentials** — Decypharr uses them to identify which Arr
+   is calling, matched against the `arrs` entries above:
+   - Username: the Arr's own URL as Decypharr sees it (`http://sonarr:8989` / `http://radarr:7878`)
+   - Password: that Arr's own API key (Settings → General → API Key)
+
+   Leave your existing qBittorrent entry in place — this is additive.
+
+6. **(+ local DNS)** Same optional `.lan` domain steps as the Lidarr example above, using
+   `decypharr.lan` → `172.20.0.7`.
+
+</details>
+
 ---
 
 ## Further Reading
