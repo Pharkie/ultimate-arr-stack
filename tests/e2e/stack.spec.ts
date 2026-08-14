@@ -467,6 +467,52 @@ test.describe('API assertions', () => {
     expect(results).toEqual(expect.arrayContaining([expect.objectContaining({ isValid: true })]));
   });
 
+  test('Sonarr — SABnzbd download client is configured and reachable', async ({ request }) => {
+    const apiKey = process.env.SONARR_API_KEY;
+    test.skip(!apiKey, 'SONARR_API_KEY not set');
+
+    const clients = await request.get(url('sonarr', '/api/v3/downloadclient'), {
+      headers: { 'X-Api-Key': apiKey! },
+    });
+    expect(clients.ok()).toBeTruthy();
+    const clientList = await clients.json();
+    expect(clientList).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ implementation: 'Sabnzbd', enable: true }),
+      ]),
+    );
+
+    const test_ = await request.post(url('sonarr', '/api/v3/downloadclient/testall'), {
+      headers: { 'X-Api-Key': apiKey! },
+    });
+    expect(test_.ok()).toBeTruthy();
+    const results = await test_.json();
+    expect(results).toEqual(expect.arrayContaining([expect.objectContaining({ isValid: true })]));
+  });
+
+  test('Radarr — SABnzbd download client is configured and reachable', async ({ request }) => {
+    const apiKey = process.env.RADARR_API_KEY;
+    test.skip(!apiKey, 'RADARR_API_KEY not set');
+
+    const clients = await request.get(url('radarr', '/api/v3/downloadclient'), {
+      headers: { 'X-Api-Key': apiKey! },
+    });
+    expect(clients.ok()).toBeTruthy();
+    const clientList = await clients.json();
+    expect(clientList).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ implementation: 'Sabnzbd', enable: true }),
+      ]),
+    );
+
+    const test_ = await request.post(url('radarr', '/api/v3/downloadclient/testall'), {
+      headers: { 'X-Api-Key': apiKey! },
+    });
+    expect(test_.ok()).toBeTruthy();
+    const results = await test_.json();
+    expect(results).toEqual(expect.arrayContaining([expect.objectContaining({ isValid: true })]));
+  });
+
   test('Sonarr — has at least one enabled indexer', async ({ request }) => {
     const apiKey = process.env.SONARR_API_KEY;
     test.skip(!apiKey, 'SONARR_API_KEY not set');

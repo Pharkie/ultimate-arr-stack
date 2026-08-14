@@ -136,9 +136,10 @@ Searches for TV shows, sends download links to qBittorrent/SABnzbd, and organize
 
    **SABnzbd (Usenet):** *(if configured)*
    - Add → SABnzbd
-   - Host: `gluetun` (SABnzbd is behind the VPN)
-   - Port: `8080`
-   - **Note:** SABnzbd's `host_whitelist` must include `gluetun` or it returns `403 Forbidden`.
+   - Host: `172.20.0.3` (gluetun's static IP on the bridge — same pattern as the qBittorrent entry
+     above; SABnzbd is behind the VPN, and using the IP directly avoids SABnzbd's `host_whitelist`
+     hostname check returning `403 Forbidden`)
+   - Port: `8080` (SABnzbd's internal port — not `8082`, which is only the host-published mapping)
    - API Key: (from SABnzbd Config → General)
    - Category: `tv`
 
@@ -189,8 +190,10 @@ Searches for movies, sends download links to qBittorrent/SABnzbd, and organizes 
 
    **SABnzbd (Usenet):** *(if configured)*
    - Add → SABnzbd
-   - Host: `localhost` (SABnzbd also runs via gluetun)
-   - Port: `8080`
+   - Host: `172.20.0.3` (gluetun's static IP on the bridge — same pattern as the qBittorrent entry
+     above; SABnzbd is behind the VPN, and using the IP directly avoids SABnzbd's `host_whitelist`
+     hostname check returning `403 Forbidden`)
+   - Port: `8080` (SABnzbd's internal port — not `8082`, which is only the host-published mapping)
    - API Key: (from SABnzbd Config → General)
    - Category: `movies`
 
