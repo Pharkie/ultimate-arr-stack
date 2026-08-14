@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.7.27] - 2026-08-14
+
+### Added
+- **Tailscale exit node**: the NAS now advertises `--advertise-exit-node` alongside its existing subnet route, so a tailnet device can route *all* its internet traffic through home, not just LAN traffic. Meant as a substitute for an always-on VPN app on mobile, where the OS only runs one VPN tunnel at a time — confirmed live that connecting Tailscale and ProtonVPN (always-on) on the same Android device disconnect each other, even with ProtonVPN's own split-tunneling excluding the Tailscale app (that setting only affects traffic routing within an already-active tunnel, not concurrent VPN apps). Approved via the Tailscale API (`0.0.0.0/0` + `::/0` enabled routes on the NAS device). Also needed two host sysctls this NAS didn't have by default — `net.ipv6.conf.all.forwarding=1` and `net.ipv4.conf.all.src_valid_mark=1` — persisted in `/etc/sysctl.conf` so they survive reboots; without them Tailscale reports "Subnet routing is enabled, but IP forwarding is disabled" even though `net.ipv4.ip_forward` was already on. See `docs/TAILSCALE.md`.
+
 ## [1.7.26] - 2026-08-05
 
 ### Changed
