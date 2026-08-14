@@ -262,13 +262,21 @@ Manages torrent/Usenet indexers and syncs them to Sonarr/Radarr.
 3. **Add Torrent Indexers:** Indexers (left sidebar) → + button → search by name
 4. **If using SABnzbd: Add Usenet Indexer**
    - **Indexers** (left sidebar, NOT Settings → Indexer Proxies) → + button
-   - Search by indexer name (e.g., "NZBGeek", "DrunkenSlug", "NZBFinder")
-   - API Key: (from your indexer account → API section)
+   - Search by indexer name (e.g., "NZBGeek", "Usenet-Crawler") — use **Generic Newznab** if
+     Prowlarr has no built-in definition for your indexer, with Url `https://<indexer-host>` and
+     API Path `/api`
+   - API Key: (from your indexer account → profile/API section)
    - **Tags:** leave blank (syncs to all apps)
    - **Indexer Proxy:** leave blank (not needed for Usenet)
    - Test → Save
 
-   > **Tested with:** NZBGeek (~$12/year, reliable). Free alternatives: DrunkenSlug, NZBFinder.
+   > **Tested with:** Usenet-Crawler (free, open registration at usenet-crawler.com, 50 API
+   > hits/day, real search results confirmed working via Generic Newznab). NZBGeek (~$12/year) is
+   > the reliable paid option. **Avoid:** NZBFinder's free tier has no API access (search returns
+   > "premium member required" even with a valid key); DrunkenSlug's registration is currently
+   > closed; TorBox's own `search-api.torbox.app` Newznab/Torznab endpoint (documented in their
+   > changelog) currently doesn't resolve in DNS at all — confirmed via TorBox's own authoritative
+   > nameserver, not just a local issue.
 
 4. **Add FlareSolverr** (for protected torrent sites):
    - Settings → Indexers → Add FlareSolverr

@@ -2,6 +2,23 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.7.28] - 2026-08-15
+
+### Added
+- **SABnzbd wired into Sonarr/Radarr for Usenet downloads via TorBox**: fixed SABnzbd's storage
+  paths (`complete_dir`/`download_dir` were relative, resolving inside SABnzbd's own config volume
+  instead of the shared media volume), added `tv`/`movies` categories, and added SABnzbd as a
+  download client in both Sonarr and Radarr (host `172.20.0.3:8080` — gluetun's bridge IP and
+  SABnzbd's internal port; using the IP directly avoids SABnzbd's hostname-whitelist `403`). See
+  `docs/APP-CONFIG.md` §4.4/§4.5, which also fixes a pre-existing bug listing Radarr's SABnzbd host
+  as `localhost` (unreachable since Radarr moved onto the bridge network). Added e2e coverage for
+  both new download clients.
+
+### Fixed
+- **Prowlarr's stale `Internet Archive` indexer removed** — had been failing DNS/connectivity for
+  6+ hours, tripping Sonarr/Radarr's "all indexers unavailable" health check. Replaced with a
+  working free Usenet indexer (Usenet-Crawler, via Prowlarr's Generic Newznab definition).
+
 ## [1.7.27] - 2026-08-14
 
 ### Added
