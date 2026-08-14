@@ -14,10 +14,21 @@ All notable changes to this project will be documented in this file.
   as `localhost` (unreachable since Radarr moved onto the bridge network). Added e2e coverage for
   both new download clients.
 
+- **Trakt integration**: Jellyfin's Trakt plugin installed and authorized (bidirectional
+  watched-status sync + scrobbling) via its native device-code flow. Sonarr/Radarr Trakt import
+  lists (auto-add from watchlist/trending/a list URL) were attempted but are currently **blocked
+  by an upstream bug**, not a config issue — see `docs/APP-CONFIG.md` §4.6a for detail and tracking
+  links.
+
 ### Fixed
 - **Prowlarr's stale `Internet Archive` indexer removed** — had been failing DNS/connectivity for
   6+ hours, tripping Sonarr/Radarr's "all indexers unavailable" health check. Replaced with a
   working free Usenet indexer (Usenet-Crawler, via Prowlarr's Generic Newznab definition).
+- **SABnzbd's TorBox Usenet connection**: real end-to-end grab confirmed working after regenerating
+  the account's NNTP username/password from TorBox's dashboard. The `482 Invalid username or
+  password` error seen earlier looked like a plan-tier rate limit (TorBox's account API showed a
+  `cooldown_until` field at the time) but was actually just stale credentials — correcting that
+  earlier theory. See `docs/APP-CONFIG.md` §4.6.
 
 ## [1.7.27] - 2026-08-14
 

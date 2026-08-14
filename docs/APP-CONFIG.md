@@ -278,6 +278,16 @@ Manages torrent/Usenet indexers and syncs them to Sonarr/Radarr.
    > changelog) currently doesn't resolve in DNS at all — confirmed via TorBox's own authoritative
    > nameserver, not just a local issue.
 
+   > **Full pipeline verified end-to-end (2026-08-15):** Usenet-Crawler search → Radarr grab →
+   > SABnzbd download/repair/unpack → Radarr hardlink-import, all confirmed with a real movie
+   > grab. One gotcha along the way: SABnzbd's TorBox NNTP server (`nntp.torbox.app:563`) rejected
+   > login with a generic `482 Invalid username or password` even though the credentials matched
+   > what was on file — this looked like a rate limit (TorBox's `/v1/api/user/me` showed a
+   > `cooldown_until` field at the time) but was actually just **stale/incorrect Usenet
+   > credentials**. Regenerating the username+password from TorBox's Usenet settings page fixed it
+   > immediately. If you hit `482` errors, regenerate the credentials before assuming it's a
+   > plan-tier limit.
+
 4. **Add FlareSolverr** (for protected torrent sites):
    - Settings → Indexers → Add FlareSolverr
    - Host: `http://localhost:8191` (FlareSolverr shares Gluetun's network with Prowlarr)
@@ -290,6 +300,40 @@ Manages torrent/Usenet indexers and syncs them to Sonarr/Radarr.
    - API Key: (from Sonarr → Settings → General → Security)
 6. **Connect to Radarr:** Same process — Radarr Server: `http://172.20.0.11:7878`
 7. **Sync:** Settings → Apps → Sync App Indexers
+
+## 4.6a Trakt (Watched-status sync + list-based suggestions)
+
+Two independent integrations — install/configure separately, they don't depend on each other.
+
+**Jellyfin (watched-status sync, scrobbling):**
+1. Install the **Trakt** plugin: Dashboard → Plugins → Catalog → Trakt → Install → restart Jellyfin
+2. Dashboard → Plugins → Trakt → configure per-user, click **Authorize** → note the device code
+   shown → visit `https://trakt.tv/activate` in a browser, sign in (Trakt is passwordless now —
+   it emails a magic sign-in link, no password prompt), enter the code, approve
+3. Confirms via the plugin's config page once approved; access/refresh tokens are stored and
+   auto-renew
+
+**Sonarr/Radarr (auto-add from Trakt lists — watchlist, trending, a specific list URL, etc.):**
+1. Settings → Import Lists → Add → **Trakt User List** (personal watchlist/watched/collection) or
+   **Trakt List** (any public list URL) or **Trakt Popular List** (no auth needed)
+2. For the user-authenticated types, click **Authenticate with Trakt** inside the Add-list modal —
+   this opens Trakt's OAuth consent in a popup, backed by Servarr's own shared OAuth proxy
+   (`auth.servarr.com`), not something this stack configures directly
+
+> **Trakt free-tier gotcha:** free Trakt accounts allow only **one** connected third-party app at
+> a time — Jellyfin, Sonarr, and Radarr each count separately (different registered client IDs).
+> Connecting a second one kicks the first. **Trakt VIP removes this limit** and lets all three
+> stay connected simultaneously.
+
+> **Known issue (as of 2026-08-15):** Sonarr/Radarr's Trakt OAuth currently fails with `Received
+> oauth token was invalid` — Trakt recently changed their auth backend (moved to a passwordless
+> magic-link login, new domain/API structure) and Servarr's shared OAuth proxy hasn't caught up,
+> breaking the code-exchange step for every Sonarr/Radarr user, not just this stack. Confirmed via
+> [Radarr/Radarr#7905](https://github.com/Radarr/Radarr/issues/7905),
+> [trakt/trakt-api#663](https://github.com/trakt/trakt-api/issues/663), and active
+> [Trakt forum threads](https://forums.trakt.tv/t/received-oauth-token-was-invalid/40127). Jellyfin's
+> plugin is unaffected because it uses Trakt's native device-code flow directly, bypassing
+> Servarr's proxy entirely. Nothing to fix in this repo — retry once upstream patches it.
 
 ## 4.7 Seerr (Request Manager)
 
