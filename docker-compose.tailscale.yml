@@ -51,7 +51,10 @@ services:
       - TS_AUTHKEY=${TS_AUTHKEY:-}
       # Advertises your LAN subnet (LAN_SUBNET from .env) so tailnet peers can
       # reach the whole network. Add extra subnets with TS_EXTRA_ROUTES if needed.
-      - TS_EXTRA_ARGS=--advertise-routes=${LAN_SUBNET}${TS_EXTRA_ROUTES:+,${TS_EXTRA_ROUTES}} --accept-routes
+      # --advertise-exit-node lets tailnet devices route ALL their internet
+      # traffic through the NAS's connection (approve in the admin console,
+      # or the enabledRoutes API, same as subnet routes).
+      - TS_EXTRA_ARGS=--advertise-routes=${LAN_SUBNET}${TS_EXTRA_ROUTES:+,${TS_EXTRA_ROUTES}} --accept-routes --advertise-exit-node
     healthcheck:
       test: ["CMD", "tailscale", "status", "--peers=false"]
       interval: 30s
