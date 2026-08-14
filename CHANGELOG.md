@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.7.29] - 2026-08-15
+
+### Changed
+- **Version bumps: Sonarr, Radarr, Prowlarr, Bazarr** — routine updates to the latest
+  LinuxServer.io images: Sonarr `4.0.17`→`4.0.19`, Radarr `6.1.1`→`6.3.0`, Prowlarr `2.3.0`→`2.5.2`,
+  Bazarr `1.5.6`→`1.6.0`. SABnzbd's `4.x`→`5.x` major-version bump is tracked separately given the
+  higher risk of a breaking change to the just-verified Usenet pipeline. Jellyfin (`10.11.11`) was
+  already current — no change needed.
+
 ## [1.7.28] - 2026-08-15
 
 ### Added
