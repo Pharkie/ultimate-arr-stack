@@ -146,35 +146,47 @@ test.describe('UI screenshots', () => {
     await page.screenshot({ path: screenshotPath('jellyfin'), fullPage: true });
   });
 
-  test('Sonarr — login and screenshot dashboard', async ({ page }) => {
+  test('Sonarr — screenshot dashboard', async ({ page }) => {
+    // AuthenticationMethod may be None (no login page) or Forms (credentials required).
+    // Handle both so this test keeps working if auth is enabled later.
     const username = process.env.SONARR_USERNAME;
     const password = process.env.SONARR_PASSWORD;
-    test.skip(!username || !password, 'SONARR_USERNAME / SONARR_PASSWORD not set');
 
-    await page.goto(url('sonarr', '/login'));
+    await page.goto(url('sonarr', '/'));
     await page.waitForLoadState('networkidle');
-    await page.fill('input[name="username"], input[id="username"]', username!);
-    await page.fill('input[name="password"], input[id="password"]', password!);
-    await page.click('button[type="submit"]');
-    await page.waitForLoadState('networkidle');
+
+    if (page.url().includes('login')) {
+      test.skip(!username || !password, 'Sonarr requires login but SONARR_USERNAME / SONARR_PASSWORD not set');
+      await page.fill('input[name="username"], input[id="username"]', username!);
+      await page.fill('input[name="password"], input[id="password"]', password!);
+      await page.click('button[type="submit"]');
+      await page.waitForLoadState('networkidle');
+    }
 
     expect(page.url()).not.toContain('login');
+    await expect(page.locator('[class*="series"], [class*="Series"], nav').first()).toBeVisible({ timeout: 10_000 });
     await page.screenshot({ path: screenshotPath('sonarr'), fullPage: true });
   });
 
-  test('Radarr — login and screenshot dashboard', async ({ page }) => {
+  test('Radarr — screenshot dashboard', async ({ page }) => {
+    // AuthenticationMethod may be None (no login page) or Forms (credentials required).
+    // Handle both so this test keeps working if auth is enabled later.
     const username = process.env.RADARR_USERNAME;
     const password = process.env.RADARR_PASSWORD;
-    test.skip(!username || !password, 'RADARR_USERNAME / RADARR_PASSWORD not set');
 
-    await page.goto(url('radarr', '/login'));
+    await page.goto(url('radarr', '/'));
     await page.waitForLoadState('networkidle');
-    await page.fill('input[name="username"], input[id="username"]', username!);
-    await page.fill('input[name="password"], input[id="password"]', password!);
-    await page.click('button[type="submit"]');
-    await page.waitForLoadState('networkidle');
+
+    if (page.url().includes('login')) {
+      test.skip(!username || !password, 'Radarr requires login but RADARR_USERNAME / RADARR_PASSWORD not set');
+      await page.fill('input[name="username"], input[id="username"]', username!);
+      await page.fill('input[name="password"], input[id="password"]', password!);
+      await page.click('button[type="submit"]');
+      await page.waitForLoadState('networkidle');
+    }
 
     expect(page.url()).not.toContain('login');
+    await expect(page.locator('[class*="movie"], [class*="Movie"], nav').first()).toBeVisible({ timeout: 10_000 });
     await page.screenshot({ path: screenshotPath('radarr'), fullPage: true });
   });
 
@@ -411,5 +423,97 @@ test.describe('API assertions', () => {
     expect(res.ok()).toBeTruthy();
     const series = await res.json();
     expect(series.length).toBeGreaterThan(0);
+  });
+
+  test('Sonarr — qBittorrent download client is configured and reachable', async ({ request }) => {
+    const apiKey = process.env.SONARR_API_KEY;
+    test.skip(!apiKey, 'SONARR_API_KEY not set');
+
+    const clients = await request.get(url('sonarr', '/api/v3/downloadclient'), {
+      headers: { 'X-Api-Key': apiKey! },
+    });
+    expect(clients.ok()).toBeTruthy();
+    const clientList = await clients.json();
+    expect(clientList).toEqual(
+      expect.arrayContaining([expect.objectContaining({ name: 'qBittorrent', enable: true })]),
+    );
+
+    const test_ = await request.post(url('sonarr', '/api/v3/downloadclient/testall'), {
+      headers: { 'X-Api-Key': apiKey! },
+    });
+    expect(test_.ok()).toBeTruthy();
+    const results = await test_.json();
+    expect(results).toEqual(expect.arrayContaining([expect.objectContaining({ isValid: true })]));
+  });
+
+  test('Radarr — qBittorrent download client is configured and reachable', async ({ request }) => {
+    const apiKey = process.env.RADARR_API_KEY;
+    test.skip(!apiKey, 'RADARR_API_KEY not set');
+
+    const clients = await request.get(url('radarr', '/api/v3/downloadclient'), {
+      headers: { 'X-Api-Key': apiKey! },
+    });
+    expect(clients.ok()).toBeTruthy();
+    const clientList = await clients.json();
+    expect(clientList).toEqual(
+      expect.arrayContaining([expect.objectContaining({ name: 'qBittorrent', enable: true })]),
+    );
+
+    const test_ = await request.post(url('radarr', '/api/v3/downloadclient/testall'), {
+      headers: { 'X-Api-Key': apiKey! },
+    });
+    expect(test_.ok()).toBeTruthy();
+    const results = await test_.json();
+    expect(results).toEqual(expect.arrayContaining([expect.objectContaining({ isValid: true })]));
+  });
+
+  test('Sonarr — has at least one enabled indexer', async ({ request }) => {
+    const apiKey = process.env.SONARR_API_KEY;
+    test.skip(!apiKey, 'SONARR_API_KEY not set');
+
+    const res = await request.get(url('sonarr', '/api/v3/indexer'), {
+      headers: { 'X-Api-Key': apiKey! },
+    });
+    expect(res.ok()).toBeTruthy();
+    const indexers = await res.json();
+    expect(indexers).toEqual(expect.arrayContaining([expect.objectContaining({ enableRss: true })]));
+  });
+
+  test('Radarr — has at least one enabled indexer', async ({ request }) => {
+    const apiKey = process.env.RADARR_API_KEY;
+    test.skip(!apiKey, 'RADARR_API_KEY not set');
+
+    const res = await request.get(url('radarr', '/api/v3/indexer'), {
+      headers: { 'X-Api-Key': apiKey! },
+    });
+    expect(res.ok()).toBeTruthy();
+    const indexers = await res.json();
+    expect(indexers).toEqual(expect.arrayContaining([expect.objectContaining({ enableRss: true })]));
+  });
+
+  test('Sonarr — no health check errors (e.g. remote path mapping)', async ({ request }) => {
+    const apiKey = process.env.SONARR_API_KEY;
+    test.skip(!apiKey, 'SONARR_API_KEY not set');
+
+    const res = await request.get(url('sonarr', '/api/v3/health'), {
+      headers: { 'X-Api-Key': apiKey! },
+    });
+    expect(res.ok()).toBeTruthy();
+    const issues = await res.json();
+    const errors = issues.filter((i: { type: string }) => i.type === 'error');
+    expect(errors).toEqual([]);
+  });
+
+  test('Radarr — no health check errors (e.g. remote path mapping)', async ({ request }) => {
+    const apiKey = process.env.RADARR_API_KEY;
+    test.skip(!apiKey, 'RADARR_API_KEY not set');
+
+    const res = await request.get(url('radarr', '/api/v3/health'), {
+      headers: { 'X-Api-Key': apiKey! },
+    });
+    expect(res.ok()).toBeTruthy();
+    const issues = await res.json();
+    const errors = issues.filter((i: { type: string }) => i.type === 'error');
+    expect(errors).toEqual([]);
   });
 });
