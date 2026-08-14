@@ -663,15 +663,37 @@ off-VPN migration — see `docs/MIGRATION-arr-off-vpn.md`).
    docker compose -f docker-compose.arr-stack.yml up -d decypharr
    ```
 
-4. Open `http://NAS_IP:8282`, add your TorBox API key, and confirm the account authenticates
-   before configuring anything in Sonarr/Radarr. Verify the exact config field names against
-   Decypharr's own settings UI / GitHub docs — set the debrid provider's download folder to
-   `/data/torbox`, and set `download_uncached` off so it only grabs content TorBox already has
-   cached (that's the point of using it — an uncached grab just makes TorBox a slow relay).
+4. First run auto-creates `/app/config.json` (in the `decypharr-config` volume) with no debrid
+   provider configured. Edit it directly (or via the Web UI setup wizard at `http://NAS_IP:8282`)
+   to add TorBox and point downloads at the shared `/data` mount:
+   ```json
+   {
+     "debrids": [
+       { "provider": "torbox", "name": "TorBox", "api_key": "your_torbox_key", "download_uncached": false }
+     ],
+     "mount": { "type": "none" },
+     "default_download_action": "download",
+     "categories": ["tv", "movies"],
+     "download_folder": "/data/torbox",
+     "arrs": [
+       { "name": "Sonarr", "host": "http://sonarr:8989", "token": "sonarr_api_key", "download_action": "download" },
+       { "name": "Radarr", "host": "http://radarr:7878", "token": "radarr_api_key", "download_action": "download" }
+     ]
+   }
+   ```
+   `mount.type: "none"` + `download_action: "download"` is what gives direct-download-to-disk (no
+   FUSE/rclone) — the auto-generated default is `"symlink"`, which needs a mount and won't work
+   without one. Restart Decypharr after editing (`docker compose -f docker-compose.arr-stack.yml
+   restart decypharr`) and confirm the logs show `debrids=1` with no auth errors.
 
 5. In Sonarr → Settings → Download Clients (and again in Radarr), add a **new** qBittorrent-type
-   client: Host `decypharr`, Port `8282`, Category `tv` (Sonarr) / `movies` (Radarr). Leave your
-   existing qBittorrent entry in place.
+   client — Host `decypharr`, Port `8282`, Category `tv` (Sonarr) / `movies` (Radarr). **Username
+   and Password are not your qBittorrent credentials** — Decypharr uses them to identify which Arr
+   is calling, matched against the `arrs` entries above:
+   - Username: the Arr's own URL as Decypharr sees it (`http://sonarr:8989` / `http://radarr:7878`)
+   - Password: that Arr's own API key (Settings → General → API Key)
+
+   Leave your existing qBittorrent entry in place — this is additive.
 
 6. **(+ local DNS)** Same optional `.lan` domain steps as the Lidarr example above, using
    `decypharr.lan` → `172.20.0.7`.

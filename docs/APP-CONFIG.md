@@ -146,6 +146,9 @@ Searches for TV shows, sends download links to qBittorrent/SABnzbd, and organize
    - Add → qBittorrent (Decypharr speaks the qBittorrent Web API)
    - Host: `decypharr` (Decypharr is on the bridge, same as Sonarr — no VPN hop needed)
    - Port: `8282`
+   - **Username:** `http://sonarr:8989` (Sonarr's own URL — not a real qBittorrent login; this is
+     how Decypharr identifies which Arr is calling, matched against its own `arrs` config)
+   - **Password:** Sonarr's API key (Settings → General → API Key)
    - Category: `tv`
 
 5. **Enable NFO metadata:** Settings → Metadata → Kodi (XBMC) / Emby → **Enable** (see [why this matters](#nfo-metadata))
@@ -195,6 +198,9 @@ Searches for movies, sends download links to qBittorrent/SABnzbd, and organizes 
    - Add → qBittorrent (Decypharr speaks the qBittorrent Web API)
    - Host: `decypharr` (Decypharr is on the bridge, same as Radarr — no VPN hop needed)
    - Port: `8282`
+   - **Username:** `http://radarr:7878` (Radarr's own URL — not a real qBittorrent login; this is
+     how Decypharr identifies which Arr is calling, matched against its own `arrs` config)
+   - **Password:** Radarr's API key (Settings → General → API Key)
    - Category: `movies`
 
 5. **Enable NFO metadata:** Settings → Metadata → Kodi (XBMC) / Emby → **Enable** (see [why this matters](#nfo-metadata))

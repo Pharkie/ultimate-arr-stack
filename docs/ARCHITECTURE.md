@@ -170,6 +170,8 @@ Two YAML anchors define security profiles in each compose file:
 | `x-security` | All non-LSIO services | None by default (services add back only what they need) |
 | `x-security-lsio` | Sonarr, Radarr, Prowlarr, qBittorrent, SABnzbd, Bazarr | `CHOWN`, `SETUID`, `SETGID`, `DAC_OVERRIDE` (s6-overlay needs these to switch users during init) |
 
+Decypharr uses its own inline security block (not the shared anchor): same four caps plus `FOWNER` — its entrypoint's `chmod /app` during root-init-then-drop-privileges needs it, unlike the LSIO images.
+
 Services that write to Docker volumes as root add back `CHOWN` + `DAC_OVERRIDE` (Jellyfin, Seerr, Uptime Kuma, DUC, Beszel, DIUN, Configarr). Services with read-only or no volumes don't need any (FlareSolverr, Cloudflared, Traefik, Deunhealth, Beszel-agent).
 
 Additional requirements:

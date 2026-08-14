@@ -503,10 +503,16 @@ services:
   decypharr:
     image: ghcr.io/sirrobot01/decypharr:latest
     container_name: decypharr
-    <<: *default-security
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
     cap_add:
       - CHOWN
+      - SETUID
+      - SETGID
       - DAC_OVERRIDE
+      - FOWNER
     ports:
       - "8282:8282"
     environment:
