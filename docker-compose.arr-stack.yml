@@ -166,7 +166,7 @@ services:
   # Access: sabnzbd.lan | sabnzbd.yourdomain.com | NAS_IP:8082
   # ═══════════════════════════════════════════════════════════════════════════
   sabnzbd:
-    image: lscr.io/linuxserver/sabnzbd:4.5.5
+    image: lscr.io/linuxserver/sabnzbd:5.1.0-ls266
     container_name: sabnzbd
     <<: *lsio-security
     network_mode: "service:gluetun"

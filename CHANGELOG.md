@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.7.30] - 2026-08-15
+
+### Changed
+- **SABnzbd major-version bump: `4.5.5`→`5.1.0`** (`lscr.io/linuxserver/sabnzbd:5.1.0-ls266`),
+  kept as its own isolated change from the Sonarr/Radarr/Prowlarr/Bazarr bump given the higher
+  migration risk to the just-verified TorBox Usenet pipeline. Config volume backed up before the
+  bump (`sabnzbd-config-backup-20260815.tgz`). Reviewed SABnzbd 5.0's breaking changes ([release
+  notes](https://github.com/sabnzbd/sabnzbd/releases/tag/5.0.0)): post-processing scripts now
+  always run even on failed jobs (not applicable — this stack has no custom post-proc scripts
+  configured), and `verify_xff_header` is now on by default (not applicable — SABnzbd isn't routed
+  through Traefik/any reverse proxy here, Sonarr/Radarr talk to it directly via Gluetun's IP).
+
 ## [1.7.29] - 2026-08-15
 
 ### Changed
