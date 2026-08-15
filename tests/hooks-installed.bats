@@ -25,3 +25,19 @@ setup() {
         [[ "$target" == *"scripts/pre-commit" ]] || fail "Pre-commit hook symlink points at unexpected target: $target"
     fi
 }
+
+@test "post-merge hook is installed and points at scripts/post-merge" {
+    local git_common_dir
+    git_common_dir=$(git -C "$REPO_ROOT" rev-parse --path-format=absolute --git-common-dir)
+    local hook_path="$git_common_dir/hooks/post-merge"
+
+    if [[ ! -e "$hook_path" ]]; then
+        fail "post-merge hook not installed at $hook_path — run ./setup-hooks.sh"
+    fi
+
+    if [[ -L "$hook_path" ]]; then
+        local target
+        target=$(readlink "$hook_path")
+        [[ "$target" == *"scripts/post-merge" ]] || fail "post-merge hook symlink points at unexpected target: $target"
+    fi
+}

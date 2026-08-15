@@ -1,0 +1,17 @@
+#!/bin/bash
+# post-merge hook: auto-syncs tracked files to the NAS whenever a local
+# merge/pull lands new commits on `main`. See scripts/sync-nas.sh for why
+# this exists (NAS has no git) and what it does/doesn't do. No-op on any
+# branch other than main, and non-fatal if the NAS is unreachable — this
+# must never block or fail a merge.
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(git -C "$SCRIPT_DIR" rev-parse --show-toplevel 2>/dev/null || true)"
+
+[[ -z "$REPO_ROOT" ]] && exit 0
+
+BRANCH="$(git -C "$REPO_ROOT" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")"
+[[ "$BRANCH" != "main" ]] && exit 0
+
+"$REPO_ROOT/scripts/sync-nas.sh" || echo "post-merge: NAS sync failed (non-fatal)" >&2
+exit 0

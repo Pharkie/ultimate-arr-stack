@@ -28,27 +28,35 @@ HOOKS_DIR="$GIT_COMMON_DIR/hooks"
 # Create hooks directory if needed
 mkdir -p "$HOOKS_DIR"
 
-# Remove existing hook if present
-if [[ -e "$HOOKS_DIR/pre-commit" ]]; then
-    rm "$HOOKS_DIR/pre-commit"
-    echo "  Removed existing pre-commit hook"
-fi
+# Remove existing hooks if present
+for hook in pre-commit post-merge; do
+    if [[ -e "$HOOKS_DIR/$hook" ]]; then
+        rm "$HOOKS_DIR/$hook"
+        echo "  Removed existing $hook hook"
+    fi
+done
 
-# Create symlink. Hooks are shared across every worktree via the common git
-# dir, so use an absolute path to this checkout's scripts/pre-commit rather
-# than a relative path that assumes a non-worktree layout.
+# Create symlinks. Hooks are shared across every worktree via the common git
+# dir, so use an absolute path to this checkout's scripts/<hook> rather than
+# a relative path that assumes a non-worktree layout.
 ln -s "$SCRIPT_DIR/scripts/pre-commit" "$HOOKS_DIR/pre-commit"
 echo "  Created symlink: $HOOKS_DIR/pre-commit -> $SCRIPT_DIR/scripts/pre-commit"
+ln -s "$SCRIPT_DIR/scripts/post-merge" "$HOOKS_DIR/post-merge"
+echo "  Created symlink: $HOOKS_DIR/post-merge -> $SCRIPT_DIR/scripts/post-merge"
 
 # Ensure scripts are executable
 chmod +x "$SCRIPT_DIR/scripts/pre-commit"
+chmod +x "$SCRIPT_DIR/scripts/post-merge"
+chmod +x "$SCRIPT_DIR/scripts/sync-nas.sh"
 chmod +x "$SCRIPT_DIR/scripts/lib/"*.sh
 echo "  Made scripts executable"
 
 echo ""
-echo "Done! Pre-commit hook installed."
+echo "Done! Hooks installed: pre-commit, post-merge."
 echo ""
-echo "The hook will run automatically on 'git commit'."
-echo "To test manually: ./scripts/pre-commit"
+echo "pre-commit runs automatically on 'git commit'. To test manually: ./scripts/pre-commit"
+echo "post-merge auto-syncs tracked files to the NAS after a local merge/pull lands on"
+echo "main (see scripts/sync-nas.sh) — no-op on any other branch. To test manually:"
+echo "  ./scripts/sync-nas.sh"
 echo ""
-echo "To uninstall: rm \"$HOOKS_DIR/pre-commit\""
+echo "To uninstall: rm \"$HOOKS_DIR/pre-commit\" \"$HOOKS_DIR/post-merge\""
