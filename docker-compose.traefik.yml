@@ -34,7 +34,7 @@ services:
     # recreating traefik, or Traefik's docker provider will fail to connect
     # until it retries.
     networks:
-      arr-core:
+      arr-stack:
         ipv4_address: 172.20.0.2
       # macvlan gives Traefik its own LAN IP where it can use port 80
       # (NAS owns port 80 on its IP, but Traefik owns it on TRAEFIK_LAN_IP)
@@ -51,7 +51,7 @@ services:
       - ./traefik/dynamic:/dynamic:ro
     labels:
       - "traefik.enable=true"
-      - "traefik.docker.network=arr-core"
+      - "traefik.docker.network=arr-stack"
 
       # Dashboard (external access via Cloudflare Tunnel)
       - "traefik.http.routers.traefik-dashboard.rule=Host(`traefik.${DOMAIN}`)"
@@ -75,7 +75,7 @@ services:
       start_period: 60s
 
 networks:
-  arr-core:
+  arr-stack:
     external: true
   # macvlan network gives Traefik its own IP on your physical LAN
   # This allows Traefik to own port 80/443 (which NAS can't give up)

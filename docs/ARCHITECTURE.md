@@ -80,16 +80,19 @@ Sonarr/Radarr → Decypharr
 
 ## Network Layout
 
-Most services run on the `arr-core` network (renamed from `arr-stack` during
-the trust-tier network segmentation - same `172.20.0.0/24` CIDR, no
-renumbering) with static IPs. Magnetio's scraper/redis are deliberately on a
+Most services run on the `arr-stack` network with static IPs. A same-CIDR
+rename to `arr-core` was attempted during the trust-tier network segmentation
+work but reverted - Docker refuses to create a new network on a subnet an
+existing network still occupies, so completing the rename would require
+either a live DNS outage or a full IP renumbering; neither was judged worth
+it for a label-only change. Magnetio's scraper/redis are deliberately on a
 separate `magnetio-net` bridge instead (highest supply-chain/P2P-risk tier -
 locally-built, unaudited source, raw DHT/torrent traffic) - only Gluetun
 bridges the two, so Sonarr/Radarr/Jellyfin/etc. can't reach Magnetio's backend
 directly:
 
 ```
-arr-core network (172.20.0.0/24)
+arr-stack network (172.20.0.0/24)
 ───────────────────────────────────────────────────────────────────────────────────
 │ IP           │ Service      │ Notes                          │ Required for     │
 ├──────────────┼──────────────┼────────────────────────────────┼──────────────────│
@@ -119,7 +122,7 @@ magnetio-net (172.22.0.0/24) — isolated, only Gluetun + Magnetio's own contain
 ├──────────────┼──────────────────┼──────────────────────────────────────────────│
 │ 172.22.0.2   │ magnetio-scraper │ Torrent provider scraper backend            │
 │ 172.22.0.3   │ magnetio-redis   │ Cache backend for Magnetio                  │
-│ 172.22.0.4   │ Gluetun          │ Bridges arr-core ↔ magnetio-net for magnetio-addon (network_mode: container:gluetun) │
+│ 172.22.0.4   │ Gluetun          │ Bridges arr-stack ↔ magnetio-net for magnetio-addon (network_mode: container:gluetun) │
 ───────────────────────────────────────────────────────────────────────────────────
 ```
 

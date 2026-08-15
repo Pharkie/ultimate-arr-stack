@@ -29,7 +29,7 @@ services:
     volumes:
       - ./cloudflared:/home/nonroot/.cloudflared:ro
     networks:
-      arr-core:
+      arr-stack:
         ipv4_address: 172.20.0.12
     healthcheck:
       test: ["CMD", "cloudflared", "tunnel", "info", "nas-tunnel"]
@@ -47,5 +47,5 @@ services:
         max-file: "3"
 
 networks:
-  arr-core:
+  arr-stack:
     external: true

@@ -20,45 +20,31 @@ echo ""
 echo "Checking Docker networks..."
 echo ""
 
-# Check if arr-core exists
-if docker network inspect arr-core &>/dev/null; then
+# Check if arr-stack exists
+if docker network inspect arr-stack &>/dev/null; then
     # Check if it's being used
-    CONTAINERS=$(docker network inspect arr-core -f '{{range .Containers}}{{.Name}} {{end}}' 2>/dev/null || true)
+    CONTAINERS=$(docker network inspect arr-stack -f '{{range .Containers}}{{.Name}} {{end}}' 2>/dev/null || true)
     if [[ -z "$CONTAINERS" ]]; then
-        echo -e "${YELLOW}WARNING${NC}: arr-core network exists but has no containers attached."
+        echo -e "${YELLOW}WARNING${NC}: arr-stack network exists but has no containers attached."
         echo "         This may be orphaned from a previous deployment."
         echo ""
         if [[ -t 0 ]]; then
             read -p "Remove it? [y/N] " -n 1 -r
             echo
             if [[ $REPLY =~ ^[Yy]$ ]]; then
-                docker network rm arr-core
-                echo -e "${GREEN}OK${NC}: Removed arr-core"
+                docker network rm arr-stack
+                echo -e "${GREEN}OK${NC}: Removed arr-stack"
             else
-                echo "Skipped. You can remove it manually with: docker network rm arr-core"
+                echo "Skipped. You can remove it manually with: docker network rm arr-stack"
             fi
         else
-            echo "Run interactively to remove, or use: docker network rm arr-core"
+            echo "Run interactively to remove, or use: docker network rm arr-stack"
         fi
     else
-        echo -e "${GREEN}OK${NC}: arr-core exists with containers: $CONTAINERS"
+        echo -e "${GREEN}OK${NC}: arr-stack exists with containers: $CONTAINERS"
     fi
 else
-    echo -e "${GREEN}OK${NC}: arr-core doesn't exist (will be created on deploy)"
-fi
-
-# arr-stack was the network's name before the arr-core rename (network
-# segmentation phase). Docker doesn't auto-delete it - flag it as a leftover
-# so it doesn't linger unnoticed once every container has moved to arr-core.
-if docker network inspect arr-stack &>/dev/null; then
-    LEFTOVER_CONTAINERS=$(docker network inspect arr-stack -f '{{range .Containers}}{{.Name}} {{end}}' 2>/dev/null || true)
-    if [[ -z "$LEFTOVER_CONTAINERS" ]]; then
-        echo -e "${YELLOW}NOTE${NC}: old 'arr-stack' network still exists (renamed to arr-core) and is unused."
-        echo "      Safe to remove once the arr-core migration is confirmed working: docker network rm arr-stack"
-    else
-        echo -e "${YELLOW}WARNING${NC}: old 'arr-stack' network still has containers attached: $LEFTOVER_CONTAINERS"
-        echo "         These haven't been recreated onto arr-core yet."
-    fi
+    echo -e "${GREEN}OK${NC}: arr-stack doesn't exist (will be created on deploy)"
 fi
 
 # Check for other potentially orphaned networks

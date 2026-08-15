@@ -33,7 +33,7 @@
 # supply-chain/network-risk tier in the stack (locally-built, unaudited
 # source, raw P2P/DHT traffic) — magnetio-scraper/magnetio-redis also get
 # their own dedicated network (magnetio-net, below) rather than sharing
-# arr-core with everything else.
+# arr-stack with everything else.
 name: magnetio
 
 #########################
@@ -51,12 +51,12 @@ volumes:
 # Networks              #
 #########################
 # Dedicated bridge, owned by this file - carves magnetio-scraper/magnetio-
-# redis off arr-core entirely (highest supply-chain/P2P-risk tier: locally-
+# redis off arr-stack entirely (highest supply-chain/P2P-risk tier: locally-
 # built, unaudited source, raw DHT/torrent traffic). Sonarr/Radarr/Jellyfin/
 # etc. can no longer reach these containers directly. magnetio-addon still
 # needs to reach them, but it has no networks: of its own (network_mode:
 # container:gluetun) - gluetun joins magnetio-net as an external network
-# instead (see docker-compose.arr-stack.yml). Old arr-core IPs .18/.19 are
+# instead (see docker-compose.arr-stack.yml). Old arr-stack IPs .18/.19 are
 # freed, not reused.
 networks:
   magnetio-net:
