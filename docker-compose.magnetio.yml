@@ -38,8 +38,13 @@ name: magnetio
 #########################
 # Volumes               #
 #########################
+# Explicit name: pins this to its original physical volume (arr-stack_*,
+# from before this file had its own project name) - see docker-compose.arr-
+# stack.yml's volumes: block for why this matters (an unnamed volume gets
+# silently orphaned into a fresh empty one on any future project rename).
 volumes:
   magnetio-redis-data:
+    name: arr-stack_magnetio-redis-data
 
 #########################
 # Networks              #
