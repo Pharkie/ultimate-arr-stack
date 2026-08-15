@@ -116,6 +116,8 @@ services:
     environment:
       - TZ=${TZ}
       - DOCKER_HOST=tcp://docker-socket-proxy:2375
+    networks:
+      - arr-stack
     restart: always
     logging: *default-logging
     healthcheck:
@@ -154,6 +156,8 @@ services:
     environment:
       - TZ=${TZ}
       - DOCKER_HOST=tcp://docker-socket-proxy:2375
+    networks:
+      - arr-stack
     restart: always
     logging: *default-logging
     entrypoint:
