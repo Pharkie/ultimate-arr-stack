@@ -164,4 +164,4 @@ From your phone on cellular data (not WiFi):
 
 > **Need full network access remotely?** Cloudflare Tunnel only exposes HTTP services (Jellyfin, Seerr). For admin UIs (Sonarr, Radarr, etc.) or `.lan` domains from anywhere — including CGNAT and hotel WiFi — add [Tailscale](TAILSCALE.md). Free for personal use, complementary to Cloudflared.
 
-Issues? [Report on GitHub](https://github.com/Pharkie/ultimate-arr-stack/issues) or [chat on Reddit](https://www.reddit.com/user/Jeff46K4/).
+Issues? [Report on GitHub](https://github.com/leonardoazeredo/ultimate-arr-stack/issues) or [chat on Reddit](https://www.reddit.com/user/Jeff46K4/).

@@ -110,4 +110,4 @@ Some networks block all outbound UDP. Tailscale automatically falls back to DERP
 
 Your tailnet now exposes the LAN privately to any device you've authorised. Add new devices via the admin console; revoke them the same way.
 
-Issues? [Report on GitHub](https://github.com/Pharkie/ultimate-arr-stack/issues).
+Issues? [Report on GitHub](https://github.com/leonardoazeredo/ultimate-arr-stack/issues).
