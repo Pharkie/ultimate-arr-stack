@@ -1,0 +1,10 @@
+# see https://github.com/zevv/duc/blob/master/examples/ducrc
+
+[global]
+
+database /database/duc.db
+
+[cgi]
+
+palette size
+tooltip

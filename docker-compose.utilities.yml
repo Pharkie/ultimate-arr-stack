@@ -251,7 +251,9 @@ services:
   # Note: Re-indexes daily at 4am. Manual: docker restart duc
   # ═══════════════════════════════════════════════════════════════════════════
   duc:
-    image: mkoestler/duc-service:v1.1.0
+    build:
+      context: ./duc-service
+    image: duc-service:local
     container_name: duc
     <<: *default-security
     cap_add:
