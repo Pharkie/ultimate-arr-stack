@@ -260,6 +260,7 @@ services:
       - PUID=${PUID}
       - PGID=${PGID}
       - TZ=${TZ}
+      - SONARR__AUTH__APIKEY=${SONARR_API_KEY}
     ports:
       - "8989:8989"   # Direct local access (http://NAS_IP:8989)
     networks:
@@ -296,6 +297,7 @@ services:
       - PUID=${PUID}
       - PGID=${PGID}
       - TZ=${TZ}
+      - PROWLARR__AUTH__APIKEY=${PROWLARR_API_KEY}
     volumes:
       - prowlarr-config:/config
     labels:
@@ -325,6 +327,7 @@ services:
       - PUID=${PUID}
       - PGID=${PGID}
       - TZ=${TZ}
+      - RADARR__AUTH__APIKEY=${RADARR_API_KEY}
     ports:
       - "7878:7878"   # Direct local access (http://NAS_IP:7878)
     networks:
