@@ -8,9 +8,9 @@
 #####################################################################
 
 # Own compose project name so operations on other files (utilities,
-# magnetio, traefik, camera-listen) can't accidentally take out this
-# stack via --remove-orphans - see docker-compose.tailscale.yml for the
-# original precedent for this pattern.
+# magnetio, traefik) can't accidentally take out this stack via
+# --remove-orphans - see docker-compose.tailscale.yml for the original
+# precedent for this pattern.
 name: arr-core
 
 #########################
