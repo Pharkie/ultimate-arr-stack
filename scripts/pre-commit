@@ -78,9 +78,8 @@ echo ""
 echo -e "${BLUE}2. Checking environment variable documentation...${NC}"
 if check_env_vars; then
     echo -e "    ${GREEN}OK${NC}: All compose variables documented"
-fi
-# Note: check_env_vars outputs its own errors
-if [[ $? -ne 0 ]]; then
+else
+    # Note: check_env_vars outputs its own errors
     ((ERRORS++))
 fi
 echo ""
