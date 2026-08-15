@@ -1,0 +1,71 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">Magnetio Logo</title>
+  <desc id="desc">A modern vector logo for Magnetio, combining a magnet shape, torrent nodes, and streaming motion.</desc>
+
+  <defs>
+    <linearGradient id="bg" x1="160" y1="96" x2="864" y2="928" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#111827"/>
+      <stop offset="0.48" stop-color="#1A1A2E"/>
+      <stop offset="1" stop-color="#0F172A"/>
+    </linearGradient>
+
+    <linearGradient id="magnet" x1="251" y1="225" x2="773" y2="799" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#7B5BF5"/>
+      <stop offset="0.5" stop-color="#22D3EE"/>
+      <stop offset="1" stop-color="#10B981"/>
+    </linearGradient>
+
+    <linearGradient id="accent" x1="286" y1="298" x2="740" y2="737" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#F5A623"/>
+      <stop offset="1" stop-color="#FF6B6B"/>
+    </linearGradient>
+
+    <filter id="softShadow" x="80" y="80" width="864" height="864" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="28" stdDeviation="36" flood-color="#000000" flood-opacity="0.35"/>
+    </filter>
+
+    <filter id="glow" x="120" y="120" width="784" height="784" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feGaussianBlur stdDeviation="16" result="blur"/>
+      <feColorMatrix in="blur" type="matrix" values="0 0 0 0 0.0627 0 0 0 0 0.725 0 0 0 0 0.506 0 0 0 0.55 0"/>
+      <feBlend in="SourceGraphic" mode="screen"/>
+    </filter>
+
+    <clipPath id="roundedSquare">
+      <rect x="96" y="96" width="832" height="832" rx="208"/>
+    </clipPath>
+  </defs>
+
+  <rect x="96" y="96" width="832" height="832" rx="208" fill="url(#bg)" filter="url(#softShadow)"/>
+
+  <g clip-path="url(#roundedSquare)" opacity="0.4">
+    <circle cx="180" cy="210" r="260" fill="#7B5BF5" opacity="0.18"/>
+    <circle cx="858" cy="828" r="310" fill="#10B981" opacity="0.16"/>
+    <path d="M164 720C322 632 463 606 612 652C751 695 835 656 932 567" stroke="#22D3EE" stroke-width="18" stroke-linecap="round" opacity="0.12"/>
+    <path d="M116 344C276 406 419 405 546 343C670 282 781 293 928 370" stroke="#7B5BF5" stroke-width="18" stroke-linecap="round" opacity="0.16"/>
+  </g>
+
+  <!-- Main magnet mark -->
+  <g filter="url(#glow)">
+    <path d="M326 284H438V543C438 586.078 472.922 621 516 621C559.078 621 594 586.078 594 543V284H706V548C706 652.934 620.934 738 516 738C411.066 738 326 652.934 326 548V284Z" fill="url(#magnet)"/>
+    <path d="M326 284H438V404H326V284Z" fill="url(#accent)"/>
+    <path d="M594 284H706V404H594V284Z" fill="url(#accent)"/>
+    <path d="M326 422H438V510H326V422Z" fill="#E5E7EB" opacity="0.92"/>
+    <path d="M594 422H706V510H594V422Z" fill="#E5E7EB" opacity="0.92"/>
+  </g>
+
+  <!-- Streaming play core -->
+  <path d="M494 420C494 404.653 510.817 395.251 523.884 403.302L624.964 465.573C637.373 473.218 637.373 491.235 624.964 498.88L523.884 561.151C510.817 569.202 494 559.8 494 544.453V420Z" fill="#FFFFFF" opacity="0.96"/>
+
+  <!-- Torrent nodes -->
+  <g stroke="#E5E7EB" stroke-width="18" stroke-linecap="round" stroke-linejoin="round" opacity="0.92">
+    <path d="M286 610L222 674"/>
+    <path d="M746 610L810 674"/>
+    <path d="M516 744V822"/>
+  </g>
+  <circle cx="222" cy="674" r="34" fill="#7B5BF5" stroke="#E5E7EB" stroke-width="14"/>
+  <circle cx="810" cy="674" r="34" fill="#10B981" stroke="#E5E7EB" stroke-width="14"/>
+  <circle cx="516" cy="822" r="34" fill="#22D3EE" stroke="#E5E7EB" stroke-width="14"/>
+
+  <!-- Inner highlight -->
+  <path d="M390 292V548C390 617.588 446.412 674 516 674C560.178 674 598.997 651.264 621.486 616.861" stroke="#FFFFFF" stroke-width="18" stroke-linecap="round" opacity="0.18"/>
+</svg>
