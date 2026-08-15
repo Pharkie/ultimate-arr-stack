@@ -45,7 +45,6 @@ STACKS="
 /volume1/docker/arr-stack/docker-compose.utilities.yml
 /volume1/docker/arr-stack/docker-compose.tailscale.yml
 /volume1/docker/arr-stack/docker-compose.cloudflared.yml
-/volume1/docker/arr-stack/docker-compose.camera-listen.yml
 /volume1/docker/frigate/docker-compose.frigate.yml
 /volume1/docker/immich/docker-compose.yml
 /volume1/docker/therapy-stack/docker-compose.nas.yml

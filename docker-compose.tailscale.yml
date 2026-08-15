@@ -31,6 +31,11 @@ services:
     # network_mode: host is required for subnet routing — the daemon needs
     # to see the host's LAN interface to advertise/route its subnet.
     network_mode: host
+    # cap_drop: ALL isn't possible here - network_mode: host + subnet/exit-node
+    # routing genuinely needs NET_ADMIN/NET_RAW. no-new-privileges is the one
+    # hardening flag compatible with that.
+    security_opt:
+      - no-new-privileges:true
     cap_add:
       - NET_ADMIN
       - NET_RAW

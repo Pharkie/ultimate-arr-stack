@@ -7,23 +7,51 @@
 # ✅ Or use:       ./scripts/restart-stack.sh                      #
 #####################################################################
 
+# Own compose project name so operations on other files (utilities,
+# magnetio, traefik) can't accidentally take out this stack via
+# --remove-orphans - see docker-compose.tailscale.yml for the original
+# precedent for this pattern.
+name: arr-core
+
 #########################
 # Centralized Volumes   #
 #########################
+# Explicit `name:` on every volume below pins it to its original physical
+# name (arr-stack_<volume>, from before this file had its own project name).
+# Without this, an unnamed volume is scoped by project name - renaming the
+# project (as this file's `name: arr-core` above does) would silently make
+# Compose create a brand-new EMPTY volume instead of reusing the real one,
+# which is exactly what happened here in production before this fix (all 12
+# volumes below got orphaned into arr-core_* empties on the first recreate
+# after adding `name: arr-core` - caught via Jellyfin's StartupWizardCompleted
+# flipping back to false).
 volumes:
   gluetun-config:
+    name: arr-stack_gluetun-config
   qbittorrent-config:
+    name: arr-stack_qbittorrent-config
   sabnzbd-config:
+    name: arr-stack_sabnzbd-config
   sonarr-config:
+    name: arr-stack_sonarr-config
   prowlarr-config:
+    name: arr-stack_prowlarr-config
   radarr-config:
+    name: arr-stack_radarr-config
   jellyfin-config:
+    name: arr-stack_jellyfin-config
   jellyfin-cache:
+    name: arr-stack_jellyfin-cache
   seerr-config:
+    name: arr-stack_seerr-config
   bazarr-config:
+    name: arr-stack_bazarr-config
   decypharr-config:
+    name: arr-stack_decypharr-config
   dnscrypt-config:
+    name: arr-stack_dnscrypt-config
   pihole-etc-pihole:
+    name: arr-stack_pihole-etc-pihole
 
 #########################
 # Networks              #

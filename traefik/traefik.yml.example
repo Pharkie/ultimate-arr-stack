@@ -2,6 +2,12 @@
 # https://doc.traefik.io/traefik/
 #
 # No edits required - just copy to traefik.yml
+#
+# NOTE: traefik.yml is gitignored (NAS-only, not synced by git pull), so an
+# existing deployment's real traefik.yml won't pick up changes made here
+# automatically - if you change this file, manually apply the same change
+# to the live traefik.yml on the NAS (e.g. via docker exec / a text editor
+# over SSH) and recreate the traefik container.
 
 global:
   checkNewVersion: true
@@ -22,7 +28,10 @@ entryPoints:
 # Providers
 providers:
   docker:
-    endpoint: "unix:///var/run/docker.sock"
+    # Routed through docker-socket-proxy (docker-compose.utilities.yml)
+    # rather than a direct socket mount - see that service's comment for why
+    # a `:ro` socket mount alone doesn't limit API access.
+    endpoint: "tcp://docker-socket-proxy:2375"
     exposedByDefault: false
     network: arr-stack
     watch: true

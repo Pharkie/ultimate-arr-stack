@@ -5,6 +5,10 @@
 # These services are useful but not required for the media stack.
 # Deploy with: docker compose -f docker-compose.utilities.yml up -d
 
+# Own compose project name so operations on other files can't accidentally
+# take out monitoring/utilities via --remove-orphans.
+name: arr-utilities
+
 #########################
 # Volumes               #
 #########################
@@ -45,6 +49,60 @@ x-security: &default-security
 #########################
 services:
   # ═══════════════════════════════════════════════════════════════════════════
+  # DOCKER-SOCKET-PROXY - Scoped proxy in front of the Docker socket. The
+  # services below need Docker API access (inspect/restart/watch containers),
+  # but a `:ro` bind-mount of the socket only blocks writing to the socket
+  # FILE — it does nothing to limit which API calls a container makes through
+  # it (gluetun-recover already calls `docker restart` through a `:ro` mount
+  # today). This proxy is the real access-control layer: only the resource
+  # categories below are enabled, everything else (exec, images, volumes,
+  # secrets, auth, swarm, ...) is denied by the image's own defaults.
+  #
+  # NOTE: verify these exact env var names against the deployed
+  # tecnativa/docker-socket-proxy version's README on first NAS deploy —
+  # CONTAINERS+POST is the documented combination for restart access, but
+  # confirm before relying on it in production.
+  # ═══════════════════════════════════════════════════════════════════════════
+  docker-socket-proxy:
+    image: tecnativa/docker-socket-proxy:v0.4.2
+    container_name: docker-socket-proxy
+    <<: *default-security
+    restart: always
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    environment:
+      - CONTAINERS=1  # inspect/list containers + restart (with POST)
+      - POST=1        # required for gluetun-recover's `docker restart`
+      - NETWORKS=1    # traefik's docker provider needs network info for routing
+      - INFO=1
+      - PING=1
+      - EVENTS=1      # gluetun-recover watches `docker events`
+      - EXEC=0
+      - IMAGES=0
+      - VOLUMES=0
+      - SECRETS=0
+      - AUTH=0
+      - SYSTEM=0
+      - SWARM=0
+      - SERVICES=0
+      - TASKS=0
+      - NODES=0
+      - PLUGINS=0
+      - SESSION=0
+      - BUILD=0
+      - COMMIT=0
+      - CONFIGS=0
+      - DISTRIBUTION=0
+    networks:
+      arr-stack:
+        # .20 is reportedly reserved for Baserow (per CLAUDE.md, unverified
+        # in this repo - see docs/ARCHITECTURE.md notes) - using .21 to stay
+        # clear of it and everything else in .2-.19, well below the .128+
+        # dynamic-allocation range.
+        ipv4_address: 172.20.0.21
+    logging: *default-logging
+
+  # ═══════════════════════════════════════════════════════════════════════════
   # DEUNHEALTH - Auto-recovery for VPN failures. Watches gluetun health and
   # restarts dependent services (qBittorrent, Sonarr, etc.) when VPN recovers.
   # No web UI. Runs silently in background.
@@ -53,10 +111,13 @@ services:
     image: qmcgaw/deunhealth:v0.3.0
     container_name: deunhealth
     <<: *default-security
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
+    depends_on:
+      - docker-socket-proxy
     environment:
       - TZ=${TZ}
+      - DOCKER_HOST=tcp://docker-socket-proxy:2375
+    networks:
+      - arr-stack
     restart: always
     logging: *default-logging
     healthcheck:
@@ -90,10 +151,13 @@ services:
     image: docker:29.7-cli
     container_name: gluetun-recover
     <<: *default-security
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
+    depends_on:
+      - docker-socket-proxy
     environment:
       - TZ=${TZ}
+      - DOCKER_HOST=tcp://docker-socket-proxy:2375
+    networks:
+      - arr-stack
     restart: always
     logging: *default-logging
     entrypoint:
@@ -157,6 +221,8 @@ services:
       - CHOWN           # Create subdirs in data volume on first run
       - DAC_OVERRIDE    # Write to root-owned volume directories
       - FOWNER          # Set ownership on created files
+    depends_on:
+      - docker-socket-proxy
     dns:
       - 172.20.0.5  # Pi-hole, so .lan domains resolve (e.g. homeassistant.lan notifications)
     restart: always
@@ -169,7 +235,8 @@ services:
         ipv4_address: 172.20.0.13  # For monitoring other containers
     volumes:
       - uptime-kuma-data:/app/data
-      - /var/run/docker.sock:/var/run/docker.sock:ro  # For Docker container monitoring
+      # No docker.sock mount - if you add a "Docker Host" monitor in the UI,
+      # point it at tcp://docker-socket-proxy:2375 instead of a unix socket.
     logging: *default-logging
     healthcheck:
       test: ["CMD-SHELL", "node /app/extra/healthcheck.js"]
@@ -184,12 +251,16 @@ services:
   # Note: Re-indexes daily at 4am. Manual: docker restart duc
   # ═══════════════════════════════════════════════════════════════════════════
   duc:
-    image: mkoestler/duc-service:v1.1.0
+    build:
+      context: ./duc-service
+    image: duc-service:local
     container_name: duc
     <<: *default-security
     cap_add:
       - CHOWN           # Nginx chown on startup
       - DAC_OVERRIDE    # Write to root-owned volume directories
+      - SETGID          # Nginx master drops workers to www-data (gid)
+      - SETUID          # Nginx master drops workers to www-data (uid)
     networks:
       arr-stack:
         ipv4_address: 172.20.0.14
@@ -242,11 +313,15 @@ services:
     <<: *default-security
     restart: always
     network_mode: host
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
+    depends_on:
+      - docker-socket-proxy
     environment:
       - PORT=45876
       - KEY=${BESZEL_KEY}
+      # network_mode: host means no Docker embedded DNS, so this must use
+      # docker-socket-proxy's bridge IP (172.20.0.21) rather than its
+      # container name - the host can route to bridge-network IPs directly.
+      - DOCKER_HOST=tcp://172.20.0.21:2375
     logging: *default-logging
     healthcheck:
       test: ["CMD", "/agent", "health"]
@@ -268,8 +343,9 @@ services:
       - CHOWN           # Create data dirs on first run
       - DAC_OVERRIDE    # Write to root-owned volume directories
     restart: always
+    depends_on:
+      - docker-socket-proxy
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
       - diun-data:/data
     networks:
       arr-stack:
@@ -279,6 +355,7 @@ services:
       - DIUN_WATCH_WORKERS=5
       - DIUN_WATCH_SCHEDULE=${DIUN_SCHEDULE:-0 6 * * *}
       - DIUN_PROVIDERS_DOCKER=true
+      - DIUN_PROVIDERS_DOCKER_ENDPOINT=tcp://docker-socket-proxy:2375
       - DIUN_PROVIDERS_DOCKER_WATCHBYDEFAULT=true
       # Watch the whole repo, not just the pinned tag: without WATCHREPO diun
       # only reports digest changes of e.g. :v3.3.0 itself, so a new v3.4.1

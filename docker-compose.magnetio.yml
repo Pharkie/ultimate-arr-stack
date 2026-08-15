@@ -28,11 +28,23 @@
 # vpn-socks5 container it pointed at is still deployed in case another
 # service wants a standalone SOCKS5 proxy later.
 
+# Own compose project name so operations on other files can't accidentally
+# take out Magnetio via --remove-orphans. This is also the highest
+# supply-chain/network-risk tier in the stack (locally-built, unaudited
+# source, raw P2P/DHT traffic) — isolating its project is a first step
+# toward giving it its own network too (tracked separately).
+name: magnetio
+
 #########################
 # Volumes               #
 #########################
+# Explicit name: pins this to its original physical volume (arr-stack_*,
+# from before this file had its own project name) - see docker-compose.arr-
+# stack.yml's volumes: block for why this matters (an unnamed volume gets
+# silently orphaned into a fresh empty one on any future project rename).
 volumes:
   magnetio-redis-data:
+    name: arr-stack_magnetio-redis-data
 
 #########################
 # Networks              #
