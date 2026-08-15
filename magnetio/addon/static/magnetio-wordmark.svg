@@ -1,0 +1,54 @@
+<svg width="1600" height="480" viewBox="0 0 1600 480" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">Magnetio Wordmark</title>
+  <desc id="desc">Horizontal vector logo for Magnetio, with magnet streaming icon and wordmark.</desc>
+
+  <defs>
+    <linearGradient id="bg" x1="44" y1="40" x2="396" y2="440" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#111827"/>
+      <stop offset="0.48" stop-color="#1A1A2E"/>
+      <stop offset="1" stop-color="#0F172A"/>
+    </linearGradient>
+    <linearGradient id="magnet" x1="106" y1="92" x2="334" y2="380" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#7B5BF5"/>
+      <stop offset="0.5" stop-color="#22D3EE"/>
+      <stop offset="1" stop-color="#10B981"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="124" y1="124" x2="326" y2="334" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#F5A623"/>
+      <stop offset="1" stop-color="#FF6B6B"/>
+    </linearGradient>
+    <linearGradient id="textGrad" x1="488" y1="132" x2="1275" y2="338" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#F8FAFC"/>
+      <stop offset="0.55" stop-color="#DDE9FF"/>
+      <stop offset="1" stop-color="#A7F3D0"/>
+    </linearGradient>
+    <filter id="shadow" x="0" y="0" width="480" height="480" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="18" stdDeviation="22" flood-color="#000000" flood-opacity="0.32"/>
+    </filter>
+  </defs>
+
+  <g filter="url(#shadow)">
+    <rect x="40" y="40" width="400" height="400" rx="104" fill="url(#bg)"/>
+    <circle cx="86" cy="90" r="130" fill="#7B5BF5" opacity="0.14"/>
+    <circle cx="392" cy="394" r="152" fill="#10B981" opacity="0.13"/>
+
+    <path d="M142 126H194V250C194 278.167 216.833 301 245 301C273.167 301 296 278.167 296 250V126H348V252C348 309.438 302.438 355 245 355C187.562 355 142 309.438 142 252V126Z" fill="url(#magnet)"/>
+    <path d="M142 126H194V183H142V126Z" fill="url(#accent)"/>
+    <path d="M296 126H348V183H296V126Z" fill="url(#accent)"/>
+    <path d="M142 193H194V232H142V193Z" fill="#E5E7EB" opacity="0.92"/>
+    <path d="M296 193H348V232H296V193Z" fill="#E5E7EB" opacity="0.92"/>
+    <path d="M233 190C233 181.941 241.835 177.003 248.695 181.23L296.005 210.384C302.519 214.398 302.519 223.857 296.005 227.871L248.695 257.025C241.835 261.252 233 256.314 233 248.255V190Z" fill="#FFFFFF" opacity="0.96"/>
+
+    <g stroke="#E5E7EB" stroke-width="9" stroke-linecap="round" stroke-linejoin="round" opacity="0.92">
+      <path d="M123 293L94 322"/>
+      <path d="M368 293L397 322"/>
+      <path d="M245 357V391"/>
+    </g>
+    <circle cx="94" cy="322" r="16" fill="#7B5BF5" stroke="#E5E7EB" stroke-width="7"/>
+    <circle cx="397" cy="322" r="16" fill="#10B981" stroke="#E5E7EB" stroke-width="7"/>
+    <circle cx="245" cy="391" r="16" fill="#22D3EE" stroke="#E5E7EB" stroke-width="7"/>
+  </g>
+
+  <text x="500" y="244" fill="url(#textGrad)" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="132" font-weight="800" letter-spacing="-5">Magnetio</text>
+  <text x="506" y="314" fill="#94A3B8" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="34" font-weight="500" letter-spacing="0.4">self-hosted Stremio addon • torrent + debrid streaming</text>
+</svg>
