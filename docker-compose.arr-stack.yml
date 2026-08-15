@@ -502,7 +502,7 @@ services:
   # as the Sonarr/Radarr off-VPN migration, see docs/MIGRATION-arr-off-vpn.md).
   # ═══════════════════════════════════════════════════════════════════════════
   decypharr:
-    image: ghcr.io/sirrobot01/decypharr:latest
+    image: ghcr.io/sirrobot01/decypharr:v2.5
     container_name: decypharr
     security_opt:
       - no-new-privileges:true
@@ -579,7 +579,7 @@ services:
   # the arr-stack network (no host port published).
   # ═══════════════════════════════════════════════════════════════════════════
   vpn-socks5:
-    image: serjs/go-socks5-proxy:latest
+    image: serjs/go-socks5-proxy:v0.0.4
     container_name: vpn-socks5
     <<: *default-security
     network_mode: "service:gluetun"

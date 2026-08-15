@@ -77,7 +77,7 @@ get_service_block() {
 
     local failed=()
     local images
-    images=$(get_all_images | sort -u)
+    images=$(get_pulled_images | sort -u)
 
     while IFS= read -r image; do
         [[ -z "$image" ]] && continue
@@ -137,9 +137,7 @@ get_service_block() {
     for f in $(get_compose_files); do
         local fname
         fname=$(basename "$f")
-        while IFS= read -r line; do
-            local image
-            image=$(echo "$line" | sed -E 's/^[[:space:]]+image:[[:space:]]*//')
+        while IFS= read -r image; do
             [[ -z "$image" ]] && continue
             if [[ "$image" == *":latest"* ]]; then
                 fail "Image '$image' in $fname uses :latest tag"
@@ -147,6 +145,6 @@ get_service_block() {
             if [[ "$image" != *":"* ]] && [[ "$image" != *'${'* ]]; then
                 fail "Image '$image' in $fname has no version tag"
             fi
-        done < <(grep -E '^[[:space:]]+image:[[:space:]]' "$f" 2>/dev/null)
+        done < <(get_pulled_images "$f")
     done
 }

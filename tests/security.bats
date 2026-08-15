@@ -58,13 +58,12 @@ setup() {
     for f in $(get_compose_files); do
         local fname
         fname=$(basename "$f")
-        while IFS= read -r line; do
-            local image
-            image=$(echo "$line" | sed -E 's/^[[:space:]]+image:[[:space:]]*//')
+        while IFS= read -r image; do
+            [[ -z "$image" ]] && continue
             if [[ "$image" == *":latest"* ]]; then
                 fail "Image '$image' in $fname uses :latest"
             fi
-        done < <(grep -E '^[[:space:]]+image:[[:space:]]' "$f" 2>/dev/null)
+        done < <(get_pulled_images "$f")
     done
 }
 

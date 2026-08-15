@@ -1,6 +1,6 @@
 # Camera Listen — AAC from the Reolink NVR, MP3 to the sofa panel, on demand.
 #
-#   docker compose -f docker-compose.camera-listen.yml up -d --build
+#   docker compose --env-file ./camera-listen/.env -f docker-compose.camera-listen.yml up -d --build
 #
 # WHY IT LIVES HERE and not in the sofa-panel repo: it runs on the NAS, and NAS
 # services deploy from this repo through the branch-first flow in CLAUDE.md.
@@ -10,8 +10,12 @@
 # The panel's own repo (~/dev/sofa-panel-tab5) documents WHY it exists, in
 # docs/camera-listen-service.md. This is the thing that runs.
 #
-# Config lives in camera-listen/.env — copy camera-listen/env.example. It holds
-# the NVR password, so it is gitignored and never travels with the branch.
+# Config lives in camera-listen/.env — copy camera-listen/env.example. It stays
+# gitignored and separate from the root .env (never travels with the branch);
+# the --env-file flag above points compose's ${VAR} substitution at it instead
+# of the default root .env. root .env.example documents these var *names*
+# (placeholders only) so tooling that scans for undocumented vars doesn't
+# flag them — real values still only ever live in camera-listen/.env.
 
 services:
   camera-listen:
@@ -19,7 +23,12 @@ services:
     image: camera-listen:latest
     container_name: camera-listen
     restart: unless-stopped
-    env_file: ./camera-listen/.env
+    environment:
+      SOURCE_BASE: ${SOURCE_BASE}
+      CAMERAS: ${CAMERAS}
+      LISTEN_TOKEN: ${LISTEN_TOKEN:-}
+      BITRATE: ${BITRATE:-32k}
+      CONNECT_TIMEOUT: ${CONNECT_TIMEOUT:-10}
     ports:
       - "8083:8083"
     logging:
