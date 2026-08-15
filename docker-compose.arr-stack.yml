@@ -531,7 +531,7 @@ services:
     restart: always
     logging: *default-logging
     healthcheck:
-      test: ["CMD", "curl", "-sf", "http://localhost:8282/"]
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8282/"]
       interval: 2m
       timeout: 15s
       retries: 3
