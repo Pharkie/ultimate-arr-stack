@@ -55,7 +55,9 @@ Decide how you'll access your media stack:
 - **SSH access** to your NAS (enable in NAS settings)
 - **VPN Subscription** - Any provider supported by [Gluetun](https://github.com/qdm12/gluetun-wiki/tree/main/setup/providers) (Surfshark, NordVPN, PIA, Mullvad, ProtonVPN, etc.)
 - **Usenet Provider** (optional, ~$4-6/month) - Frugal Usenet, Newshosting, Eweka, etc.
-- **Usenet Indexer** (optional) - NZBGeek (~$12/year) or DrunkenSlug (free tier)
+- **Usenet Indexer** (optional) - Usenet-Crawler (free, open registration) or NZBGeek (~$12/year).
+  DrunkenSlug's registration is currently closed and NZBFinder's free tier has no working API
+  access — see [Prowlarr setup](APP-CONFIG.md#46-prowlarr-indexer-manager) for details.
 
 > **Why Usenet?** More reliable than public torrents (no fakes), faster downloads, SSL-encrypted (no VPN needed). See [SABnzbd setup](APP-CONFIG.md#43-sabnzbd-usenet-downloads).
 
