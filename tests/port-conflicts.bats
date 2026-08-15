@@ -41,13 +41,13 @@ setup() {
     fi
 }
 
-@test "all static IPs within 172.20.0.0/24 or 10.8.1.0/24 range" {
+@test "all static IPs within 172.20.0.0/24, 172.22.0.0/24, or 10.8.1.0/24 range" {
     while IFS= read -r ip; do
         [[ -z "$ip" ]] && continue
         [[ "$ip" == *'${'* ]] && continue
-        if [[ "$ip" =~ ^172\.20\.0\.[0-9]+$ ]] || [[ "$ip" =~ ^10\.8\.1\.[0-9]+$ ]]; then
+        if [[ "$ip" =~ ^172\.20\.0\.[0-9]+$ ]] || [[ "$ip" =~ ^172\.22\.0\.[0-9]+$ ]] || [[ "$ip" =~ ^10\.8\.1\.[0-9]+$ ]]; then
             continue
         fi
-        fail "Static IP $ip is outside expected ranges (172.20.0.0/24 or 10.8.1.0/24)"
+        fail "Static IP $ip is outside expected ranges (172.20.0.0/24, 172.22.0.0/24, or 10.8.1.0/24)"
     done < <(get_all_ips)
 }

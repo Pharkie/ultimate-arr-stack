@@ -13,13 +13,11 @@ Docker media stack for Ugreen NAS. Edit NAS files (like `pihole/dnsmasq.d/02-loc
 
 ## Cross-Stack: Therapy Stack
 
-A separate `therapy-stack` runs at `/volume1/docker/therapy-stack/` on its own network (`therapy-net`, 172.21.0.0/24). Baserow is also on the `arr-stack` network (static IP 172.20.0.20) so Traefik can route to it.
+**Unverified / likely stale on this NAS as of 2026-08-15.** This section describes a `therapy-stack`/Baserow coupling that was checked directly on the live NAS before the network segmentation work (Phase 2 of the segmentation plan) and found not to exist: no `baserow` container, no `172.20.0.20` binding on the network, no `/volume1/docker/therapy-stack/` directory, and no `traefik/dynamic/therapy.local.yml` file. This may describe a different deployment (the local dev repo path below is also for a different user/machine) rather than this one. Re-verify on the live NAS before relying on any of the following if this setup ever does need to interoperate with a therapy-stack deployment:
 
-**Files referencing therapy-stack:** `pihole/dnsmasq.d/02-local-dns.conf`, `traefik/dynamic/therapy.local.yml`
+A separate `therapy-stack` would run at `/volume1/docker/therapy-stack/` on its own network (`therapy-net`, 172.21.0.0/24), with Baserow on the `arr-stack` network at static IP 172.20.0.20 so Traefik can route to it. Files that would reference it: `pihole/dnsmasq.d/02-local-dns.conf`, `traefik/dynamic/therapy.local.yml`. If it does exist, Baserow's static IP matters for the same reason every other static IP in `docker-compose.arr-stack.yml` is pinned: the `ip_range: 172.20.0.128/25` confines Docker's dynamic allocation to `.128`-`.255`, so a manually-added container needs an explicit IP outside that range or it risks colliding with a dynamically-assigned one (e.g. Gluetun's `.3`) on restart.
 
-**IMPORTANT:** Baserow's static IP (172.20.0.20) is critical. Without it, Docker can assign Gluetun's IP (172.20.0.3) to Baserow on reboot, breaking the VPN stack. The `ip_range: 172.20.0.128/25` in `docker-compose.traefik.yml` confines dynamic IPs to 128-255.
-
-Therapy-stack local repo: `/Users/adamknowles/dev/n8n Therapybot/Git repo/`
+Therapy-stack local repo (unverified, different user's machine): `/Users/adamknowles/dev/n8n Therapybot/Git repo/`
 
 ## Deploying to the NAS
 

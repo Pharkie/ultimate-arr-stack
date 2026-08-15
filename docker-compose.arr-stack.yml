@@ -62,6 +62,17 @@ networks:
     ipam:
       config:
         - subnet: 10.8.1.0/24
+  # NOT renamed to arr-core: Docker refuses to create a new network with the
+  # same subnet as an existing one, so a same-CIDR rename can't be applied
+  # without either a live DNS outage (deleting this network requires
+  # detaching every container from it first) or a full IP renumbering -
+  # neither justified for a label-only change. Attempted 2026-08-15, reverted
+  # after `docker compose up -d` failed with "Pool overlaps with other one on
+  # this address space"; the live stack was undisturbed (verified via
+  # container health + DNS resolution). Verified live on the NAS that no
+  # other project (e.g. a Baserow/therapy-stack coupling CLAUDE.md previously
+  # described) actually attaches to this network by name - no such container,
+  # static IP, or directory exists on the NAS.
   arr-stack:
     name: arr-stack
     driver: bridge
@@ -70,6 +81,16 @@ networks:
         - subnet: 172.20.0.0/24
           ip_range: 172.20.0.128/25
           gateway: 172.20.0.1
+  # Owned by docker-compose.magnetio.yml (magnetio project) - referenced here
+  # only so gluetun can join it. magnetio-addon shares gluetun's network
+  # namespace (network_mode: container:gluetun) and needs to reach
+  # magnetio-scraper/magnetio-redis, which live on this dedicated network
+  # instead of arr-stack (highest supply-chain/P2P-risk tier - isolated so
+  # Sonarr/Radarr/Jellyfin/etc. can't reach it directly). Deploy order:
+  # docker-compose.magnetio.yml (creates magnetio-net) before recreating
+  # gluetun here, or gluetun's recreate will fail with "network not found".
+  magnetio-net:
+    external: true
 
 #########################
 # Logging               #
@@ -147,6 +168,11 @@ services:
       arr-stack:
         ipv4_address: 172.20.0.3
       vpn-net:
+      # So magnetio-addon (shares this container's netns) can reach
+      # magnetio-scraper/magnetio-redis on their isolated network - see the
+      # magnetio-net comment in the networks: block above.
+      magnetio-net:
+        ipv4_address: 172.22.0.4
     restart: always
     logging: *default-logging
     healthcheck:

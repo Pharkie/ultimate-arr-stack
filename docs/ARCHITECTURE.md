@@ -80,7 +80,16 @@ Sonarr/Radarr → Decypharr
 
 ## Network Layout
 
-All services run on the `arr-stack` network with static IPs:
+Most services run on the `arr-stack` network with static IPs. A same-CIDR
+rename to `arr-core` was attempted during the trust-tier network segmentation
+work but reverted - Docker refuses to create a new network on a subnet an
+existing network still occupies, so completing the rename would require
+either a live DNS outage or a full IP renumbering; neither was judged worth
+it for a label-only change. Magnetio's scraper/redis are deliberately on a
+separate `magnetio-net` bridge instead (highest supply-chain/P2P-risk tier -
+locally-built, unaudited source, raw DHT/torrent traffic) - only Gluetun
+bridges the two, so Sonarr/Radarr/Jellyfin/etc. can't reach Magnetio's backend
+directly:
 
 ```
 arr-stack network (172.20.0.0/24)
@@ -103,8 +112,17 @@ arr-stack network (172.20.0.0/24)
 │ 172.20.0.15  │ Beszel       │ System monitoring              │ Optional         │
 │ 172.20.0.16  │ DIUN         │ Image update notifier          │ Optional         │
 │ 172.20.0.17  │ stremio-jellyfin │ Stremio addon for local Jellyfin library   │ Optional │
-│ 172.20.0.18  │ magnetio-scraper │ Torrent provider scraper backend           │ Optional │
-│ 172.20.0.19  │ magnetio-redis   │ Cache backend for Magnetio                 │ Optional │
+│ 172.20.0.21  │ docker-socket-proxy │ Scoped Docker API access               │ Optional │
+│ 172.20.0.18, .19 │ (freed)  │ Formerly magnetio-scraper/-redis - see magnetio-net below, not reused │ -    │
+───────────────────────────────────────────────────────────────────────────────────
+
+magnetio-net (172.22.0.0/24) — isolated, only Gluetun + Magnetio's own containers join it
+───────────────────────────────────────────────────────────────────────────────────
+│ IP           │ Service          │ Notes                                       │
+├──────────────┼──────────────────┼──────────────────────────────────────────────│
+│ 172.22.0.2   │ magnetio-scraper │ Torrent provider scraper backend            │
+│ 172.22.0.3   │ magnetio-redis   │ Cache backend for Magnetio                  │
+│ 172.22.0.4   │ Gluetun          │ Bridges arr-stack ↔ magnetio-net for magnetio-addon (network_mode: container:gluetun) │
 ───────────────────────────────────────────────────────────────────────────────────
 ```
 
