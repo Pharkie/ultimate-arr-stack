@@ -128,7 +128,7 @@ See [Quick Reference](REFERENCE.md) for full service lists, .lan URLs, and netwo
 
 <a id="plex"></a>
 
-This stack uses Jellyfin by default, but Plex works too — either as a replacement or alongside it. Seerr supports both natively. For reference, there's an [old Plex compose file](https://github.com/Pharkie/ultimate-arr-stack/blob/10ea05a/docker-compose.plex-arr-stack.yml) in the git history.
+This stack uses Jellyfin by default, but Plex works too — either as a replacement or alongside it. Seerr supports both natively. For reference, there's an [old Plex compose file](https://github.com/leonardoazeredo/ultimate-arr-stack/blob/10ea05a/docker-compose.plex-arr-stack.yml) in the git history.
 
 Add this to `docker-compose.arr-stack.yml` (add `plex-config` to the `volumes:` section too):
 
@@ -216,7 +216,7 @@ NAS_STACK_DIR=/volume1/docker/arr-stack
 # Clone the repo
 sudo mkdir -p "$(dirname "$NAS_STACK_DIR")"
 cd "$(dirname "$NAS_STACK_DIR")"
-sudo git clone https://github.com/Pharkie/ultimate-arr-stack.git "$(basename "$NAS_STACK_DIR")"  # or your fork
+sudo git clone https://github.com/leonardoazeredo/ultimate-arr-stack.git "$(basename "$NAS_STACK_DIR")"
 sudo chown -R 1000:1000 "$NAS_STACK_DIR"
 ```
 
@@ -264,7 +264,7 @@ NAS_STACK_DIR=/volume1/docker/arr-stack
 # Clone the repo
 sudo mkdir -p "$(dirname "$NAS_STACK_DIR")"
 cd "$(dirname "$NAS_STACK_DIR")"
-sudo git clone https://github.com/Pharkie/ultimate-arr-stack.git "$(basename "$NAS_STACK_DIR")"  # or your fork
+sudo git clone https://github.com/leonardoazeredo/ultimate-arr-stack.git "$(basename "$NAS_STACK_DIR")"
 sudo chown -R 1000:1000 "$NAS_STACK_DIR"
 ```
 
@@ -285,7 +285,7 @@ sudo chown -R 1000:1000 /srv/data
 
 # Clone the repo
 cd /srv/docker
-sudo git clone https://github.com/Pharkie/ultimate-arr-stack.git arr-stack  # or your fork
+sudo git clone https://github.com/leonardoazeredo/ultimate-arr-stack.git arr-stack
 sudo chown -R 1000:1000 /srv/docker/arr-stack
 ```
 
@@ -710,4 +710,4 @@ off-VPN migration — see `docs/MIGRATION-arr-off-vpn.md`).
 
 ---
 
-Issues? [Report on GitHub](https://github.com/Pharkie/ultimate-arr-stack/issues) or [chat on Reddit](https://www.reddit.com/user/Jeff46K4/).
+Issues? [Report on GitHub](https://github.com/leonardoazeredo/ultimate-arr-stack/issues) or [chat on Reddit](https://www.reddit.com/user/Jeff46K4/).
