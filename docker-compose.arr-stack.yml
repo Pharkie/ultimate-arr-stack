@@ -620,7 +620,7 @@ services:
   # ═══════════════════════════════════════════════════════════════════════════
   # VPN-SOCKS5 - SOCKS5 proxy tunneled through Gluetun's ProtonVPN connection
   # (network_mode: service:gluetun, same pattern as qBittorrent/SABnzbd/
-  # Prowlarr/FlareSolverr above). Lets other containers on the arr-stack
+  # Prowlarr/FlareSolverr above). Lets other containers on the arr-core
   # network route traffic through the VPN without joining Gluetun's network
   # namespace directly — used by Magnetio's P2P Privacy Proxy setting so
   # uncached torrent connections exit via ProtonVPN instead of the NAS's own
