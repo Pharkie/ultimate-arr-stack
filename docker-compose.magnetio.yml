@@ -28,6 +28,13 @@
 # vpn-socks5 container it pointed at is still deployed in case another
 # service wants a standalone SOCKS5 proxy later.
 
+# Own compose project name so operations on other files can't accidentally
+# take out Magnetio via --remove-orphans. This is also the highest
+# supply-chain/network-risk tier in the stack (locally-built, unaudited
+# source, raw P2P/DHT traffic) — isolating its project is a first step
+# toward giving it its own network too (tracked separately).
+name: magnetio
+
 #########################
 # Volumes               #
 #########################

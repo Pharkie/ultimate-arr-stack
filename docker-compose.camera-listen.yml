@@ -17,12 +17,23 @@
 # (placeholders only) so tooling that scans for undocumented vars doesn't
 # flag them — real values still only ever live in camera-listen/.env.
 
+# Own compose project name — this service is unrelated to the media/VPN
+# stack entirely, so it shouldn't share fate with it via --remove-orphans.
+name: camera-listen
+
+x-security: &default-security
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+
 services:
   camera-listen:
     build: ./camera-listen
     image: camera-listen:latest
     container_name: camera-listen
     restart: unless-stopped
+    <<: *default-security
     environment:
       SOURCE_BASE: ${SOURCE_BASE}
       CAMERAS: ${CAMERAS}

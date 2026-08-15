@@ -13,6 +13,11 @@
 # Access: traefik.lan | traefik.yourdomain.com | NAS_IP:9090
 # ═══════════════════════════════════════════════════════════════════════════════
 
+# Own compose project name so operations on other files can't accidentally
+# take out Traefik via --remove-orphans - it owns the traefik-lan macvlan
+# IP and every .lan URL depends on it staying up.
+name: traefik-edge
+
 services:
   traefik:
     image: traefik:v3.7
@@ -22,6 +27,12 @@ services:
       - no-new-privileges:true
     cap_drop:
       - ALL
+    # docker-socket-proxy lives in docker-compose.utilities.yml (arr-utilities
+    # project), not this file - Compose depends_on can't reference a service
+    # in another project, so there's no enforced start-order here. Deploy
+    # docker-compose.utilities.yml (or at least docker-socket-proxy) before
+    # recreating traefik, or Traefik's docker provider will fail to connect
+    # until it retries.
     networks:
       arr-stack:
         ipv4_address: 172.20.0.2
@@ -36,7 +47,6 @@ services:
     environment:
       - TZ=${TZ}
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
       - ./traefik/traefik.yml:/traefik.yml:ro
       - ./traefik/dynamic:/dynamic:ro
     labels:
