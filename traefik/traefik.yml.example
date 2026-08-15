@@ -33,7 +33,7 @@ providers:
     # a `:ro` socket mount alone doesn't limit API access.
     endpoint: "tcp://docker-socket-proxy:2375"
     exposedByDefault: false
-    network: arr-stack
+    network: arr-core
     watch: true
 
   file:
