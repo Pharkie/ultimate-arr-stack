@@ -1,0 +1,170 @@
+
+#########################
+# Magnetio               #
+#########################
+# Stremio addon for torrent/debrid fallback streams — used alongside the
+# stremio-jellyfin addon (docker-compose.arr-stack.yml) so Stremio tries the
+# local Jellyfin library first, then falls back to Magnetio's torrent
+# scraping + TorBox debrid resolution for anything not already cached.
+#
+# Built from source (no published image upstream) — source lives in
+# ./magnetio/{addon,scraper} on the NAS, synced from
+# https://github.com/peterdsp/Magnetio.
+#
+# Deploy with: docker compose -f docker-compose.magnetio.yml up -d --build
+#
+# Install in Stremio: visit http://NAS_IP:7000/configure in a browser first —
+# v1.1.5 configures providers/subtitles/debrid via a web UI (not a raw
+# pipe-delimited manifest-path config as earlier addon versions used), which
+# generates the manifest install URL/deep link for you at the end.
+#
+# magnetio-addon runs on Gluetun's network namespace (network_mode:
+# "container:gluetun") so ALL of its traffic — including raw BitTorrent
+# peer connections, not just tracker announces — is forced through the
+# VPN tunnel. Port 7000 is still published at NAS_IP:7000, just via
+# gluetun's ports list in docker-compose.arr-stack.yml now. Magnetio's own
+# "P2P Privacy Proxy" (proxy=1|proxyUrl=socks5://...) setting is redundant
+# with this and can be left off in the manifest URL going forward — the
+# vpn-socks5 container it pointed at is still deployed in case another
+# service wants a standalone SOCKS5 proxy later.
+
+#########################
+# Volumes               #
+#########################
+volumes:
+  magnetio-redis-data:
+
+#########################
+# Networks              #
+#########################
+networks:
+  arr-stack:
+    external: true
+
+#########################
+# Logging               #
+#########################
+x-logging: &default-logging
+  driver: "json-file"
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+#########################
+# Security Defaults     #
+#########################
+x-security: &default-security
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+
+#########################
+# Services              #
+#########################
+services:
+  # ═══════════════════════════════════════════════════════════════════════════
+  # MAGNETIO-SCRAPER - Torrent provider scraper backend (21+ built-in sites).
+  # No web UI. Queried internally by magnetio-addon.
+  # ═══════════════════════════════════════════════════════════════════════════
+  magnetio-scraper:
+    build:
+      context: ./magnetio/scraper
+      dockerfile: Dockerfile
+    image: magnetio-scraper:local
+    container_name: magnetio-scraper
+    <<: *default-security
+    environment:
+      - PORT=8080
+      - REDIS_URI=redis://:${MAGNETIO_REDIS_PASSWORD}@magnetio-redis:6379
+      - CACHE_TTL_STREAMS=86400
+      - LOG_LEVEL=info
+    depends_on:
+      magnetio-redis:
+        condition: service_healthy
+    networks:
+      arr-stack:
+        ipv4_address: 172.20.0.18
+    restart: unless-stopped
+    logging: *default-logging
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # MAGNETIO-ADDON - Stremio addon frontend. Resolves torrent streams via the
+  # scraper and TorBox debrid. Config is URL-based (see manifest URL above).
+  # Access: NAS_IP:7000
+  # ═══════════════════════════════════════════════════════════════════════════
+  magnetio-addon:
+    build:
+      context: ./magnetio/addon
+      dockerfile: Dockerfile
+    image: magnetio-addon:local
+    container_name: magnetio-addon
+    <<: *default-security
+    # Magnetio's own SOCKS5 proxy setting only wraps tracker-announce
+    # traffic, not the actual BitTorrent peer connections that carry the
+    # download data (confirmed by reading lib/torrentProxy.js — the socks
+    # option only sets opts.tracker.proxy, peer sockets connect directly).
+    # Sharing Gluetun's network namespace instead forces ALL traffic —
+    # trackers, peer connections, DHT, its own HTTP server — through the
+    # VPN tunnel at the OS level, same as qBittorrent/SABnzbd/Prowlarr/
+    # FlareSolverr in docker-compose.arr-stack.yml. "container:gluetun"
+    # (not "service:gluetun") because gluetun lives in a different compose
+    # file/project — Compose only resolves "service:" within its own file,
+    # but "container:<name>" works across projects by literal container
+    # name. Gluetun must already be running before this starts (no
+    # cross-file depends_on possible); port 7000 is published via
+    # gluetun's own `ports:` list in docker-compose.arr-stack.yml instead
+    # of here, since a container sharing another's netns can't declare its
+    # own port mappings.
+    network_mode: "container:gluetun"
+    depends_on:
+      magnetio-redis:
+        condition: service_healthy
+      magnetio-scraper:
+        condition: service_healthy
+    environment:
+      - PORT=7000
+      - REDIS_URI=redis://:${MAGNETIO_REDIS_PASSWORD}@magnetio-redis:6379
+      - SCRAPER_URL=http://magnetio-scraper:8080
+      - LOG_LEVEL=info
+    restart: unless-stopped
+    logging: *default-logging
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:7000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # MAGNETIO-REDIS - Cache backend shared by the scraper and addon.
+  # Internal only, no published port.
+  # ═══════════════════════════════════════════════════════════════════════════
+  magnetio-redis:
+    image: redis:7-alpine
+    container_name: magnetio-redis
+    <<: *default-security
+    # redis:7-alpine's entrypoint uses setpriv to drop from root to the redis
+    # user on startup — cap_drop: ALL removes CAP_SETUID/CAP_SETGID needed for
+    # that, so add them back (same pattern as lsio-security in
+    # docker-compose.arr-stack.yml for images with a similar init step).
+    cap_add:
+      - SETUID
+      - SETGID
+    command: redis-server --save 60 1 --loglevel warning --maxmemory 512mb --maxmemory-policy allkeys-lru --requirepass ${MAGNETIO_REDIS_PASSWORD}
+    volumes:
+      - magnetio-redis-data:/data
+    networks:
+      arr-stack:
+        ipv4_address: 172.20.0.19
+    restart: unless-stopped
+    logging: *default-logging
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${MAGNETIO_REDIS_PASSWORD}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5

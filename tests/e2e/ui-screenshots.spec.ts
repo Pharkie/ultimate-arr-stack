@@ -1,42 +1,5 @@
 import { test, expect } from '@playwright/test';
-import * as path from 'path';
-
-const HOST = process.env.NAS_HOST ?? 'localhost';
-const SCREENSHOTS_DIR = path.join(__dirname, 'screenshots');
-
-function screenshotPath(name: string) {
-  return path.join(SCREENSHOTS_DIR, `${name}.png`);
-}
-
-// ─── Service ports ───────────────────────────────────────────────────────────
-
-const PORTS = {
-  jellyfin: 8096,
-  sonarr: 8989,
-  radarr: 7878,
-  prowlarr: 9696,
-  qbittorrent: 8085,
-  sabnzbd: 8082,
-  seerr: 5055,
-  bazarr: 6767,
-  pihole: 8081,
-} as const;
-
-function url(service: keyof typeof PORTS, pathStr = '') {
-  return `http://${HOST}:${PORTS[service]}${pathStr}`;
-}
-
-// ─── Helpers ─────────────────────────────────────────────────────────────────
-
-/** Intercept all requests and add a custom header. Works for SPA auth bypass. */
-async function addHeaderToAllRequests(page: import('@playwright/test').Page, name: string, value: string) {
-  await page.route('**/*', async (route) => {
-    const headers = { ...route.request().headers(), [name]: value };
-    await route.continue({ headers });
-  });
-}
-
-// ─── UI screenshot tests ─────────────────────────────────────────────────────
+import { HOST, url, screenshotPath, addHeaderToAllRequests } from './helpers';
 
 test.describe('UI screenshots', () => {
   test('Jellyfin — login and screenshot home', async ({ page, context }) => {
@@ -146,35 +109,47 @@ test.describe('UI screenshots', () => {
     await page.screenshot({ path: screenshotPath('jellyfin'), fullPage: true });
   });
 
-  test('Sonarr — login and screenshot dashboard', async ({ page }) => {
+  test('Sonarr — screenshot dashboard', async ({ page }) => {
+    // AuthenticationMethod may be None (no login page) or Forms (credentials required).
+    // Handle both so this test keeps working if auth is enabled later.
     const username = process.env.SONARR_USERNAME;
     const password = process.env.SONARR_PASSWORD;
-    test.skip(!username || !password, 'SONARR_USERNAME / SONARR_PASSWORD not set');
 
-    await page.goto(url('sonarr', '/login'));
+    await page.goto(url('sonarr', '/'));
     await page.waitForLoadState('networkidle');
-    await page.fill('input[name="username"], input[id="username"]', username!);
-    await page.fill('input[name="password"], input[id="password"]', password!);
-    await page.click('button[type="submit"]');
-    await page.waitForLoadState('networkidle');
+
+    if (page.url().includes('login')) {
+      test.skip(!username || !password, 'Sonarr requires login but SONARR_USERNAME / SONARR_PASSWORD not set');
+      await page.fill('input[name="username"], input[id="username"]', username!);
+      await page.fill('input[name="password"], input[id="password"]', password!);
+      await page.click('button[type="submit"]');
+      await page.waitForLoadState('networkidle');
+    }
 
     expect(page.url()).not.toContain('login');
+    await expect(page.locator('[class*="series"], [class*="Series"], nav').first()).toBeVisible({ timeout: 10_000 });
     await page.screenshot({ path: screenshotPath('sonarr'), fullPage: true });
   });
 
-  test('Radarr — login and screenshot dashboard', async ({ page }) => {
+  test('Radarr — screenshot dashboard', async ({ page }) => {
+    // AuthenticationMethod may be None (no login page) or Forms (credentials required).
+    // Handle both so this test keeps working if auth is enabled later.
     const username = process.env.RADARR_USERNAME;
     const password = process.env.RADARR_PASSWORD;
-    test.skip(!username || !password, 'RADARR_USERNAME / RADARR_PASSWORD not set');
 
-    await page.goto(url('radarr', '/login'));
+    await page.goto(url('radarr', '/'));
     await page.waitForLoadState('networkidle');
-    await page.fill('input[name="username"], input[id="username"]', username!);
-    await page.fill('input[name="password"], input[id="password"]', password!);
-    await page.click('button[type="submit"]');
-    await page.waitForLoadState('networkidle');
+
+    if (page.url().includes('login')) {
+      test.skip(!username || !password, 'Radarr requires login but RADARR_USERNAME / RADARR_PASSWORD not set');
+      await page.fill('input[name="username"], input[id="username"]', username!);
+      await page.fill('input[name="password"], input[id="password"]', password!);
+      await page.click('button[type="submit"]');
+      await page.waitForLoadState('networkidle');
+    }
 
     expect(page.url()).not.toContain('login');
+    await expect(page.locator('[class*="movie"], [class*="Movie"], nav').first()).toBeVisible({ timeout: 10_000 });
     await page.screenshot({ path: screenshotPath('radarr'), fullPage: true });
   });
 
@@ -331,85 +306,5 @@ test.describe('UI screenshots', () => {
       page.locator('#queries-over-time, canvas, .card, [class*="dashboard"]').first()
     ).toBeVisible({ timeout: 10_000 });
     await page.screenshot({ path: screenshotPath('pihole'), fullPage: true });
-  });
-});
-
-// ─── VPN connectivity test ────────────────────────────────────────────────────
-
-test.describe('VPN connectivity', () => {
-  test('VPN-tunneled services are reachable (Gluetun healthy)', async ({ request }) => {
-    const sonarrKey = process.env.SONARR_API_KEY;
-    test.skip(!sonarrKey, 'SONARR_API_KEY not set');
-
-    // Sonarr/Radarr/qBittorrent run through Gluetun (network_mode: service:gluetun).
-    // They only start when Gluetun is healthy (VPN connected). If we can reach
-    // them, the VPN tunnel is active.
-    // For actual IP comparison, run scripts/check-vpn.sh on the NAS.
-    const res = await request.get(url('sonarr', '/api/v3/system/status'), {
-      headers: { 'X-Api-Key': sonarrKey! },
-    });
-    expect(res.ok()).toBeTruthy();
-    const status = await res.json();
-    expect(status.appName).toBe('Sonarr');
-  });
-});
-
-// ─── API assertion tests ─────────────────────────────────────────────────────
-
-test.describe('API assertions', () => {
-  test('Radarr — root folder is /data/media/movies', async ({ request }) => {
-    const apiKey = process.env.RADARR_API_KEY;
-    test.skip(!apiKey, 'RADARR_API_KEY not set');
-
-    const res = await request.get(url('radarr', '/api/v3/rootfolder'), {
-      headers: { 'X-Api-Key': apiKey! },
-    });
-    expect(res.ok()).toBeTruthy();
-    const folders = await res.json();
-    expect(folders).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ path: '/data/media/movies', accessible: true }),
-      ]),
-    );
-  });
-
-  test('Sonarr — root folder is /data/media/tv', async ({ request }) => {
-    const apiKey = process.env.SONARR_API_KEY;
-    test.skip(!apiKey, 'SONARR_API_KEY not set');
-
-    const res = await request.get(url('sonarr', '/api/v3/rootfolder'), {
-      headers: { 'X-Api-Key': apiKey! },
-    });
-    expect(res.ok()).toBeTruthy();
-    const folders = await res.json();
-    expect(folders).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ path: '/data/media/tv', accessible: true }),
-      ]),
-    );
-  });
-
-  test('Radarr — has movies', async ({ request }) => {
-    const apiKey = process.env.RADARR_API_KEY;
-    test.skip(!apiKey, 'RADARR_API_KEY not set');
-
-    const res = await request.get(url('radarr', '/api/v3/movie'), {
-      headers: { 'X-Api-Key': apiKey! },
-    });
-    expect(res.ok()).toBeTruthy();
-    const movies = await res.json();
-    expect(movies.length).toBeGreaterThan(0);
-  });
-
-  test('Sonarr — has series', async ({ request }) => {
-    const apiKey = process.env.SONARR_API_KEY;
-    test.skip(!apiKey, 'SONARR_API_KEY not set');
-
-    const res = await request.get(url('sonarr', '/api/v3/series'), {
-      headers: { 'X-Api-Key': apiKey! },
-    });
-    expect(res.ok()).toBeTruthy();
-    const series = await res.json();
-    expect(series.length).toBeGreaterThan(0);
   });
 });

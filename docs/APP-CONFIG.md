@@ -136,10 +136,20 @@ Searches for TV shows, sends download links to qBittorrent/SABnzbd, and organize
 
    **SABnzbd (Usenet):** *(if configured)*
    - Add → SABnzbd
-   - Host: `gluetun` (SABnzbd is behind the VPN)
-   - Port: `8080`
-   - **Note:** SABnzbd's `host_whitelist` must include `gluetun` or it returns `403 Forbidden`.
+   - Host: `172.20.0.3` (gluetun's static IP on the bridge — same pattern as the qBittorrent entry
+     above; SABnzbd is behind the VPN, and using the IP directly avoids SABnzbd's `host_whitelist`
+     hostname check returning `403 Forbidden`)
+   - Port: `8080` (SABnzbd's internal port — not `8082`, which is only the host-published mapping)
    - API Key: (from SABnzbd Config → General)
+   - Category: `tv`
+
+   **Decypharr / TorBox (debrid):** *(if configured — see [Adding TorBox](SETUP.md#adding-more-services-core))*
+   - Add → qBittorrent (Decypharr speaks the qBittorrent Web API)
+   - Host: `decypharr` (Decypharr is on the bridge, same as Sonarr — no VPN hop needed)
+   - Port: `8282`
+   - **Username:** `http://sonarr:8989` (Sonarr's own URL — not a real qBittorrent login; this is
+     how Decypharr identifies which Arr is calling, matched against its own `arrs` config)
+   - **Password:** Sonarr's API key (Settings → General → API Key)
    - Category: `tv`
 
 5. **Enable NFO metadata:** Settings → Metadata → Kodi (XBMC) / Emby → **Enable** (see [why this matters](#nfo-metadata))
@@ -180,9 +190,20 @@ Searches for movies, sends download links to qBittorrent/SABnzbd, and organizes 
 
    **SABnzbd (Usenet):** *(if configured)*
    - Add → SABnzbd
-   - Host: `localhost` (SABnzbd also runs via gluetun)
-   - Port: `8080`
+   - Host: `172.20.0.3` (gluetun's static IP on the bridge — same pattern as the qBittorrent entry
+     above; SABnzbd is behind the VPN, and using the IP directly avoids SABnzbd's `host_whitelist`
+     hostname check returning `403 Forbidden`)
+   - Port: `8080` (SABnzbd's internal port — not `8082`, which is only the host-published mapping)
    - API Key: (from SABnzbd Config → General)
+   - Category: `movies`
+
+   **Decypharr / TorBox (debrid):** *(if configured — see [Adding TorBox](SETUP.md#adding-more-services-core))*
+   - Add → qBittorrent (Decypharr speaks the qBittorrent Web API)
+   - Host: `decypharr` (Decypharr is on the bridge, same as Radarr — no VPN hop needed)
+   - Port: `8282`
+   - **Username:** `http://radarr:7878` (Radarr's own URL — not a real qBittorrent login; this is
+     how Decypharr identifies which Arr is calling, matched against its own `arrs` config)
+   - **Password:** Radarr's API key (Settings → General → API Key)
    - Category: `movies`
 
 5. **Enable NFO metadata:** Settings → Metadata → Kodi (XBMC) / Emby → **Enable** (see [why this matters](#nfo-metadata))
@@ -214,6 +235,14 @@ This gives Usenet a 30-minute head start before considering torrents.
 
 > **Note:** Do this in both Sonarr and Radarr (same steps in each).
 
+**Preferring TorBox/Decypharr over qBittorrent:** *(if both are configured)* Delay profiles only
+split by protocol (Usenet vs. torrent) — Decypharr shows up as a torrent-protocol client too, so
+it shares the same Torrent Delay as real qBittorrent. To prefer one torrent client over the other,
+set each client's **Priority** instead (Settings → Download Clients → edit the client → Priority
+field, `1` = tried first, `50` = tried last). Give Decypharr a lower number than qBittorrent to
+try the cached/instant TorBox grab first, falling back to VPN-routed qBittorrent for anything
+TorBox doesn't have.
+
 ### NFO Metadata
 
 > **Applies to both Sonarr (step 4 above) and Radarr (step 4 above).**
@@ -233,13 +262,31 @@ Manages torrent/Usenet indexers and syncs them to Sonarr/Radarr.
 3. **Add Torrent Indexers:** Indexers (left sidebar) → + button → search by name
 4. **If using SABnzbd: Add Usenet Indexer**
    - **Indexers** (left sidebar, NOT Settings → Indexer Proxies) → + button
-   - Search by indexer name (e.g., "NZBGeek", "DrunkenSlug", "NZBFinder")
-   - API Key: (from your indexer account → API section)
+   - Search by indexer name (e.g., "NZBGeek", "Usenet-Crawler") — use **Generic Newznab** if
+     Prowlarr has no built-in definition for your indexer, with Url `https://<indexer-host>` and
+     API Path `/api`
+   - API Key: (from your indexer account → profile/API section)
    - **Tags:** leave blank (syncs to all apps)
    - **Indexer Proxy:** leave blank (not needed for Usenet)
    - Test → Save
 
-   > **Tested with:** NZBGeek (~$12/year, reliable). Free alternatives: DrunkenSlug, NZBFinder.
+   > **Tested with:** Usenet-Crawler (free, open registration at usenet-crawler.com, 50 API
+   > hits/day, real search results confirmed working via Generic Newznab). NZBGeek (~$12/year) is
+   > the reliable paid option. **Avoid:** NZBFinder's free tier has no API access (search returns
+   > "premium member required" even with a valid key); DrunkenSlug's registration is currently
+   > closed; TorBox's own `search-api.torbox.app` Newznab/Torznab endpoint (documented in their
+   > changelog) currently doesn't resolve in DNS at all — confirmed via TorBox's own authoritative
+   > nameserver, not just a local issue.
+
+   > **Full pipeline verified end-to-end (2026-08-15):** Usenet-Crawler search → Radarr grab →
+   > SABnzbd download/repair/unpack → Radarr hardlink-import, all confirmed with a real movie
+   > grab. One gotcha along the way: SABnzbd's TorBox NNTP server (`nntp.torbox.app:563`) rejected
+   > login with a generic `482 Invalid username or password` even though the credentials matched
+   > what was on file — this looked like a rate limit (TorBox's `/v1/api/user/me` showed a
+   > `cooldown_until` field at the time) but was actually just **stale/incorrect Usenet
+   > credentials**. Regenerating the username+password from TorBox's Usenet settings page fixed it
+   > immediately. If you hit `482` errors, regenerate the credentials before assuming it's a
+   > plan-tier limit.
 
 4. **Add FlareSolverr** (for protected torrent sites):
    - Settings → Indexers → Add FlareSolverr
@@ -253,6 +300,50 @@ Manages torrent/Usenet indexers and syncs them to Sonarr/Radarr.
    - API Key: (from Sonarr → Settings → General → Security)
 6. **Connect to Radarr:** Same process — Radarr Server: `http://172.20.0.11:7878`
 7. **Sync:** Settings → Apps → Sync App Indexers
+
+## 4.6a Trakt (Watched-status sync + list-based suggestions)
+
+Two independent integrations — install/configure separately, they don't depend on each other.
+
+**Jellyfin (watched-status sync, scrobbling):**
+1. Install the **Trakt** plugin: Dashboard → Plugins → Catalog → Trakt → Install → restart Jellyfin
+2. Dashboard → Plugins → Trakt → configure per-user, click **Authorize** → note the device code
+   shown → visit `https://trakt.tv/activate` in a browser, sign in (Trakt is passwordless now —
+   it emails a magic sign-in link, no password prompt), enter the code, approve
+3. Confirms via the plugin's config page once approved; access/refresh tokens are stored and
+   auto-renew
+
+**Sonarr/Radarr (auto-add from Trakt lists — watchlist, trending, a specific list URL, etc.):**
+1. Settings → Import Lists → Add → **Trakt User List** (personal watchlist/watched/collection) or
+   **Trakt List** (any public list URL) or **Trakt Popular List** (no auth needed)
+2. For the user-authenticated types, click **Authenticate with Trakt** inside the Add-list modal —
+   this opens Trakt's OAuth consent in a popup, backed by Servarr's own shared OAuth proxy
+   (`auth.servarr.com`), not something this stack configures directly
+
+> **Trakt free-tier gotcha:** free Trakt accounts allow only **one** connected third-party app at
+> a time — Jellyfin, Sonarr, and Radarr each count separately (different registered client IDs).
+> Connecting a second one kicks the first. **Trakt VIP removes this limit** and lets all three
+> stay connected simultaneously.
+
+> **Known issue (confirmed 2026-08-15, still open):** Sonarr/Radarr's Trakt OAuth fails with
+> `Received oauth token was invalid`. Clicking "Authenticate with Trakt" *does* complete Trakt's
+> own login step (it shows up under Trakt → Settings → Apps → Connected Apps, "last used" just
+> now) — but the token-exchange step that hands a real token back to Sonarr/Radarr fails, so no
+> import list ever actually gets saved (confirmed empty `GET /api/v3/importlist` on both apps even
+> right after a "successful" login). Root cause per
+> [Radarr/Radarr#11579](https://github.com/Radarr/Radarr/issues/11579) (closed `not planned`, but
+> with a precise technical writeup from a Radarr contributor): Trakt migrated its OAuth backend in
+> mid-July 2026, and its authorize endpoint now silently 307-redirects the legacy request into a
+> PKCE flow, injecting a server-generated `code_challenge` that Sonarr/Radarr never sent — so
+> `auth.servarr.com`'s proxy has no matching `code_verifier` to present at the token-exchange step
+> and it fails every time. As of the same thread's Aug 11 update, Trakt has also moved API access
+> behind its VIP paywall for developers, which a Radarr maintainer cited as the reason this isn't
+> being actively worked on — **no fix timeline, no known workaround.** (An earlier version of this
+> note cited [Radarr/Radarr#7905](https://github.com/Radarr/Radarr/issues/7905) — that was wrong,
+> it's an unrelated, long-closed 2022 issue; disregard it.) See also
+> [trakt/trakt-api#663](https://github.com/trakt/trakt-api/issues/663). Jellyfin's plugin is
+> unaffected because it uses Trakt's native device-code flow directly, bypassing Servarr's proxy
+> entirely. Nothing to fix in this repo — retry once upstream patches it.
 
 ## 4.7 Seerr (Request Manager)
 

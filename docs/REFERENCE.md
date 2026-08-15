@@ -98,6 +98,8 @@
 | Seerr | Jellyfin | `jellyfin:8096` | Both have own IPs |
 | Bazarr | Sonarr | `sonarr:8989` | Both on the bridge |
 | Bazarr | Radarr | `radarr:7878` | Both on the bridge |
+| Sonarr | Decypharr | `decypharr:8282` | Both on the bridge (Decypharr only calls TorBox's HTTPS API, no VPN needed) |
+| Radarr | Decypharr | `decypharr:8282` | Both on the bridge (Decypharr only calls TorBox's HTTPS API, no VPN needed) |
 
 > **Reaching VPN-side services from the bridge:** use the `gluetun` hostname (or `172.20.0.3`) — qBittorrent/SABnzbd/Prowlarr listen inside gluetun's namespace, so they have no Docker DNS name of their own. Gluetun's `FIREWALL_OUTBOUND_SUBNETS` includes `172.20.0.0/24`, so Prowlarr (in the VPN namespace) can reach Sonarr/Radarr on the bridge.
 

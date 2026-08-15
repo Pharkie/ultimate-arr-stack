@@ -235,13 +235,13 @@ check_image_versions() {
 
         # Check cache first
         local cached_latest
-        cached_latest=$(_cache_get "$image_ref")
+        cached_latest=$(_cache_get "$image_ref") || true
         if [[ -n "$cached_latest" ]]; then
             if [[ "$cached_latest" != "$tag" && "$cached_latest" != "current" ]]; then
                 echo -e "      ${YELLOW:-}UPDATE${NC:-}: $image $tag → $cached_latest available"
-                ((updates++))
+                updates=$((updates + 1))
             fi
-            ((checked++))
+            checked=$((checked + 1))
             continue
         fi
 
@@ -249,18 +249,18 @@ check_image_versions() {
         local tags_list=""
         case "$registry" in
             ghcr)
-                tags_list=$(_query_ghcr "$namespace" "$tag")
+                tags_list=$(_query_ghcr "$namespace" "$tag") || true
                 ;;
             lscr)
-                tags_list=$(_query_lscr "$image" "$tag")
+                tags_list=$(_query_lscr "$image" "$tag") || true
                 ;;
             dockerhub)
-                tags_list=$(_query_dockerhub "$namespace" "$tag")
+                tags_list=$(_query_dockerhub "$namespace" "$tag") || true
                 ;;
         esac
 
         if [[ -z "$tags_list" ]]; then
-            ((skipped++))
+            skipped=$((skipped + 1))
             _cache_set "$image_ref" "current"
             continue
         fi
@@ -272,11 +272,11 @@ check_image_versions() {
         if [[ -n "$latest" ]]; then
             echo -e "      ${YELLOW:-}UPDATE${NC:-}: $image $tag → $latest available"
             _cache_set "$image_ref" "$latest"
-            ((updates++))
+            updates=$((updates + 1))
         else
             _cache_set "$image_ref" "current"
         fi
-        ((checked++))
+        checked=$((checked + 1))
     done
 
     if [[ $updates -eq 0 ]]; then

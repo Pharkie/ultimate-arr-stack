@@ -116,8 +116,8 @@ UI — they are a handful of fields. Do the UI route unless you want to script a
 4. Bazarr + Jellyseerr → Sonarr/Radarr connections test green.
 5. Jellyseerr: no `Unable to get queue` errors for 10 min (`docker logs seerr --since 10m | grep -i "download tracker"` → empty).
 6. End-to-end: request a test title in Jellyseerr → it reaches Radarr → grabs → qBit downloads → imports.
-7. `npm run test:e2e` — all 14 pass (run in background).
-8. **VPN-still-protects check:** `docker exec qbittorrent curl -s ifconfig.me` returns the **VPN** IP, not home. `docker exec prowlarr curl -s ifconfig.me` returns the **VPN** IP. (Sonarr/Radarr will now show the home IP — expected.)
+7. `npm test` — bats + full Playwright suite, all green (run in background).
+8. **VPN-still-protects check:** `tests/e2e/vpn-security.spec.ts` codifies this as an automated regression guard — it asserts qBittorrent/Prowlarr/SABnzbd/FlareSolverr egress IPs match Gluetun's exit IP (not home), and that Sonarr/Radarr egress IPs match the host WAN IP (not Gluetun). Manual spot-check if needed: `docker exec qbittorrent curl -s ifconfig.me` returns the **VPN** IP, not home; `docker exec prowlarr curl -s ifconfig.me` returns the **VPN** IP; Sonarr/Radarr will now show the home IP — expected.
 
 ## Rollback
 

@@ -143,6 +143,8 @@ docker exec prowlarr wget -qO- http://127.0.0.1:8191/    # flaresolverr -> "read
 docker restart qbittorrent sabnzbd prowlarr flaresolverr   # or whichever started before gluetun
 ```
 
+`./scripts/detect-vpn-zombies.sh` automates the check above — it compares each dependent's `network_mode` binding against Gluetun's *current* container ID and prints exactly which ones are stale. It's also exercised as `tests/e2e/resilience.spec.ts` in the Playwright suite. Run it any time you suspect a zombie, or on a schedule via cron/SSH.
+
 ## NEVER Use `--remove-orphans` (Multi-Compose-File Project)
 
 This stack splits its services across several compose files (`docker-compose.arr-stack.yml`, `docker-compose.utilities.yml`, `docker-compose.traefik.yml`, …) that share **one project directory and project name**. To compose, any running container of the project that is not defined in the file you passed with `-f` is an *orphan*. So:
@@ -172,6 +174,8 @@ Error response from daemon: ... joining network namespace of container <old-id>:
 cd /volume1/docker/arr-stack
 docker compose -f docker-compose.arr-stack.yml up -d qbittorrent sabnzbd prowlarr flaresolverr
 ```
+
+Run `./scripts/detect-vpn-zombies.sh` afterward to confirm every dependent now binds to Gluetun's *new* container ID rather than the old one — this is the exact scenario it's built to catch.
 
 **If that compose command hangs:** a dependent that died mid-netns-join can land in a `Dead` state that dockerd can never remove (`docker rm -f` → "removal of container is already in progress", forever). Compose then wedges trying to replace it, or leaves the replacement under a hash-prefixed name (`<id>_flaresolverr`). The only cure is a Docker daemon restart, which also clears the Dead container (observed 2026-08-01 with flaresolverr; check nobody is streaming first):
 

@@ -24,6 +24,7 @@ The backup script (`scripts/arr-backup.sh`) backs up **essential configs only** 
 |--------|------|----------|
 | gluetun-config | ~7MB | VPN provider settings |
 | qbittorrent-config | ~9MB | Client settings, categories |
+| sabnzbd-config | <1MB | Usenet provider credentials and settings |
 | prowlarr-config | ~22MB | Indexer configs, API keys |
 | bazarr-config | ~2MB | Subtitle provider credentials |
 | uptime-kuma-data | ~14MB | Monitor configurations |

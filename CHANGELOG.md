@@ -2,6 +2,60 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.7.30] - 2026-08-15
+
+### Changed
+- **SABnzbd major-version bump: `4.5.5`→`5.1.0`** (`lscr.io/linuxserver/sabnzbd:5.1.0-ls266`),
+  kept as its own isolated change from the Sonarr/Radarr/Prowlarr/Bazarr bump given the higher
+  migration risk to the just-verified TorBox Usenet pipeline. Config volume backed up before the
+  bump (`sabnzbd-config-backup-20260815.tgz`). Reviewed SABnzbd 5.0's breaking changes ([release
+  notes](https://github.com/sabnzbd/sabnzbd/releases/tag/5.0.0)): post-processing scripts now
+  always run even on failed jobs (not applicable — this stack has no custom post-proc scripts
+  configured), and `verify_xff_header` is now on by default (not applicable — SABnzbd isn't routed
+  through Traefik/any reverse proxy here, Sonarr/Radarr talk to it directly via Gluetun's IP).
+
+## [1.7.29] - 2026-08-15
+
+### Changed
+- **Version bumps: Sonarr, Radarr, Prowlarr, Bazarr** — routine updates to the latest
+  LinuxServer.io images: Sonarr `4.0.17`→`4.0.19`, Radarr `6.1.1`→`6.3.0`, Prowlarr `2.3.0`→`2.5.2`,
+  Bazarr `1.5.6`→`1.6.0`. SABnzbd's `4.x`→`5.x` major-version bump is tracked separately given the
+  higher risk of a breaking change to the just-verified Usenet pipeline. Jellyfin (`10.11.11`) was
+  already current — no change needed.
+
+## [1.7.28] - 2026-08-15
+
+### Added
+- **SABnzbd wired into Sonarr/Radarr for Usenet downloads via TorBox**: fixed SABnzbd's storage
+  paths (`complete_dir`/`download_dir` were relative, resolving inside SABnzbd's own config volume
+  instead of the shared media volume), added `tv`/`movies` categories, and added SABnzbd as a
+  download client in both Sonarr and Radarr (host `172.20.0.3:8080` — gluetun's bridge IP and
+  SABnzbd's internal port; using the IP directly avoids SABnzbd's hostname-whitelist `403`). See
+  `docs/APP-CONFIG.md` §4.4/§4.5, which also fixes a pre-existing bug listing Radarr's SABnzbd host
+  as `localhost` (unreachable since Radarr moved onto the bridge network). Added e2e coverage for
+  both new download clients.
+
+- **Trakt integration**: Jellyfin's Trakt plugin installed and authorized (bidirectional
+  watched-status sync + scrobbling) via its native device-code flow. Sonarr/Radarr Trakt import
+  lists (auto-add from watchlist/trending/a list URL) were attempted but are currently **blocked
+  by an upstream bug**, not a config issue — see `docs/APP-CONFIG.md` §4.6a for detail and tracking
+  links.
+
+### Fixed
+- **Prowlarr's stale `Internet Archive` indexer removed** — had been failing DNS/connectivity for
+  6+ hours, tripping Sonarr/Radarr's "all indexers unavailable" health check. Replaced with a
+  working free Usenet indexer (Usenet-Crawler, via Prowlarr's Generic Newznab definition).
+- **SABnzbd's TorBox Usenet connection**: real end-to-end grab confirmed working after regenerating
+  the account's NNTP username/password from TorBox's dashboard. The `482 Invalid username or
+  password` error seen earlier looked like a plan-tier rate limit (TorBox's account API showed a
+  `cooldown_until` field at the time) but was actually just stale credentials — correcting that
+  earlier theory. See `docs/APP-CONFIG.md` §4.6.
+
+## [1.7.27] - 2026-08-14
+
+### Added
+- **Tailscale exit node**: the NAS now advertises `--advertise-exit-node` alongside its existing subnet route, so a tailnet device can route *all* its internet traffic through home, not just LAN traffic. Meant as a substitute for an always-on VPN app on mobile, where the OS only runs one VPN tunnel at a time — confirmed live that connecting Tailscale and ProtonVPN (always-on) on the same Android device disconnect each other, even with ProtonVPN's own split-tunneling excluding the Tailscale app (that setting only affects traffic routing within an already-active tunnel, not concurrent VPN apps). Approved via the Tailscale API (`0.0.0.0/0` + `::/0` enabled routes on the NAS device). Also needed two host sysctls this NAS didn't have by default — `net.ipv6.conf.all.forwarding=1` and `net.ipv4.conf.all.src_valid_mark=1` — persisted in `/etc/sysctl.conf` so they survive reboots; without them Tailscale reports "Subnet routing is enabled, but IP forwarding is disabled" even though `net.ipv4.ip_forward` was already on. See `docs/TAILSCALE.md`.
+
 ## [1.7.26] - 2026-08-05
 
 ### Changed

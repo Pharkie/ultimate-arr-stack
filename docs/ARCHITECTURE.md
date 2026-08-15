@@ -74,6 +74,8 @@ Bridge → bridge (use name):          Behind-VPN → behind-VPN (localhost):
 ─────────────────────────────        ──────────────────────────
 Seerr/Bazarr → Sonarr                Prowlarr → FlareSolverr
   └── sonarr:8989 / radarr:7878        └── localhost:8191
+Sonarr/Radarr → Decypharr
+  └── decypharr:8282
 ```
 
 ## Network Layout
@@ -92,6 +94,7 @@ arr-stack network (172.20.0.0/24)
 │ 172.20.0.10  │ Sonarr       │ TV manager (bridge, not VPN)   │ Core             │
 │ 172.20.0.11  │ Radarr       │ Movie manager (bridge, not VPN)│ Core             │
 │ 172.20.0.5   │ Pi-hole      │ DNS server                     │ Core             │
+│ 172.20.0.7   │ Decypharr    │ TorBox debrid client (bridge, not VPN) │ Core     │
 │ 172.20.0.2   │ Traefik      │ Reverse proxy                  │ + local DNS      │
 │ 172.20.0.12  │ Cloudflared  │ Tunnel to Cloudflare           │ + remote access (Cloudflared) │
 │ host-network │ Tailscale    │ Mesh VPN subnet router         │ + remote access (Tailscale)   │
@@ -99,6 +102,9 @@ arr-stack network (172.20.0.0/24)
 │ 172.20.0.14  │ duc          │ Disk usage                     │ Optional         │
 │ 172.20.0.15  │ Beszel       │ System monitoring              │ Optional         │
 │ 172.20.0.16  │ DIUN         │ Image update notifier          │ Optional         │
+│ 172.20.0.17  │ stremio-jellyfin │ Stremio addon for local Jellyfin library   │ Optional │
+│ 172.20.0.18  │ magnetio-scraper │ Torrent provider scraper backend           │ Optional │
+│ 172.20.0.19  │ magnetio-redis   │ Cache backend for Magnetio                 │ Optional │
 ───────────────────────────────────────────────────────────────────────────────────
 ```
 
@@ -166,6 +172,8 @@ Two YAML anchors define security profiles in each compose file:
 |--------|---------|-------------|
 | `x-security` | All non-LSIO services | None by default (services add back only what they need) |
 | `x-security-lsio` | Sonarr, Radarr, Prowlarr, qBittorrent, SABnzbd, Bazarr | `CHOWN`, `SETUID`, `SETGID`, `DAC_OVERRIDE` (s6-overlay needs these to switch users during init) |
+
+Decypharr uses its own inline security block (not the shared anchor): same four caps plus `FOWNER` — its entrypoint's `chmod /app` during root-init-then-drop-privileges needs it, unlike the LSIO images.
 
 Services that write to Docker volumes as root add back `CHOWN` + `DAC_OVERRIDE` (Jellyfin, Seerr, Uptime Kuma, DUC, Beszel, DIUN, Configarr). Services with read-only or no volumes don't need any (FlareSolverr, Cloudflared, Traefik, Deunhealth, Beszel-agent).
 
