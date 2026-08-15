@@ -114,6 +114,7 @@ services:
       - "8085:8085"   # qBittorrent
       - "8082:8080"   # SABnzbd
       - "8191:8191"   # FlareSolverr
+      - "7000:7000"   # Magnetio addon (docker-compose.magnetio.yml, network_mode: container:gluetun)
     networks:
       arr-stack:
         ipv4_address: 172.20.0.3
@@ -566,4 +567,77 @@ services:
       timeout: 60s
       retries: 2
       start_period: 60s
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # VPN-SOCKS5 - SOCKS5 proxy tunneled through Gluetun's ProtonVPN connection
+  # (network_mode: service:gluetun, same pattern as qBittorrent/SABnzbd/
+  # Prowlarr/FlareSolverr above). Lets other containers on the arr-stack
+  # network route traffic through the VPN without joining Gluetun's network
+  # namespace directly — used by Magnetio's P2P Privacy Proxy setting so
+  # uncached torrent connections exit via ProtonVPN instead of the NAS's own
+  # WAN IP. Internal-only, reachable at gluetun:1080 from other containers on
+  # the arr-stack network (no host port published).
+  # ═══════════════════════════════════════════════════════════════════════════
+  vpn-socks5:
+    image: serjs/go-socks5-proxy:latest
+    container_name: vpn-socks5
+    <<: *default-security
+    network_mode: "service:gluetun"
+    depends_on:
+      gluetun:
+        condition: service_healthy
+        restart: true
+    environment:
+      - PROXY_USER=${VPN_SOCKS5_USER}
+      - PROXY_PASSWORD=${VPN_SOCKS5_PASSWORD}
+      - PROXY_PORT=1080
+    labels:
+      - deunhealth.restart.on.unhealthy=true
+      - gluetun.dependent=true  # gluetun-recover restarts this if SIGKILLed by a gluetun restart
+    restart: always
+    logging: *default-logging
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # STREMIO-JELLYFIN - Stremio addon that exposes this Jellyfin library as a
+  # Stremio stream source, so Stremio can play anything already cached locally
+  # before falling back to Magnetio's torrent/debrid streams.
+  # Install in Stremio: http://NAS_IP:60421/manifest.json
+  # ═══════════════════════════════════════════════════════════════════════════
+  stremio-jellyfin:
+    # No published arm64 image upstream (amd64-only, fails with "exec format
+    # error" on this NAS's RK3588) — built from source instead. Source lives
+    # in ./stremio-jellyfin on the NAS, synced from
+    # https://github.com/akarazniewicz/stremio-jellyfin (with a local fix:
+    # the upstream Dockerfile's ENTRYPOINT calls "nodejs", which doesn't
+    # exist in the node:21-slim base image — only "node" does).
+    build:
+      context: ./stremio-jellyfin
+      dockerfile: Dockerfile
+    image: stremio-jellyfin:local
+    container_name: stremio-jellyfin
+    <<: *default-security
+    depends_on:
+      jellyfin:
+        condition: service_healthy
+    ports:
+      - "60421:60421"
+    environment:
+      # LAN address, not the internal Docker hostname — this addon embeds
+      # this value directly into poster/stream URLs it hands back to Stremio
+      # clients on your phone/laptop, which can't resolve "jellyfin" as a
+      # hostname the way containers on the arr-stack network can.
+      - JELLYFIN_SERVER=http://192.168.8.246:8096
+      - JELLYFIN_USER=${STREMIO_JELLYFIN_USER}
+      - JELLYFIN_PASSWORD=${STREMIO_JELLYFIN_PASSWORD}
+    networks:
+      arr-stack:
+        ipv4_address: 172.20.0.12
+    restart: always
+    logging: *default-logging
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:60421/manifest.json"]
+      interval: 2m
+      timeout: 10s
+      retries: 3
+      start_period: 20s
 
