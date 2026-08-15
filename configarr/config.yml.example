@@ -19,19 +19,51 @@
 # are 4K-only by default — the custom quality_profiles sections add the fallback.
 # If you only want 4K, remove the "WEB 1080p" / "Bluray-1080p" entries.
 
+# Pinned to the last commit before recyclarr/config-templates' breaking
+# "convert to guide-backed templates" restructure (2026-02-02, 6bbb81f).
+# configarr (even latest v1.30.2) unconditionally scandirs
+# <repo>/{sonarr,radarr}/includes/custom-formats on every run to build its
+# local template map — a path that commit removed in favor of
+# sonarr|radarr/templates/+templates.json. Without this pin, every run
+# ENOENTs regardless of whether custom_format_groups/include is even used.
+# Safe to unpin once configarr ships a fix for the new repo layout.
+recyclarrRevision: 4dfd407f6f301b1d789c1cbdc27d0b6455e51992
+
 sonarr:
   main:
-    base_url: http://gluetun:8989
+    # Sonarr sits directly on the arr-stack network (not behind Gluetun's
+    # netns - it was deliberately moved off-VPN), so it's reachable by its
+    # own container/service name.
+    base_url: http://sonarr:8989
     api_key: !env SONARR_API_KEY
 
     quality_definition:
       type: series
 
-    # TRaSH Guides custom formats for 2160p WEB scoring
-    # For 1080p-only, swap to: sonarr-v4-custom-formats-web-1080p
-    include:
-      - template: sonarr-v4-quality-definition-series
-      - template: sonarr-v4-custom-formats-web-2160p
+    # TRaSH Guides custom formats for 2160p WEB scoring, inlined from
+    # recyclarr/config-templates' sonarr/templates/web-2160p.yml (default
+    # "add" groups only). NOT loaded via `include: - template:` — that
+    # mechanism is currently broken: configarr (even latest v1.30.2) hardcodes
+    # scanning <repo>/sonarr/includes/custom-formats, a path the templates
+    # repo dropped when it restructured to sonarr/templates/+templates.json.
+    # trash_ids below resolve against the (unaffected) trash-guides repo, so
+    # this bypasses the broken path entirely. For 1080p-only, see
+    # sonarr/templates/web-1080p.yml in that repo for the equivalent groups.
+    # Note: this top-level custom_format_groups key uses a different shape
+    # (array of {trash_guide, assign_scores_to}) than the add/skip shape used
+    # inside recyclarr-config template files themselves — and it only pulls
+    # CFs marked "required" in trash-guides' own group data (no select/exclude
+    # fine-tuning like the template's add/skip system has). Verified via
+    # dry-run: of web-2160p.yml's 4 default groups, only "[Streaming
+    # Services] HD/UHD boost" actually resolves any CFs here (HD/UHD
+    # Streaming Boost) — Golden Rule UHD/Language Profiles/Unwanted Formats
+    # all resolve empty under this schema, so they're omitted rather than
+    # carried as no-ops.
+    custom_format_groups:
+      - trash_guide:
+          - id: 85fae4a2294965b75710ef2989c850eb  # [Streaming Services] HD/UHD boost
+        assign_scores_to:
+          - name: WEB-2160p
 
     custom_formats: []
 
@@ -58,18 +90,35 @@ sonarr:
 
 radarr:
   main:
-    base_url: http://gluetun:7878
+    # Radarr sits directly on the arr-stack network (not behind Gluetun's
+    # netns - it was deliberately moved off-VPN), so it's reachable by its
+    # own container/service name.
+    base_url: http://radarr:7878
     api_key: !env RADARR_API_KEY
 
     quality_definition:
       type: movie
 
-    # TRaSH Guides custom formats for UHD Bluray + WEB scoring
-    # For 1080p-only, swap to: radarr-custom-formats-hd-bluray-web
-    include:
-      - template: radarr-quality-definition-movie
-      - template: radarr-custom-formats-uhd-bluray-web
-
+    # TRaSH Guides custom formats for UHD Bluray + WEB scoring, inlined from
+    # recyclarr/config-templates' radarr/templates/uhd-bluray-web.yml (default
+    # "add" groups only). NOT loaded via `include: - template:` — that
+    # mechanism is currently broken: configarr (even latest v1.30.2) hardcodes
+    # scanning <repo>/radarr/includes/custom-formats, a path the templates
+    # repo dropped when it restructured to radarr/templates/+templates.json.
+    # trash_ids below resolve against the (unaffected) trash-guides repo, so
+    # this bypasses the broken path entirely. For 1080p-only, see
+    # radarr/templates/hd-bluray-web.yml in that repo for the equivalent groups.
+    # Note: this top-level custom_format_groups key uses a different shape
+    # (array of {trash_guide, assign_scores_to}) than the add/skip shape used
+    # inside recyclarr-config template files themselves — and it only pulls
+    # CFs marked "required" in trash-guides' own group data (no select/exclude
+    # fine-tuning like the template's add/skip system has). Verified via
+    # dry-run: neither of uhd-bluray-web.yml's 2 default groups (Golden Rule
+    # UHD, Unwanted Formats) resolves any CFs under this schema, so
+    # custom_format_groups is omitted here — the quality profile below still
+    # gets created with correct resolution-based sorting/upgrade rules, just
+    # without auto-synced custom formats. Add custom_formats: directly (with
+    # explicit trash_ids) if specific CFs are wanted.
     custom_formats: []
 
     # 4K preferred, 1080p fallback

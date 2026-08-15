@@ -12,12 +12,27 @@ name: arr-utilities
 #########################
 # Volumes               #
 #########################
+# Explicit `name:` on every volume below pins it to a fixed physical name so
+# a future project rename (like the one that added `name: arr-utilities`
+# above) can't silently orphan it into a fresh empty volume - see
+# docker-compose.arr-stack.yml's volumes: block for the incident that made
+# this necessary. beszel-data/configarr-repos are pinned to their real
+# pre-rename data (arr-stack_*, recovered after this bug hit them too);
+# duc-index/uptime-kuma-data/diun-data never had pre-rename data to recover
+# (duc rebuilds its index on every start regardless; diun was crash-looping
+# pre-rename; uptime-kuma-data was already empty pre-rename) so they're just
+# pinned to their current names to freeze them going forward.
 volumes:
   duc-index:
+    name: arr-utilities_duc-index
   uptime-kuma-data:
+    name: arr-utilities_uptime-kuma-data
   beszel-data:
+    name: arr-stack_beszel-data
   diun-data:
+    name: arr-utilities_diun-data
   configarr-repos:
+    name: arr-stack_configarr-repos
 
 #########################
 # Networks              #
