@@ -12,8 +12,8 @@
 #
 # Config lives in camera-listen/.env — copy camera-listen/env.example. It stays
 # gitignored and separate from the root .env (never travels with the branch);
-# the --env-file flag above points compose's ${VAR} substitution at it instead
-# of the default root .env. root .env.example documents these var *names*
+# the --env-file flag above points compose's variable substitution at it
+# instead of the default root .env. root .env.example documents these var *names*
 # (placeholders only) so tooling that scans for undocumented vars doesn't
 # flag them — real values still only ever live in camera-listen/.env.
 
