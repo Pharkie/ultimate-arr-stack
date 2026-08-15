@@ -25,15 +25,15 @@ Therapy-stack local repo: `/Users/adamknowles/dev/n8n Therapybot/Git repo/`
 
 **The rule (no exceptions): every code change — even a trivial patch image bump — MUST be tested on the NAS and confirmed working BEFORE it reaches `main`.** There is no "trivial" fast-path that skips NAS testing.
 
-This is delivered **branch-first** (resolves the old "test before commit" vs "deploy via git only" tension — confirmed by the user 2026-06-19). **The NAS has no git installed** — deployment is file sync, not `git checkout`:
+This is delivered **branch-first** (resolves the old "test before commit" vs "deploy via git only" tension — confirmed by the user 2026-06-19). **Native git can't be installed on the NAS's OS** (`apt-get install git` fails on unmet deps tangled with unrelated vendor-pinned packages — never force it with `apt --fix-broken install`, that risks cascading into Ugreen's pinned packages). Real git still works there via a containerized `alpine/git` image bind-mounted onto the deploy path — bootstrapped 2026-08-15, `origin` points at the fork. Deployment is `git pull`, not file copying:
 
 1. Make the change locally on a **feature branch**, commit, and push the branch.
-2. Sync the branch's tracked files to the NAS with `./scripts/sync-nas.sh` (rsync over SSH, touches only `git ls-files` paths — never `.env`/config/volumes), then recreate the affected service(s) via compose (never SCP loose files, never ad-hoc `docker run`).
+2. Sync the branch to the NAS with `./scripts/sync-nas.sh` (checks out and fast-forwards to your current local branch on the NAS through the containerized git — never `.env`/config/volumes, those aren't tracked), then recreate the affected service(s) via compose (never SCP loose files, never ad-hoc `docker run`).
 3. **Verify on the NAS:** container healthy, API/UI responds, migration clean, and `npm run test:e2e` where relevant.
 4. Only once it's confirmed working → **merge the branch to `main`** (locally or via `gh pr merge`), then sync `main` to the NAS. A local merge auto-syncs via the `post-merge` hook (`./setup-hooks.sh`); a `gh pr merge` is remote-side and fires no local hook, so immediately follow it with `git fetch origin main && ./scripts/sync-nas.sh` (from a checkout of `main`) — do this every time, not just when asked. Nothing untested ever reaches `main`.
-5. If it fails verification → fix on the branch and re-verify, or discard the branch. Re-sync `main` to the NAS with `./scripts/sync-nas.sh` to revert its file copy.
+5. If it fails verification → fix on the branch and re-verify, or discard the branch. Re-sync `main` to the NAS with `./scripts/sync-nas.sh` to bring it back.
 
-`./scripts/sync-nas.sh` only copies files — it never recreates containers. After any sync that touches a compose/service file, still recreate that service manually via its own compose file.
+`./scripts/sync-nas.sh` only pulls files — it never recreates containers. After any sync that touches a compose/service file, still recreate that service manually via its own compose file. Every containerized-git invocation on the NAS needs `-c safe.directory=/repo` (git only honors `safe.directory` via `--global` config, never per-repo, so this can't be set once and forgotten) — `leoleg`'s `arrgit` bash alias on the NAS bakes this in for ad hoc use.
 
 **NEVER pass `--remove-orphans` to any `docker compose` command on the NAS.** The stack's services are split across multiple compose files sharing one project name, so compose treats every container from the *other* files as an orphan and deletes them all (this took out 11 containers on 2026-08-01). Likewise, only ever recreate a service via the compose file that defines it — e.g. traefik must go through `docker-compose.traefik.yml` or it loses its `traefik-lan` macvlan and every `.lan` URL dies. See `docs/TROUBLESHOOTING.md`.
 
