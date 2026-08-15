@@ -69,14 +69,17 @@ export function dockerInspect(container: string, format: string): string {
  * Egress IP as seen by an external service, fetched from inside `container`.
  * Different images ship different HTTP clients (Gluetun's alpine-based image
  * only has wget; LSIO images have curl) so try curl then fall back to wget
- * inside one shell invocation rather than guessing per-container.
+ * inside one shell invocation rather than guessing per-container. Uses the
+ * `/ip` path specifically: ifconfig.me serves curl a plain IP at the bare
+ * root, but serves wget (no Accept header) its full HTML homepage instead —
+ * `/ip` returns plain text for both clients, confirmed live against Gluetun.
  * Returns null on timeout/failure (e.g. killswitch correctly blocking egress).
  */
 export function egressIp(container: string): string | null {
   try {
     return dockerExec(container, [
       'sh', '-c',
-      'curl -s --max-time 5 https://ifconfig.me || wget -qO- --timeout=5 https://ifconfig.me',
+      'curl -s --max-time 5 https://ifconfig.me/ip || wget -qO- --timeout=5 https://ifconfig.me/ip',
     ], 15_000);
   } catch {
     return null;
