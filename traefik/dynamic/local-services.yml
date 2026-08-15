@@ -114,7 +114,7 @@ http:
           - url: "http://172.20.0.8:5055"
 
     # === *arr Stack ===
-    # Sonarr/Radarr now run on the arr-stack bridge with their own IPs
+    # Sonarr/Radarr now run on the arr-core bridge with their own IPs
     # (no longer behind Gluetun). Prowlarr stays behind Gluetun (172.20.0.3).
     sonarr-lan:
       loadBalancer:

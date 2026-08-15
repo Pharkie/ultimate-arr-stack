@@ -38,7 +38,7 @@ volumes:
 # Networks              #
 #########################
 networks:
-  arr-stack:
+  arr-core:
     external: true
 
 #########################
@@ -112,7 +112,7 @@ services:
       - CONFIGS=0
       - DISTRIBUTION=0
     networks:
-      arr-stack:
+      arr-core:
         # .20 is reportedly reserved for Baserow (per CLAUDE.md, unverified
         # in this repo - see docs/ARCHITECTURE.md notes) - using .21 to stay
         # clear of it and everything else in .2-.19, well below the .128+
@@ -135,7 +135,7 @@ services:
       - TZ=${TZ}
       - DOCKER_HOST=tcp://docker-socket-proxy:2375
     networks:
-      - arr-stack
+      - arr-core
     restart: always
     logging: *default-logging
     healthcheck:
@@ -175,7 +175,7 @@ services:
       - TZ=${TZ}
       - DOCKER_HOST=tcp://docker-socket-proxy:2375
     networks:
-      - arr-stack
+      - arr-core
     restart: always
     logging: *default-logging
     entrypoint:
@@ -249,7 +249,7 @@ services:
     environment:
       - TZ=${TZ}
     networks:
-      arr-stack:
+      arr-core:
         ipv4_address: 172.20.0.13  # For monitoring other containers
     volumes:
       - uptime-kuma-data:/app/data
@@ -280,7 +280,7 @@ services:
       - SETGID          # Nginx master drops workers to www-data (gid)
       - SETUID          # Nginx master drops workers to www-data (uid)
     networks:
-      arr-stack:
+      arr-core:
         ipv4_address: 172.20.0.14
     volumes:
       - /volume1:/scan/volume1:ro      # NAS data (read-only)
@@ -309,7 +309,7 @@ services:
     ports:
       - "8090:8090"
     networks:
-      arr-stack:
+      arr-core:
         ipv4_address: 172.20.0.15
     extra_hosts:
       - "host.docker.internal:host-gateway"
@@ -367,7 +367,7 @@ services:
     volumes:
       - diun-data:/data
     networks:
-      arr-stack:
+      arr-core:
         ipv4_address: 172.20.0.16
     environment:
       - TZ=${TZ}
@@ -413,7 +413,7 @@ services:
       - DAC_OVERRIDE    # Write to root-owned volume directories
     restart: "no"
     networks:
-      - arr-stack
+      - arr-core
     volumes:
       - ./configarr/config.yml:/app/config/config.yml:ro
       - configarr-repos:/app/repos

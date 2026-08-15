@@ -62,19 +62,14 @@ networks:
     ipam:
       config:
         - subnet: 10.8.1.0/24
-  # NOT renamed to arr-core: Docker refuses to create a new network with the
-  # same subnet as an existing one, so a same-CIDR rename can't be applied
-  # without either a live DNS outage (deleting this network requires
-  # detaching every container from it first) or a full IP renumbering -
-  # neither justified for a label-only change. Attempted 2026-08-15, reverted
-  # after `docker compose up -d` failed with "Pool overlaps with other one on
-  # this address space"; the live stack was undisturbed (verified via
-  # container health + DNS resolution). Verified live on the NAS that no
-  # other project (e.g. a Baserow/therapy-stack coupling CLAUDE.md previously
-  # described) actually attaches to this network by name - no such container,
-  # static IP, or directory exists on the NAS.
-  arr-stack:
-    name: arr-stack
+  # Renamed from `arr-stack` -> `arr-core` (label only - same CIDR/ip_range/
+  # gateway, no renumbering) as part of the trust-tier network segmentation:
+  # this is now the "everything except Magnetio" bridge. Verified live on the
+  # NAS before this rename that no other project (e.g. a Baserow/therapy-stack
+  # coupling CLAUDE.md previously described) actually attaches to this network
+  # by name - no such container, static IP, or directory exists on the NAS.
+  arr-core:
+    name: arr-core
     driver: bridge
     ipam:
       config:
@@ -85,7 +80,7 @@ networks:
   # only so gluetun can join it. magnetio-addon shares gluetun's network
   # namespace (network_mode: container:gluetun) and needs to reach
   # magnetio-scraper/magnetio-redis, which live on this dedicated network
-  # instead of arr-stack (highest supply-chain/P2P-risk tier - isolated so
+  # instead of arr-core (highest supply-chain/P2P-risk tier - isolated so
   # Sonarr/Radarr/Jellyfin/etc. can't reach it directly). Deploy order:
   # docker-compose.magnetio.yml (creates magnetio-net) before recreating
   # gluetun here, or gluetun's recreate will fail with "network not found".
@@ -157,7 +152,7 @@ services:
     ports:
       # Ports for services using network_mode: "service:gluetun"
       # Enables direct local access without Traefik (http://NAS_IP:PORT)
-      # NOTE: Sonarr (8989) & Radarr (7878) now run on the arr-stack bridge
+      # NOTE: Sonarr (8989) & Radarr (7878) now run on the arr-core bridge
       # (their own static IPs) and publish their own ports — see those services.
       - "9696:9696"   # Prowlarr
       - "8085:8085"   # qBittorrent
@@ -165,7 +160,7 @@ services:
       - "8191:8191"   # FlareSolverr
       - "7000:7000"   # Magnetio addon (docker-compose.magnetio.yml, network_mode: container:gluetun)
     networks:
-      arr-stack:
+      arr-core:
         ipv4_address: 172.20.0.3
       vpn-net:
       # So magnetio-addon (shares this container's netns) can reach
@@ -251,7 +246,7 @@ services:
   # ═══════════════════════════════════════════════════════════════════════════
   # SONARR - TV show monitor. Watches for new episodes and sends to download.
   # Access: sonarr.lan | sonarr.yourdomain.com | NAS_IP:8989
-  # Runs on the arr-stack bridge (own IP 172.20.0.10), NOT behind the VPN:
+  # Runs on the arr-core bridge (own IP 172.20.0.10), NOT behind the VPN:
   # Sonarr only talks to metadata providers (TVDB/TMDB) + internal services,
   # never to indexers/peers, so it needs no VPN. Staying on the bridge means a
   # gluetun/VPN reconnect no longer cuts Sonarr off from Jellyseerr/Bazarr.
@@ -268,7 +263,7 @@ services:
     ports:
       - "8989:8989"   # Direct local access (http://NAS_IP:8989)
     networks:
-      arr-stack:
+      arr-core:
         ipv4_address: 172.20.0.10
     volumes:
       - sonarr-config:/config
@@ -318,7 +313,7 @@ services:
   # ═══════════════════════════════════════════════════════════════════════════
   # RADARR - Movie monitor. Watches for new movies and sends to download.
   # Access: radarr.lan | radarr.yourdomain.com | NAS_IP:7878
-  # Runs on the arr-stack bridge (own IP 172.20.0.11), NOT behind the VPN —
+  # Runs on the arr-core bridge (own IP 172.20.0.11), NOT behind the VPN —
   # same rationale as Sonarr above. Reaches VPN-side download clients via the
   # `gluetun` hostname.
   # ═══════════════════════════════════════════════════════════════════════════
@@ -333,7 +328,7 @@ services:
     ports:
       - "7878:7878"   # Direct local access (http://NAS_IP:7878)
     networks:
-      arr-stack:
+      arr-core:
         ipv4_address: 172.20.0.11
     volumes:
       - radarr-config:/config
@@ -390,7 +385,7 @@ services:
       - jellyfin-cache:/cache
       - ${MEDIA_ROOT}/media:/data/media:ro
     networks:
-      arr-stack:
+      arr-core:
         ipv4_address: 172.20.0.4
     restart: always
     logging: *default-logging
@@ -414,7 +409,7 @@ services:
     security_opt:
       - no-new-privileges:true
     networks:
-      arr-stack:
+      arr-core:
         ipv4_address: 172.20.0.6
     volumes:
       - dnscrypt-config:/config
@@ -446,7 +441,7 @@ services:
       - "${NAS_IP}:53:53/udp"  # NAS_IP MUST be a static IP — DHCP IPs aren't ready at boot, causing exit 128
       - "8081:80"  # Web UI (local network access)
     networks:
-      arr-stack:
+      arr-core:
         ipv4_address: 172.20.0.5
     environment:
       - TZ=${TZ}
@@ -501,7 +496,7 @@ services:
       - TZ=${TZ}
       - PORT=5055
     networks:
-      arr-stack:
+      arr-core:
         ipv4_address: 172.20.0.8
     volumes:
       - seerr-config:/app/config
@@ -533,7 +528,7 @@ services:
       - PGID=${PGID}
       - TZ=${TZ}
     networks:
-      arr-stack:
+      arr-core:
         ipv4_address: 172.20.0.9
     volumes:
       - bazarr-config:/config
@@ -575,7 +570,7 @@ services:
       - PGID=${PGID}
       - TZ=${TZ}
     networks:
-      arr-stack:
+      arr-core:
         ipv4_address: 172.20.0.7
     volumes:
       - decypharr-config:/app
@@ -625,12 +620,12 @@ services:
   # ═══════════════════════════════════════════════════════════════════════════
   # VPN-SOCKS5 - SOCKS5 proxy tunneled through Gluetun's ProtonVPN connection
   # (network_mode: service:gluetun, same pattern as qBittorrent/SABnzbd/
-  # Prowlarr/FlareSolverr above). Lets other containers on the arr-stack
+  # Prowlarr/FlareSolverr above). Lets other containers on the arr-core
   # network route traffic through the VPN without joining Gluetun's network
   # namespace directly — used by Magnetio's P2P Privacy Proxy setting so
   # uncached torrent connections exit via ProtonVPN instead of the NAS's own
   # WAN IP. Internal-only, reachable at gluetun:1080 from other containers on
-  # the arr-stack network (no host port published).
+  # the arr-core network (no host port published).
   # ═══════════════════════════════════════════════════════════════════════════
   vpn-socks5:
     image: serjs/go-socks5-proxy:v0.0.4
@@ -679,12 +674,12 @@ services:
       # LAN address, not the internal Docker hostname — this addon embeds
       # this value directly into poster/stream URLs it hands back to Stremio
       # clients on your phone/laptop, which can't resolve "jellyfin" as a
-      # hostname the way containers on the arr-stack network can.
+      # hostname the way containers on the arr-core network can.
       - JELLYFIN_SERVER=http://192.168.8.246:8096
       - JELLYFIN_USER=${STREMIO_JELLYFIN_USER}
       - JELLYFIN_PASSWORD=${STREMIO_JELLYFIN_PASSWORD}
     networks:
-      arr-stack:
+      arr-core:
         ipv4_address: 172.20.0.17
     restart: always
     logging: *default-logging

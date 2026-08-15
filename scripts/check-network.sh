@@ -20,31 +20,31 @@ echo ""
 echo "Checking Docker networks..."
 echo ""
 
-# Check if arr-stack exists
-if docker network inspect arr-stack &>/dev/null; then
+# Check if arr-core exists
+if docker network inspect arr-core &>/dev/null; then
     # Check if it's being used
-    CONTAINERS=$(docker network inspect arr-stack -f '{{range .Containers}}{{.Name}} {{end}}' 2>/dev/null || true)
+    CONTAINERS=$(docker network inspect arr-core -f '{{range .Containers}}{{.Name}} {{end}}' 2>/dev/null || true)
     if [[ -z "$CONTAINERS" ]]; then
-        echo -e "${YELLOW}WARNING${NC}: arr-stack network exists but has no containers attached."
+        echo -e "${YELLOW}WARNING${NC}: arr-core network exists but has no containers attached."
         echo "         This may be orphaned from a previous deployment."
         echo ""
         if [[ -t 0 ]]; then
             read -p "Remove it? [y/N] " -n 1 -r
             echo
             if [[ $REPLY =~ ^[Yy]$ ]]; then
-                docker network rm arr-stack
-                echo -e "${GREEN}OK${NC}: Removed arr-stack"
+                docker network rm arr-core
+                echo -e "${GREEN}OK${NC}: Removed arr-core"
             else
-                echo "Skipped. You can remove it manually with: docker network rm arr-stack"
+                echo "Skipped. You can remove it manually with: docker network rm arr-core"
             fi
         else
-            echo "Run interactively to remove, or use: docker network rm arr-stack"
+            echo "Run interactively to remove, or use: docker network rm arr-core"
         fi
     else
-        echo -e "${GREEN}OK${NC}: arr-stack exists with containers: $CONTAINERS"
+        echo -e "${GREEN}OK${NC}: arr-core exists with containers: $CONTAINERS"
     fi
 else
-    echo -e "${GREEN}OK${NC}: arr-stack doesn't exist (will be created on deploy)"
+    echo -e "${GREEN}OK${NC}: arr-core doesn't exist (will be created on deploy)"
 fi
 
 # Check for other potentially orphaned networks
