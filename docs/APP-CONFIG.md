@@ -325,15 +325,25 @@ Two independent integrations — install/configure separately, they don't depend
 > Connecting a second one kicks the first. **Trakt VIP removes this limit** and lets all three
 > stay connected simultaneously.
 
-> **Known issue (as of 2026-08-15):** Sonarr/Radarr's Trakt OAuth currently fails with `Received
-> oauth token was invalid` — Trakt recently changed their auth backend (moved to a passwordless
-> magic-link login, new domain/API structure) and Servarr's shared OAuth proxy hasn't caught up,
-> breaking the code-exchange step for every Sonarr/Radarr user, not just this stack. Confirmed via
-> [Radarr/Radarr#7905](https://github.com/Radarr/Radarr/issues/7905),
-> [trakt/trakt-api#663](https://github.com/trakt/trakt-api/issues/663), and active
-> [Trakt forum threads](https://forums.trakt.tv/t/received-oauth-token-was-invalid/40127). Jellyfin's
-> plugin is unaffected because it uses Trakt's native device-code flow directly, bypassing
-> Servarr's proxy entirely. Nothing to fix in this repo — retry once upstream patches it.
+> **Known issue (confirmed 2026-08-15, still open):** Sonarr/Radarr's Trakt OAuth fails with
+> `Received oauth token was invalid`. Clicking "Authenticate with Trakt" *does* complete Trakt's
+> own login step (it shows up under Trakt → Settings → Apps → Connected Apps, "last used" just
+> now) — but the token-exchange step that hands a real token back to Sonarr/Radarr fails, so no
+> import list ever actually gets saved (confirmed empty `GET /api/v3/importlist` on both apps even
+> right after a "successful" login). Root cause per
+> [Radarr/Radarr#11579](https://github.com/Radarr/Radarr/issues/11579) (closed `not planned`, but
+> with a precise technical writeup from a Radarr contributor): Trakt migrated its OAuth backend in
+> mid-July 2026, and its authorize endpoint now silently 307-redirects the legacy request into a
+> PKCE flow, injecting a server-generated `code_challenge` that Sonarr/Radarr never sent — so
+> `auth.servarr.com`'s proxy has no matching `code_verifier` to present at the token-exchange step
+> and it fails every time. As of the same thread's Aug 11 update, Trakt has also moved API access
+> behind its VIP paywall for developers, which a Radarr maintainer cited as the reason this isn't
+> being actively worked on — **no fix timeline, no known workaround.** (An earlier version of this
+> note cited [Radarr/Radarr#7905](https://github.com/Radarr/Radarr/issues/7905) — that was wrong,
+> it's an unrelated, long-closed 2022 issue; disregard it.) See also
+> [trakt/trakt-api#663](https://github.com/trakt/trakt-api/issues/663). Jellyfin's plugin is
+> unaffected because it uses Trakt's native device-code flow directly, bypassing Servarr's proxy
+> entirely. Nothing to fix in this repo — retry once upstream patches it.
 
 ## 4.7 Seerr (Request Manager)
 
