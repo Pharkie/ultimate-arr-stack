@@ -31,8 +31,9 @@
 # Own compose project name so operations on other files can't accidentally
 # take out Magnetio via --remove-orphans. This is also the highest
 # supply-chain/network-risk tier in the stack (locally-built, unaudited
-# source, raw P2P/DHT traffic) — isolating its project is a first step
-# toward giving it its own network too (tracked separately).
+# source, raw P2P/DHT traffic) — magnetio-scraper/magnetio-redis also get
+# their own dedicated network (magnetio-net, below) rather than sharing
+# arr-core with everything else.
 name: magnetio
 
 #########################
@@ -49,9 +50,21 @@ volumes:
 #########################
 # Networks              #
 #########################
+# Dedicated bridge, owned by this file - carves magnetio-scraper/magnetio-
+# redis off arr-core entirely (highest supply-chain/P2P-risk tier: locally-
+# built, unaudited source, raw DHT/torrent traffic). Sonarr/Radarr/Jellyfin/
+# etc. can no longer reach these containers directly. magnetio-addon still
+# needs to reach them, but it has no networks: of its own (network_mode:
+# container:gluetun) - gluetun joins magnetio-net as an external network
+# instead (see docker-compose.arr-stack.yml). Old arr-core IPs .18/.19 are
+# freed, not reused.
 networks:
-  arr-stack:
-    external: true
+  magnetio-net:
+    name: magnetio-net
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.22.0.0/24
 
 #########################
 # Logging               #
@@ -95,8 +108,8 @@ services:
       magnetio-redis:
         condition: service_healthy
     networks:
-      arr-stack:
-        ipv4_address: 172.20.0.18
+      magnetio-net:
+        ipv4_address: 172.22.0.2
     restart: unless-stopped
     logging: *default-logging
     healthcheck:
@@ -171,8 +184,8 @@ services:
     volumes:
       - magnetio-redis-data:/data
     networks:
-      arr-stack:
-        ipv4_address: 172.20.0.19
+      magnetio-net:
+        ipv4_address: 172.22.0.3
     restart: unless-stopped
     logging: *default-logging
     healthcheck:
