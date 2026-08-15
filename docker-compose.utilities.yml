@@ -12,12 +12,27 @@ name: arr-utilities
 #########################
 # Volumes               #
 #########################
+# Explicit `name:` on every volume below pins it to a fixed physical name so
+# a future project rename (like the one that added `name: arr-utilities`
+# above) can't silently orphan it into a fresh empty volume - see
+# docker-compose.arr-stack.yml's volumes: block for the incident that made
+# this necessary. beszel-data/configarr-repos are pinned to their real
+# pre-rename data (arr-stack_*, recovered after this bug hit them too);
+# duc-index/uptime-kuma-data/diun-data never had pre-rename data to recover
+# (duc rebuilds its index on every start regardless; diun was crash-looping
+# pre-rename; uptime-kuma-data was already empty pre-rename) so they're just
+# pinned to their current names to freeze them going forward.
 volumes:
   duc-index:
+    name: arr-utilities_duc-index
   uptime-kuma-data:
+    name: arr-utilities_uptime-kuma-data
   beszel-data:
+    name: arr-stack_beszel-data
   diun-data:
+    name: arr-utilities_diun-data
   configarr-repos:
+    name: arr-stack_configarr-repos
 
 #########################
 # Networks              #
@@ -55,13 +70,16 @@ services:
   # FILE — it does nothing to limit which API calls a container makes through
   # it (gluetun-recover already calls `docker restart` through a `:ro` mount
   # today). This proxy is the real access-control layer: only the resource
-  # categories below are enabled, everything else (exec, images, volumes,
+  # categories below are enabled, everything else (exec, volumes,
   # secrets, auth, swarm, ...) is denied by the image's own defaults.
   #
-  # NOTE: verify these exact env var names against the deployed
-  # tecnativa/docker-socket-proxy version's README on first NAS deploy —
-  # CONTAINERS+POST is the documented combination for restart access, but
-  # confirm before relying on it in production.
+  # Verified live on the NAS against v0.4.2's haproxy.cfg: each category is a
+  # path-prefix allow-rule (e.g. CONTAINERS=1 allows /containers/*), gated
+  # first by `deny unless GET || POST=1` (POST=1 unlocks all non-GET methods
+  # on whatever categories are enabled, not just literal POST requests).
+  # IMAGES=1 was added after diun's real deploy failed with "Cannot inspect
+  # image" 403s — diun's core job (checking image digests against registries)
+  # needs /images/* reads, which CONTAINERS=1 does not cover.
   # ═══════════════════════════════════════════════════════════════════════════
   docker-socket-proxy:
     image: tecnativa/docker-socket-proxy:v0.4.2
@@ -77,8 +95,8 @@ services:
       - INFO=1
       - PING=1
       - EVENTS=1      # gluetun-recover watches `docker events`
+      - IMAGES=1      # diun needs image inspect to check registry digests
       - EXEC=0
-      - IMAGES=0
       - VOLUMES=0
       - SECRETS=0
       - AUTH=0
@@ -332,8 +350,9 @@ services:
 
   # ═══════════════════════════════════════════════════════════════════════════
   # DIUN - Docker Image Update Notifier. Watches running containers and sends
-  # webhook notifications when newer image versions are available on registries.
-  # No web UI. Configure DIUN_WEBHOOK_URL in .env to receive alerts.
+  # push notifications (via ntfy.sh) when newer image versions are available
+  # on registries. No web UI. Subscribe to DIUN_NTFY_TOPIC (set in .env) in
+  # the ntfy app/website (https://ntfy.sh/<topic>) to receive alerts.
   # ═══════════════════════════════════════════════════════════════════════════
   diun:
     image: crazymax/diun:4.33.0
@@ -375,10 +394,8 @@ services:
       - DIUN_DEFAULTS_INCLUDETAGS=^v?\d+\.\d+\.\d+$$
       - DIUN_DEFAULTS_SORTTAGS=semver
       - DIUN_DEFAULTS_MAXTAGS=25
-      - DIUN_NOTIF_WEBHOOK_ENDPOINT=${DIUN_WEBHOOK_URL}
-      - DIUN_NOTIF_WEBHOOK_METHOD=POST
-      - DIUN_NOTIF_WEBHOOK_HEADERS_0_NAME=Content-Type
-      - DIUN_NOTIF_WEBHOOK_HEADERS_0_VALUE=application/json
+      - DIUN_NOTIF_NTFY_ENDPOINT=https://ntfy.sh
+      - DIUN_NOTIF_NTFY_TOPIC=${DIUN_NTFY_TOPIC}
     logging: *default-logging
 
   # ═══════════════════════════════════════════════════════════════════════════
