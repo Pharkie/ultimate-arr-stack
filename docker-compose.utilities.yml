@@ -70,13 +70,16 @@ services:
   # FILE — it does nothing to limit which API calls a container makes through
   # it (gluetun-recover already calls `docker restart` through a `:ro` mount
   # today). This proxy is the real access-control layer: only the resource
-  # categories below are enabled, everything else (exec, images, volumes,
+  # categories below are enabled, everything else (exec, volumes,
   # secrets, auth, swarm, ...) is denied by the image's own defaults.
   #
-  # NOTE: verify these exact env var names against the deployed
-  # tecnativa/docker-socket-proxy version's README on first NAS deploy —
-  # CONTAINERS+POST is the documented combination for restart access, but
-  # confirm before relying on it in production.
+  # Verified live on the NAS against v0.4.2's haproxy.cfg: each category is a
+  # path-prefix allow-rule (e.g. CONTAINERS=1 allows /containers/*), gated
+  # first by `deny unless GET || POST=1` (POST=1 unlocks all non-GET methods
+  # on whatever categories are enabled, not just literal POST requests).
+  # IMAGES=1 was added after diun's real deploy failed with "Cannot inspect
+  # image" 403s — diun's core job (checking image digests against registries)
+  # needs /images/* reads, which CONTAINERS=1 does not cover.
   # ═══════════════════════════════════════════════════════════════════════════
   docker-socket-proxy:
     image: tecnativa/docker-socket-proxy:v0.4.2
@@ -92,8 +95,8 @@ services:
       - INFO=1
       - PING=1
       - EVENTS=1      # gluetun-recover watches `docker events`
+      - IMAGES=1      # diun needs image inspect to check registry digests
       - EXEC=0
-      - IMAGES=0
       - VOLUMES=0
       - SECRETS=0
       - AUTH=0
