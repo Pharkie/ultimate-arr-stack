@@ -347,8 +347,9 @@ services:
 
   # ═══════════════════════════════════════════════════════════════════════════
   # DIUN - Docker Image Update Notifier. Watches running containers and sends
-  # webhook notifications when newer image versions are available on registries.
-  # No web UI. Configure DIUN_WEBHOOK_URL in .env to receive alerts.
+  # push notifications (via ntfy.sh) when newer image versions are available
+  # on registries. No web UI. Subscribe to DIUN_NTFY_TOPIC (set in .env) in
+  # the ntfy app/website (https://ntfy.sh/<topic>) to receive alerts.
   # ═══════════════════════════════════════════════════════════════════════════
   diun:
     image: crazymax/diun:4.33.0
@@ -390,10 +391,8 @@ services:
       - DIUN_DEFAULTS_INCLUDETAGS=^v?\d+\.\d+\.\d+$$
       - DIUN_DEFAULTS_SORTTAGS=semver
       - DIUN_DEFAULTS_MAXTAGS=25
-      - DIUN_NOTIF_WEBHOOK_ENDPOINT=${DIUN_WEBHOOK_URL}
-      - DIUN_NOTIF_WEBHOOK_METHOD=POST
-      - DIUN_NOTIF_WEBHOOK_HEADERS_0_NAME=Content-Type
-      - DIUN_NOTIF_WEBHOOK_HEADERS_0_VALUE=application/json
+      - DIUN_NOTIF_NTFY_ENDPOINT=https://ntfy.sh
+      - DIUN_NOTIF_NTFY_TOPIC=${DIUN_NTFY_TOPIC}
     logging: *default-logging
 
   # ═══════════════════════════════════════════════════════════════════════════
