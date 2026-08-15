@@ -259,6 +259,8 @@ services:
     cap_add:
       - CHOWN           # Nginx chown on startup
       - DAC_OVERRIDE    # Write to root-owned volume directories
+      - SETGID          # Nginx master drops workers to www-data (gid)
+      - SETUID          # Nginx master drops workers to www-data (uid)
     networks:
       arr-stack:
         ipv4_address: 172.20.0.14
