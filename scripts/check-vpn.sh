@@ -19,8 +19,12 @@ set -euo pipefail
 
 TUNNELED_SERVICES=(qbittorrent prowlarr sabnzbd flaresolverr)
 
+# Uses /ip specifically: ifconfig.me serves curl a plain IP at the bare root,
+# but serves wget (no Accept header) its full HTML homepage instead — /ip
+# returns plain text for both clients, confirmed live against Gluetun (which
+# has no curl, only wget).
 egress_ip() {
-    docker exec "$1" sh -c 'curl -s --max-time 5 https://ifconfig.me || wget -qO- --timeout=5 https://ifconfig.me' 2>/dev/null
+    docker exec "$1" sh -c 'curl -s --max-time 5 https://ifconfig.me/ip || wget -qO- --timeout=5 https://ifconfig.me/ip' 2>/dev/null
 }
 
 # Detect NAS LAN IP
