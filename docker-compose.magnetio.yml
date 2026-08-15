@@ -84,7 +84,7 @@ services:
         condition: service_healthy
     networks:
       arr-stack:
-        ipv4_address: 172.20.0.14
+        ipv4_address: 172.20.0.18
     restart: unless-stopped
     logging: *default-logging
     healthcheck:
@@ -160,7 +160,7 @@ services:
       - magnetio-redis-data:/data
     networks:
       arr-stack:
-        ipv4_address: 172.20.0.15
+        ipv4_address: 172.20.0.19
     restart: unless-stopped
     logging: *default-logging
     healthcheck:

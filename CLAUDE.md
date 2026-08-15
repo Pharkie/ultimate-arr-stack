@@ -37,6 +37,6 @@ This is delivered **branch-first** (resolves the old "test before commit" vs "de
 
 Back up a service's config volume before any version bump with a DB migration (`docker run --rm -v <vol>:/src:ro -v <dir>:/bak alpine tar czf /bak/<svc>-config-backup-<stamp>.tgz -C /src .`). Never `docker stop` + ad-hoc `docker run` against a live container's static IP to test — apply the change through compose so the test reflects the real config.
 
-## E2E Tests
+## Tests
 
-Run `npm run test:e2e` after any change to Docker Compose files, service config, networks, or ports. All 14 tests must pass. They screenshot every service UI and verify API responses.
+Run `npm test` (bats + Playwright) after any change to Docker Compose files, service config, networks, or ports. All tests must pass. `npm run test:bats` is fast, static, and needs no NAS/Docker access — it validates compose files themselves (no duplicate ports/IPs, pinned images, no secrets, `.env.example` in sync, pre-commit hook actually installed) and should catch config bugs before they ever reach the NAS. `npm run test:e2e` (Playwright, run on the NAS itself for full coverage) is split by domain under `tests/e2e/`: UI screenshots, API assertions, VPN egress/leak/killswitch checks, DNS/Traefik routing, addon coverage (Decypharr/Magnetio/stremio-jellyfin), and Gluetun zombie-container resilience checks. Don't hardcode a test count in this doc — that's exactly how the old "14 tests" claim went stale; describe categories instead.

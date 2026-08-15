@@ -102,6 +102,9 @@ arr-stack network (172.20.0.0/24)
 │ 172.20.0.14  │ duc          │ Disk usage                     │ Optional         │
 │ 172.20.0.15  │ Beszel       │ System monitoring              │ Optional         │
 │ 172.20.0.16  │ DIUN         │ Image update notifier          │ Optional         │
+│ 172.20.0.17  │ stremio-jellyfin │ Stremio addon for local Jellyfin library   │ Optional │
+│ 172.20.0.18  │ magnetio-scraper │ Torrent provider scraper backend           │ Optional │
+│ 172.20.0.19  │ magnetio-redis   │ Cache backend for Magnetio                 │ Optional │
 ───────────────────────────────────────────────────────────────────────────────────
 ```
 

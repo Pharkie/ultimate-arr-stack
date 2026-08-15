@@ -631,7 +631,7 @@ services:
       - JELLYFIN_PASSWORD=${STREMIO_JELLYFIN_PASSWORD}
     networks:
       arr-stack:
-        ipv4_address: 172.20.0.12
+        ipv4_address: 172.20.0.17
     restart: always
     logging: *default-logging
     healthcheck:
