@@ -114,3 +114,10 @@ test-results/
 
 # Camera Listen holds the NVR password
 camera-listen/.env
+
+# Terraform state (contains resolved API key values, not encrypted at rest)
+# .terraform.lock.hcl IS committed - it pins provider versions, no secrets in it
+terraform/.terraform/
+terraform/terraform.tfstate
+terraform/terraform.tfstate.backup
+terraform/*.tfvars
