@@ -49,6 +49,7 @@ services:
     volumes:
       - ./traefik/traefik.yml:/traefik.yml:ro
       - ./traefik/dynamic:/dynamic:ro
+      - ./traefik/certs:/certs:ro
     labels:
       - "traefik.enable=true"
       - "traefik.docker.network=arr-core"
@@ -62,6 +63,17 @@ services:
       # Dashboard authentication
       # Generate with: htpasswd -nbB admin 'YOUR_PASSWORD'
       - "traefik.http.middlewares.dashboard-auth.basicauth.users=${TRAEFIK_DASHBOARD_AUTH}"
+
+      # Local admin-UI authentication (Sonarr/Radarr/Prowlarr/qBittorrent/
+      # Bazarr/SABnzbd/Pi-hole/Uptime Kuma/duc/Beszel/traefik.lan - see
+      # traefik/dynamic/local-services.yml's `-secure` routers). Defined as
+      # a docker-provider label (not in the file-provider dynamic/ configs)
+      # specifically so it can pick up ${TRAEFIK_DASHBOARD_AUTH} via Compose's
+      # own env substitution - the file provider has no env-var expansion,
+      # so a file-provider router references this as `admin-auth@docker`.
+      # Reuses the dashboard credential rather than adding a second secret;
+      # swap in a distinct ADMIN_UI_AUTH var later if these should diverge.
+      - "traefik.http.middlewares.admin-auth.basicauth.users=${TRAEFIK_DASHBOARD_AUTH}"
     logging:
       driver: "json-file"
       options:

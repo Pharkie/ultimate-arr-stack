@@ -8,6 +8,17 @@
 # Result: http://sonarr.lan instead of http://10.10.0.10:8989
 #
 # Note: Requires Traefik macvlan setup (see docs/LOCAL-DNS.md)
+#
+# Admin-UI tier (everything except Media Services below): each router below
+# has a `-secure` twin on the `websecure` entrypoint requiring basicauth
+# (`admin-auth@docker`, see docker-compose.traefik.yml) and serving the
+# mkcert-issued internal cert (see docs/HTTPS-LOCAL.md). The `web` (:80)
+# router now just 301s to https via the `https-redirect` middleware instead
+# of serving the app directly - these are unauthenticated-by-default admin
+# panels (qBittorrent explicitly bypasses its own login for LAN clients),
+# so this is the only auth layer they get today. Media Services stays
+# plain HTTP on .lan, unchanged - Cloudflare already terminates TLS and
+# both apps have real app-level auth for their public-facing access.
 
 http:
   routers:
@@ -39,59 +50,136 @@ http:
     sonarr-lan:
       rule: "Host(`sonarr.lan`)"
       entryPoints: [web]
+      middlewares: [https-redirect]
+      service: sonarr-lan
+    sonarr-lan-secure:
+      rule: "Host(`sonarr.lan`)"
+      entryPoints: [websecure]
+      tls: {}
+      middlewares: [admin-auth@docker, security-headers]
       service: sonarr-lan
 
     radarr-lan:
       rule: "Host(`radarr.lan`)"
       entryPoints: [web]
+      middlewares: [https-redirect]
+      service: radarr-lan
+    radarr-lan-secure:
+      rule: "Host(`radarr.lan`)"
+      entryPoints: [websecure]
+      tls: {}
+      middlewares: [admin-auth@docker, security-headers]
       service: radarr-lan
 
     prowlarr-lan:
       rule: "Host(`prowlarr.lan`)"
       entryPoints: [web]
+      middlewares: [https-redirect]
+      service: prowlarr-lan
+    prowlarr-lan-secure:
+      rule: "Host(`prowlarr.lan`)"
+      entryPoints: [websecure]
+      tls: {}
+      middlewares: [admin-auth@docker, security-headers]
       service: prowlarr-lan
 
     bazarr-lan:
       rule: "Host(`bazarr.lan`)"
       entryPoints: [web]
+      middlewares: [https-redirect]
+      service: bazarr-lan
+    bazarr-lan-secure:
+      rule: "Host(`bazarr.lan`)"
+      entryPoints: [websecure]
+      tls: {}
+      middlewares: [admin-auth@docker, security-headers]
       service: bazarr-lan
 
     # === Download Clients ===
     qbit-lan:
       rule: "Host(`qbit.lan`)"
       entryPoints: [web]
+      middlewares: [https-redirect]
+      service: qbit-lan
+    qbit-lan-secure:
+      rule: "Host(`qbit.lan`)"
+      entryPoints: [websecure]
+      tls: {}
+      middlewares: [admin-auth@docker, security-headers]
       service: qbit-lan
 
     sabnzbd-lan:
       rule: "Host(`sabnzbd.lan`)"
       entryPoints: [web]
+      middlewares: [https-redirect]
+      service: sabnzbd-lan
+    sabnzbd-lan-secure:
+      rule: "Host(`sabnzbd.lan`)"
+      entryPoints: [websecure]
+      tls: {}
+      middlewares: [admin-auth@docker, security-headers]
       service: sabnzbd-lan
 
     # === Infrastructure ===
     traefik-lan:
       rule: "Host(`traefik.lan`)"
       entryPoints: [web]
+      middlewares: [https-redirect]
+      service: api@internal
+    traefik-lan-secure:
+      rule: "Host(`traefik.lan`)"
+      entryPoints: [websecure]
+      tls: {}
+      middlewares: [admin-auth@docker, security-headers]
       service: api@internal
 
     pihole-lan:
       rule: "Host(`pihole.lan`)"
       entryPoints: [web]
+      middlewares: [https-redirect]
+      service: pihole-lan
+    pihole-lan-secure:
+      rule: "Host(`pihole.lan`)"
+      entryPoints: [websecure]
+      tls: {}
+      middlewares: [admin-auth@docker, security-headers]
       service: pihole-lan
 
     # === Utilities ===
     uptime-lan:
       rule: "Host(`uptime.lan`)"
       entryPoints: [web]
+      middlewares: [https-redirect]
+      service: uptime-lan
+    uptime-lan-secure:
+      rule: "Host(`uptime.lan`)"
+      entryPoints: [websecure]
+      tls: {}
+      middlewares: [admin-auth@docker, security-headers]
       service: uptime-lan
 
     duc-lan:
       rule: "Host(`duc.lan`)"
       entryPoints: [web]
+      middlewares: [https-redirect]
+      service: duc-lan
+    duc-lan-secure:
+      rule: "Host(`duc.lan`)"
+      entryPoints: [websecure]
+      tls: {}
+      middlewares: [admin-auth@docker, security-headers]
       service: duc-lan
 
     beszel-lan:
       rule: "Host(`beszel.lan`)"
       entryPoints: [web]
+      middlewares: [https-redirect]
+      service: beszel-lan
+    beszel-lan-secure:
+      rule: "Host(`beszel.lan`)"
+      entryPoints: [websecure]
+      tls: {}
+      middlewares: [admin-auth@docker, security-headers]
       service: beszel-lan
 
   middlewares:

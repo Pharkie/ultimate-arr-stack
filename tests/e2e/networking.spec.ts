@@ -1,4 +1,5 @@
 import { execFileSync } from 'node:child_process';
+import * as https from 'node:https';
 import { test, expect } from '@playwright/test';
 import { HOST, DOCKER_AVAILABLE, dockerInspect } from './helpers';
 
@@ -31,10 +32,13 @@ test.describe('Traefik routing', () => {
   // TRAEFIK_LAN_IP rather than relying on the test runner's own DNS
   // resolution working, so this test isolates Traefik's routing specifically.
   for (const [domain, expectPath, expectMarker] of [
-    // Both are unauthenticated endpoints, so no API key is needed just to
-    // prove the routing works end-to-end.
+    // Both are media-tier, plain-HTTP, unauthenticated endpoints, so no API
+    // key or TLS/basicauth handling is needed just to prove the routing
+    // works end-to-end. Admin-tier hosts (Sonarr et al.) now redirect to
+    // HTTPS + basicauth (see docs/HTTPS-LOCAL.md) and are covered instead by
+    // the "Admin-UI HTTPS tier" suite below.
     ['jellyfin.lan', '/System/Info/Public', 'Jellyfin'],
-    ['sonarr.lan', '/', 'Sonarr'],
+    ['seerr.lan', '/api/v1/status', 'version'],
   ] as const) {
     test(`curling ${domain} end-to-end returns the real backend, not a Traefik routing error`, async ({ request }) => {
       test.skip(!TRAEFIK_LAN_IP, 'TRAEFIK_LAN_IP not set');
@@ -70,6 +74,64 @@ test.describe('Traefik routing', () => {
       expect(body).toContain(expectMarker);
     });
   }
+});
+
+test.describe('Admin-UI HTTPS tier', () => {
+  // Smoke-checks the Phase 4 HTTPS/basicauth gate (docs/HTTPS-LOCAL.md) on
+  // one representative admin host rather than all 11 - the routing itself
+  // is identical per-host (see traefik/dynamic/local-services.yml's
+  // `-secure` router pattern), so this catches a regression in the shared
+  // mechanism without re-testing config that's already covered statically.
+  test('http sonarr.lan redirects to https', async ({ request }) => {
+    test.skip(!TRAEFIK_LAN_IP, 'TRAEFIK_LAN_IP not set');
+
+    const res = await request.get(`http://${TRAEFIK_LAN_IP}/`, {
+      headers: { Host: 'sonarr.lan' },
+      maxRedirects: 0,
+    });
+    expect(res.status()).toBe(301);
+    expect(res.headers()['location']).toBe('https://sonarr.lan/');
+  });
+
+  test('https sonarr.lan without credentials is rejected', async () => {
+    test.skip(!TRAEFIK_LAN_IP, 'TRAEFIK_LAN_IP not set');
+
+    // Unlike the plain-HTTP tests above, this can't use Playwright's
+    // `request` fixture with a spoofed Host header: Traefik's
+    // `sniStrict: true` (tls.yml) rejects the TLS handshake outright unless
+    // the *SNI* itself is a real `.lan` hostname (confirmed live - connecting
+    // by bare IP gets a TLS "unrecognized_name" alert before any HTTP
+    // response), and Playwright's request context has no way to set SNI
+    // independently of the connection address (tried dns.setServers() to
+    // make `sonarr.lan` resolve for real - it doesn't work, Playwright's
+    // fixture resolves through a path that ignores it, unlike the historical
+    // dns.resolve4/6-vs-dns.lookup() distinction the comment above is about).
+    // Node's own `https` module *does* expose SNI (`servername`) separately
+    // from the connection target, exactly like curl's `--resolve` - use it
+    // directly instead.
+    const status = await new Promise<number>((resolve, reject) => {
+      const req = https.request(
+        {
+          host: TRAEFIK_LAN_IP,
+          port: 443,
+          path: '/',
+          method: 'GET',
+          servername: 'sonarr.lan',
+          headers: { Host: 'sonarr.lan' },
+          rejectUnauthorized: false,
+          timeout: 10_000,
+        },
+        (res) => {
+          res.resume();
+          resolve(res.statusCode ?? 0);
+        },
+      );
+      req.on('error', reject);
+      req.on('timeout', () => req.destroy(new Error('request timed out')));
+      req.end();
+    });
+    expect(status).toBe(401);
+  });
 });
 
 test.describe('Pi-hole port publication', () => {

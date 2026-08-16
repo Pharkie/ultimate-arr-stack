@@ -22,8 +22,16 @@ api:
 entryPoints:
   web:
     address: ":80"
-    # HTTP only - Cloudflare Tunnel handles SSL for external access
-    # .lan domains use HTTP (no SSL needed for local traffic)
+    # HTTP only - Cloudflare Tunnel handles SSL for external access.
+    # Local-only admin UIs (Sonarr, Radarr, etc. - see local-services.yml)
+    # redirect :80 -> :443 via the https-redirect middleware; the
+    # media-serving tier (Jellyfin/Seerr) stays plain HTTP on .lan, same as
+    # before - Cloudflare already terminates TLS for their public access.
+  websecure:
+    address: ":443"
+    # Internal-CA TLS for the local admin-UI tier only (see tls.yml's
+    # `tls.certificates` block and local-services.yml's `-secure` routers).
+    # Not used by Cloudflare Tunnel, which still targets `web`.
 
 # Providers
 providers:

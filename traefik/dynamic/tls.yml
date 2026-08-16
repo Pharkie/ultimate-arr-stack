@@ -2,6 +2,19 @@
 # https://doc.traefik.io/traefik/https/tls/
 
 tls:
+  # Internal-CA cert for the local admin-UI tier (mkcert-issued, see
+  # docs/HTTPS-LOCAL.md). Explicit multi-SAN cert (one SAN per admin host),
+  # NOT a `*.lan` wildcard - OpenSSL-family TLS stacks (curl, and most
+  # browsers) refuse wildcard matching against a single-label suffix like
+  # `.lan`, treating it like a public-suffix boundary (mkcert's own README
+  # flags this as a known wildcard caveat; confirmed here empirically via
+  # curl's "subjectAltName does not match host name" failure against a
+  # `*.lan` cert). Files are gitignored, NAS-only - not synced by git pull,
+  # deploy them onto the NAS's traefik/certs/ directory directly.
+  certificates:
+    - certFile: /certs/lan-admin.crt
+      keyFile: /certs/lan-admin.key
+
   options:
     default:
       minVersion: VersionTLS12

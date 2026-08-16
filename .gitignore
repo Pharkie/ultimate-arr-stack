@@ -16,6 +16,7 @@
 # Traefik SSL Certificates
 traefik/acme.json
 traefik/*.json
+traefik/certs/
 
 # Traefik Config Files (copy from .example and customize)
 traefik/traefik.yml
