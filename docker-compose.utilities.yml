@@ -228,6 +228,38 @@ services:
           done
 
   # ═══════════════════════════════════════════════════════════════════════════
+  # GLUETUN-ROTATOR - Periodically restarts gluetun so it re-picks a WireGuard
+  # exit server from VPN_COUNTRIES, instead of staying pinned to whatever
+  # server it first connected to. A plain `docker restart` (same container ID,
+  # not a recreate), so gluetun-recover's existing health_status watcher
+  # revives every "service:gluetun" dependent afterwards - no extra recovery
+  # logic needed here.
+  # ═══════════════════════════════════════════════════════════════════════════
+  gluetun-rotator:
+    image: docker:29.7-cli
+    container_name: gluetun-rotator
+    <<: *default-security
+    depends_on:
+      - docker-socket-proxy
+    environment:
+      - TZ=${TZ}
+      - DOCKER_HOST=tcp://docker-socket-proxy:2375
+      - GLUETUN_ROTATE_INTERVAL_SECONDS=${GLUETUN_ROTATE_INTERVAL_SECONDS:-21600}
+    networks:
+      - arr-core
+    restart: always
+    logging: *default-logging
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        while true; do
+          sleep "$$GLUETUN_ROTATE_INTERVAL_SECONDS"
+          echo "gluetun-rotator: restarting gluetun (interval=$${GLUETUN_ROTATE_INTERVAL_SECONDS}s) to rotate exit server"
+          docker restart gluetun || echo "gluetun-rotator: FAILED to restart gluetun"
+        done
+
+  # ═══════════════════════════════════════════════════════════════════════════
   # UPTIME KUMA - Monitoring dashboard. Shows health of all your services.
   # Access: uptime.lan | NAS_IP:3001 (LAN-only, use WireGuard for remote)
   # ═══════════════════════════════════════════════════════════════════════════

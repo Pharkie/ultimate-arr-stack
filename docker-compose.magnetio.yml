@@ -157,6 +157,8 @@ services:
       - REDIS_URI=redis://:${MAGNETIO_REDIS_PASSWORD}@magnetio-redis:6379
       - SCRAPER_URL=http://magnetio-scraper:8080
       - LOG_LEVEL=info
+    labels:
+      - gluetun.dependent=true  # gluetun-recover restarts this if SIGKILLed/zombied by a gluetun restart
     restart: unless-stopped
     logging: *default-logging
     healthcheck:
