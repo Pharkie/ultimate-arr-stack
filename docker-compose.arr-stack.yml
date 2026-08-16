@@ -168,6 +168,20 @@ services:
       # magnetio-net comment in the networks: block above.
       magnetio-net:
         ipv4_address: 172.22.0.4
+    # gluetun's own DNS_SERVER (DNS_ADDRESS=172.20.0.5, DoT to Cloudflare -
+    # deliberate VPN leak protection) can't resolve Docker container names,
+    # only public hostnames. magnetio-addon shares this netns entirely
+    # (network_mode: container:gluetun in docker-compose.magnetio.yml) and
+    # needs to reach magnetio-redis/magnetio-scraper by name - confirmed
+    # broken live ("getaddrinfo ENOTFOUND magnetio-redis") since nothing had
+    # exercised a real stream request before. /etc/hosts entries are checked
+    # before DNS, so this fixes resolution without touching DNS_ADDRESS and
+    # weakening leak protection for gluetun's other dependents. IPs must
+    # match magnetio-redis/magnetio-scraper's static ipv4_address in
+    # docker-compose.magnetio.yml.
+    extra_hosts:
+      - "magnetio-redis:172.22.0.3"
+      - "magnetio-scraper:172.22.0.2"
     restart: always
     logging: *default-logging
     healthcheck:
