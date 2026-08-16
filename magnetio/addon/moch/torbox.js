@@ -13,12 +13,20 @@ export async function getCachedStreams(streams, apiKey) {
   if (!hashes.length) return new Map();
 
   try {
-    const { data } = await tbPost(`${TB_BASE}/torrents/checkcached`, apiKey, { hash: hashes });
+    // checkcached is a GET with a comma-joined hash= query param and
+    // format=list (confirmed live 2026-08-16 - the previous POST with a
+    // {hash: [...]} body 422'd, TorBox's schema requires "hashes" via GET,
+    // not a POST body). Response data is a list of cached torrents, not a
+    // hash->bool map - absence from the list means not cached.
+    const { data } = await tbGet(`${TB_BASE}/torrents/checkcached`, apiKey, {
+      hash: hashes.join(','),
+      format: 'list',
+    });
     if (!data.success) return new Map();
 
     const result = new Map();
-    for (const [hash, isCached] of Object.entries(data.data ?? {})) {
-      if (isCached) result.set(hash.toLowerCase(), true);
+    for (const entry of data.data ?? []) {
+      if (entry.hash) result.set(entry.hash.toLowerCase(), true);
     }
     return result;
   } catch (err) {
@@ -38,10 +46,7 @@ export async function prewarm(stream, apiKey) {
   if (!isValidToken(apiKey)) return false;
 
   try {
-    const { data } = await tbPost(`${TB_BASE}/torrents/createtorrent`, apiKey, {
-      magnet: `magnet:?xt=urn:btih:${stream.infoHash}`,
-    });
-
+    const { data } = await tbCreateTorrent(apiKey, stream.infoHash);
     return !!(data.success && data.data?.torrent_id);
   } catch (err) {
     handleTbError(err, apiKey);
@@ -73,10 +78,7 @@ export async function getCatalog(apiKey, type, skip = 0) {
 async function _resolve(stream, apiKey) {
   try {
     // Create or locate the torrent
-    const { data: addData } = await tbPost(`${TB_BASE}/torrents/createtorrent`, apiKey, {
-      magnet: `magnet:?xt=urn:btih:${stream.infoHash}`,
-    });
-
+    const { data: addData } = await tbCreateTorrent(apiKey, stream.infoHash);
     if (!addData.success) return null;
 
     const torrentId = addData.data?.torrent_id;
@@ -94,10 +96,13 @@ async function _resolve(stream, apiKey) {
     })));
 
     const fileId = video?.id ?? files[0]?.id;
-    if (!fileId) return null;
+    if (fileId == null) return null;
 
-    // Request direct download URL
+    // Request direct download URL - requestdl needs the key both as the
+    // usual Authorization header AND as a "token" query param (confirmed
+    // live 2026-08-16: without token it 422s with "field required").
     const { data: dlData } = await tbGet(`${TB_BASE}/torrents/requestdl`, apiKey, {
+      token:      apiKey,
       torrent_id: torrentId,
       file_id:    fileId,
       zip_link:   false,
@@ -112,10 +117,16 @@ async function _resolve(stream, apiKey) {
 
 async function _waitForReady(torrentId, apiKey, retries = 10, delayMs = 2000) {
   for (let i = 0; i < retries; i++) {
+    // mylist?id=<id> returns a single torrent object, not a list (only the
+    // no-id "list everything" mode returns an array - confirmed live
+    // 2026-08-16).
     const { data } = await tbGet(`${TB_BASE}/torrents/mylist`, apiKey, { id: torrentId });
-    const torrent  = data.data?.[0];
+    const torrent  = data.data;
     if (!torrent) return null;
-    if (torrent.download_state === 'completed') return torrent;
+    // A torrent already on TorBox's servers reports "cached", not
+    // "completed" - "completed" never actually occurs (confirmed live
+    // 2026-08-16, this previously made every resolve() time out).
+    if (['cached', 'completed'].includes(torrent.download_state)) return torrent;
     if (['error', 'dead'].includes(torrent.download_state)) return null;
     await sleep(delayMs);
   }
@@ -132,8 +143,13 @@ function tbGet(url, apiKey, params = {}) {
   });
 }
 
-function tbPost(url, apiKey, data = {}) {
-  return axios.post(url, data, {
+// createtorrent rejects a JSON body ("must provide either a file or magnet
+// link" even when magnet is present) - it needs form-encoded data instead
+// (confirmed live 2026-08-16). axios sets the right Content-Type
+// automatically for a URLSearchParams body.
+function tbCreateTorrent(apiKey, infoHash) {
+  const body = new URLSearchParams({ magnet: `magnet:?xt=urn:btih:${infoHash}` });
+  return axios.post(`${TB_BASE}/torrents/createtorrent`, body, {
     headers: { Authorization: `Bearer ${apiKey}` },
     timeout: 15_000,
   });
