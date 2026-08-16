@@ -69,7 +69,12 @@ jobs:
         uses: tailscale/github-action@v3
         with:
           authkey: ${{ secrets.TS_AUTHKEY_CI }}
-          hostname: gh-actions-arr-stack
+          # Unique per run: a fixed hostname collides with the previous run's
+          # still-registered (offline, non-ephemeral) device and gets silently
+          # suffixed (-1, -2, ...) by Tailscale, cluttering the tailnet with
+          # stale entries — seen as both gh-actions-arr-stack and
+          # gh-actions-arr-stack-1 in run 31945945854's `tailscale status`.
+          hostname: gh-actions-arr-stack-${{ github.run_id }}
 
       - name: Configure SSH to NAS
         env:
@@ -87,9 +92,19 @@ jobs:
           # real connectivity failure as a green step on 2026-08-16's run
           # 31945201657 (the actual ssh call two steps later then burned the full
           # ~2m OS TCP timeout before failing for real).
+          #
+          # `tailscale ping` before each keyscan attempt: run 31945945854 showed
+          # `tailscale status`/`ping` succeeding with a direct connection right
+          # after 10 straight ssh-keyscan failures, meaning the WireGuard
+          # peer-to-peer path to the NAS hadn't been established yet when the
+          # raw TCP attempts ran. Plain TCP tools (ssh-keyscan, ssh) don't
+          # trigger/wait for that handshake; `tailscale ping` actively forces
+          # and confirms it, so running it first warms the route before the
+          # keyscan attempt that follows.
           got_key=false
           for i in $(seq 1 10); do
-            echo "ssh-keyscan attempt $i/10 for $NAS_SSH_HOST"
+            echo "Attempt $i/10: warming Tailscale route to $NAS_SSH_HOST"
+            tailscale ping -c 1 "$NAS_SSH_HOST" || true
             if ssh-keyscan -H "$NAS_SSH_HOST" >> ~/.ssh/known_hosts 2>/tmp/keyscan-err; then
               if [ -s ~/.ssh/known_hosts ]; then
                 got_key=true
