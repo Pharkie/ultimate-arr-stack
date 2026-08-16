@@ -194,6 +194,36 @@ sudo crontab -e
 
 ---
 
+## Automated Pre-Deploy Backup (GitHub Actions)
+
+`.github/workflows/nas-auto-deploy.yml` (see that file's header comment for the full pipeline, and CLAUDE.md's *Deploying to the NAS* section for how this relates to the manual branch-first workflow) backs up before every deploy it runs, to a separate location from the daily cron backup above: `/volume1/docker/arr-stack-backups/` on the NAS itself, not the USB drive. It reuses `scripts/arr-backup.sh --tar` unchanged (same essential-volumes list as above), then renames the tarball with a full timestamp (`arr-stack-backup-YYYYMMDD-HHMMSS.tar.gz` — the cron job's plain `arr-backup.sh --tar` only stamps by day, which would silently clobber a same-day backup if this ran more than once a day) and runs `scripts/backup-prune.sh` on that directory.
+
+**Retention is GFS (Grandfather-Father-Son) tiered, not flat 7-day**, since this runs on every deploy rather than once a day and a flat "keep everything for 7 days" policy would grow unbounded over months of frequent deploys:
+
+| Age | Kept |
+|-----|------|
+| ≤ 7 days | every backup |
+| 7–30 days | newest per calendar day |
+| 30–180 days | newest per ISO week |
+| > 180 days | newest per month, capped at 12 total |
+
+This mirrors the retention scheme restic/BorgBackup/Time Machine use. Run `./scripts/backup-prune.sh <dir>` manually against any directory of `arr-stack-backup-*.tar.gz` files to apply the same thinning elsewhere.
+
+**Required GitHub repo secrets** (Settings → Secrets and variables → Actions):
+
+| Secret | Value |
+|--------|-------|
+| `TS_AUTHKEY_CI` | A reusable Tailscale auth key ([admin console](https://login.tailscale.com/admin/settings/keys)) so the GitHub runner can join the tailnet and reach the NAS |
+| `NAS_SSH_HOST` | The NAS's Tailscale MagicDNS name (`arr-stack-nas`, per `docker-compose.tailscale.yml`'s `TS_HOSTNAME`) |
+| `NAS_SSH_USER` | SSH user on the NAS |
+| `NAS_SSH_KEY` | Private half of a **dedicated CI deploy keypair** — generate a fresh one (`ssh-keygen -t ed25519 -f ci_deploy_key -N ""`), add the public half to that user's `~/.ssh/authorized_keys` on the NAS, don't reuse a personal key |
+
+Also requires Settings → Actions → General → Workflow permissions → **Read and write permissions**, so the default `GITHUB_TOKEN` can push to `main` / merge PRs.
+
+The e2e step runs `npm run test:e2e` **on the NAS itself** over SSH (not from the GitHub runner) so the tests gated on local Docker access (VPN egress/leak/killswitch, zombie-container checks — see `tests/e2e/helpers.ts`'s `DOCKER_AVAILABLE`) actually run instead of skipping. This assumes Playwright's browsers are already installed on the NAS (`npx playwright install --with-deps chromium`, one-time) and `.env.e2e` is already populated there, same as for a manual `npm run test:e2e` run.
+
+---
+
 ## Troubleshooting
 
 ### "Permission denied" errors

@@ -1,0 +1,204 @@
+name: NAS Auto-Deploy
+
+# Manual only. This replaces the manual "run ./scripts/sync-nas.sh locally,
+# eyeball the NAS, merge by hand" workflow described in CLAUDE.md's Deploying
+# to the NAS section with the same steps, automated. Deliberately NOT
+# triggered on push — that would skip the pre-merge "verify on NAS before
+# touching main" gate CLAUDE.md requires for every change, however small.
+#
+# To run: pick the feature branch in the "Use workflow from" dropdown on the
+# Actions tab, or `gh workflow run nas-auto-deploy.yml --ref <branch>`.
+#
+# Pipeline: bats (fast, no NAS) -> connect to NAS over Tailscale -> back up
+# config volumes (GFS retention) -> sync branch to NAS -> recreate changed
+# services -> wait for health -> e2e (on the NAS, for full coverage
+# including docker-exec-gated VPN/zombie checks) -> merge to main -> sync
+# main to NAS. Any failing step stops the pipeline before it — nothing
+# merges to main, and main-sync never runs, unless everything before it
+# passed on the real, deployed NAS.
+#
+# Required repo secrets (see docs/BACKUP.md / CLAUDE.md for setup notes):
+#   TS_AUTHKEY_CI   Tailscale reusable auth key, tagged e.g. tag:ci
+#   NAS_SSH_HOST    NAS's Tailscale MagicDNS name (arr-stack-nas) or IP
+#   NAS_SSH_USER    SSH user on the NAS (leoleg)
+#   NAS_SSH_KEY     Private key for a dedicated CI deploy keypair (not the
+#                   operator's personal key) whose public half is in that
+#                   user's authorized_keys on the NAS
+#
+# Repo setting required: Settings -> Actions -> General -> Workflow
+# permissions -> "Read and write permissions" (needed to push to main / merge
+# PRs with the default GITHUB_TOKEN).
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: nas-auto-deploy
+  cancel-in-progress: false
+
+env:
+  NAS_STACK_DIR: /volume1/docker/arr-stack
+  NAS_BACKUP_DIR: /volume1/docker/arr-stack-backups
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Fast static checks (bats)
+        run: |
+          set -e
+          git submodule update --init --recursive tests/bats-core tests/bats-support tests/bats-assert
+          npm run test:bats
+
+      - name: Connect to Tailscale
+        uses: tailscale/github-action@v3
+        with:
+          authkey: ${{ secrets.TS_AUTHKEY_CI }}
+          hostname: gh-actions-arr-stack
+
+      - name: Configure SSH to NAS
+        env:
+          NAS_SSH_KEY: ${{ secrets.NAS_SSH_KEY }}
+          NAS_SSH_HOST: ${{ secrets.NAS_SSH_HOST }}
+        run: |
+          set -e
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$NAS_SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          # MagicDNS can take a moment to become resolvable right after joining.
+          for i in $(seq 1 10); do
+            ssh-keyscan -H "$NAS_SSH_HOST" >> ~/.ssh/known_hosts 2>/dev/null && break
+            sleep 3
+          done
+
+      - name: Determine changed compose files
+        id: changes
+        run: |
+          set -e
+          git fetch origin main --quiet
+          CHANGED=$(git diff --name-only origin/main...HEAD -- 'docker-compose.*.yml' | tr '\n' ' ')
+          echo "files=${CHANGED}" >> "$GITHUB_OUTPUT"
+          echo "Changed compose files: ${CHANGED:-none}"
+
+      - name: Back up config volumes (GFS retention)
+        env:
+          NAS_HOST: ${{ secrets.NAS_SSH_HOST }}
+          NAS_USER: ${{ secrets.NAS_SSH_USER }}
+        run: |
+          set -e
+          ssh "${NAS_USER}@${NAS_HOST}" "
+            set -e
+            mkdir -p '${NAS_BACKUP_DIR}'
+            cd '${NAS_STACK_DIR}'
+            ./scripts/arr-backup.sh --tar '${NAS_BACKUP_DIR}'
+            TS=\$(date +%Y%m%d-%H%M%S)
+            DAY_TARBALL='${NAS_BACKUP_DIR}/arr-stack-backup-'\$(date +%Y%m%d)'.tar.gz'
+            mv \"\$DAY_TARBALL\" '${NAS_BACKUP_DIR}/arr-stack-backup-'\${TS}'.tar.gz'
+            ./scripts/backup-prune.sh '${NAS_BACKUP_DIR}'
+          "
+
+      - name: Sync branch to NAS
+        env:
+          NAS_HOST: ${{ secrets.NAS_SSH_HOST }}
+          NAS_USER: ${{ secrets.NAS_SSH_USER }}
+          BRANCH: ${{ github.ref_name }}
+        run: |
+          set -e
+          ARRGIT="docker run --rm -v '${NAS_STACK_DIR}:/repo' -w /repo alpine/git -c safe.directory=/repo"
+          ssh "${NAS_USER}@${NAS_HOST}" "
+            ${ARRGIT} fetch origin '${BRANCH}' &&
+            ${ARRGIT} checkout '${BRANCH}' &&
+            ${ARRGIT} pull --ff-only origin '${BRANCH}'
+          "
+
+      - name: Recreate affected services
+        if: steps.changes.outputs.files != ''
+        env:
+          NAS_HOST: ${{ secrets.NAS_SSH_HOST }}
+          NAS_USER: ${{ secrets.NAS_SSH_USER }}
+          CHANGED_FILES: ${{ steps.changes.outputs.files }}
+        run: |
+          set -e
+          for f in $CHANGED_FILES; do
+            echo "Recreating services from $f"
+            # Deliberately no --remove-orphans: this project shares one compose
+            # project name across multiple files, and --remove-orphans deletes
+            # every container defined in the *other* files (see CLAUDE.md).
+            ssh "${NAS_USER}@${NAS_HOST}" "cd '${NAS_STACK_DIR}' && docker compose -f '$f' up -d --build"
+          done
+
+      - name: Wait for container health
+        env:
+          NAS_HOST: ${{ secrets.NAS_SSH_HOST }}
+          NAS_USER: ${{ secrets.NAS_SSH_USER }}
+        run: |
+          set -e
+          ssh "${NAS_USER}@${NAS_HOST}" '
+            for i in $(seq 1 30); do
+              STARTING=$(docker ps --filter "health=starting" --format "{{.Names}}")
+              if [ -z "$STARTING" ]; then
+                UNHEALTHY=$(docker ps --filter "health=unhealthy" --format "{{.Names}}")
+                if [ -n "$UNHEALTHY" ]; then
+                  echo "Unhealthy containers: $UNHEALTHY"
+                  exit 1
+                fi
+                echo "All containers healthy."
+                exit 0
+              fi
+              sleep 5
+            done
+            echo "Timed out waiting for containers to leave starting state: $STARTING"
+            exit 1
+          '
+
+      - name: Run e2e verification on the NAS
+        env:
+          NAS_HOST: ${{ secrets.NAS_SSH_HOST }}
+          NAS_USER: ${{ secrets.NAS_SSH_USER }}
+        run: |
+          set -e
+          # Runs ON the NAS (not from this runner) so docker-exec-gated tests
+          # (VPN egress/leak/killswitch, zombie-container checks) actually run
+          # instead of skipping — see tests/e2e/helpers.ts DOCKER_AVAILABLE.
+          ssh "${NAS_USER}@${NAS_HOST}" "cd '${NAS_STACK_DIR}' && npm run test:e2e"
+
+      - name: Merge to main
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BRANCH: ${{ github.ref_name }}
+        run: |
+          set -e
+          PR_NUMBER=$(gh pr list --head "$BRANCH" --state open --json number -q '.[0].number' || true)
+          if [ -n "$PR_NUMBER" ]; then
+            echo "Squash-merging PR #$PR_NUMBER"
+            gh pr merge "$PR_NUMBER" --squash --delete-branch=false
+          else
+            echo "No open PR for $BRANCH — merging directly"
+            git fetch origin main
+            git checkout main
+            git merge --no-ff "origin/$BRANCH" -m "Merge $BRANCH (auto-deploy verified on NAS)"
+            git push origin main
+          fi
+
+      - name: Sync main to NAS
+        env:
+          NAS_HOST: ${{ secrets.NAS_SSH_HOST }}
+          NAS_USER: ${{ secrets.NAS_SSH_USER }}
+        run: |
+          set -e
+          ARRGIT="docker run --rm -v '${NAS_STACK_DIR}:/repo' -w /repo alpine/git -c safe.directory=/repo"
+          ssh "${NAS_USER}@${NAS_HOST}" "
+            ${ARRGIT} fetch origin main &&
+            ${ARRGIT} checkout main &&
+            ${ARRGIT} merge --ff-only origin/main
+          "
