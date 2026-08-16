@@ -2,11 +2,24 @@
 
 > Return to [Setup Guide](SETUP.md) · Requires [+ local DNS](LOCAL-DNS.md) already set up
 
-Adds basic-auth and HTTPS to the local-only admin panels (Sonarr, Radarr, Prowlarr, Bazarr,
-qBittorrent, SABnzbd, Pi-hole, Uptime Kuma, duc, Beszel, and the `traefik.lan` dashboard) — several
-of these (qBittorrent by explicit design) have no auth of their own on the LAN, so this is the only
-gate they get. Jellyfin and Seerr are untouched: they already have real app-level auth and stay
-plain HTTP on `.lan` — Cloudflare Tunnel handles their public HTTPS.
+Adds basic-auth and HTTPS to every local-only `.lan` host: Sonarr, Radarr, Prowlarr, Bazarr,
+qBittorrent, SABnzbd, Pi-hole, Uptime Kuma, duc, Beszel, the `traefik.lan` dashboard, and — since
+the Jellyfin/Seerr extension — Jellyfin and Seerr too. Several of the original hosts (qBittorrent by
+explicit design) have no auth of their own on the LAN, so this is their only gate. Jellyfin and
+Seerr already have real app-level auth of their own; the basicauth layer here is an intentional
+extra gate on top, applied uniformly with everything else in this tier — see the caveat below
+before relying on it for TV/mobile clients.
+
+**Caveat for Jellyfin/Seerr specifically**: unlike the other hosts, these are used by non-browser
+clients on `.lan` — Kodi, the Jellyfin Android/iOS/tvOS apps, Chromecast, smart TV apps, the Seerr
+companion apps. Many of these don't support an HTTP Basic Auth challenge the way a browser does, so
+adding this gate can break their direct `.lan` connection even though the app's own login still
+works fine in a browser. If a device stops connecting after this change, options are: enter the
+basicauth credentials once if the client supports a credential prompt (some do, embedded in the
+URL as `https://user:pass@jellyfin.lan`), point that device at the app's LAN-published port
+directly instead of the `.lan` hostname (bypasses Traefik and this gate entirely, no TLS), or drop
+`admin-auth@docker` from `jellyfin-lan-secure`/`seerr-lan-secure` in
+`traefik/dynamic/local-services.yml` for TLS-only treatment of these two hosts.
 
 This uses a **locally-trusted internal CA** (via [`mkcert`](https://github.com/FiloSottile/mkcert)),
 not a public CA — `.lan` isn't a real, publicly-resolvable domain, so Let's Encrypt can't issue for
@@ -21,7 +34,8 @@ brew install mkcert          # macOS; see mkcert's README for other platforms
 mkcert -install               # installs the CA into this machine's trust store
 mkcert -cert-file lan-admin.crt -key-file lan-admin.key \
   sonarr.lan radarr.lan prowlarr.lan bazarr.lan qbit.lan sabnzbd.lan \
-  traefik.lan pihole.lan uptime.lan duc.lan beszel.lan
+  traefik.lan pihole.lan uptime.lan duc.lan beszel.lan jellyfin.lan seerr.lan \
+  jellyseerr.lan jellyseer.lan
 ```
 
 This creates two files (`lan-admin.crt`, `lan-admin.key`) signed by a CA whose private key never
@@ -83,12 +97,12 @@ devices that haven't trusted the CA, same as any self-signed cert.
 
 **Verification**
 
-- `https://sonarr.lan` (and the other 10 admin hosts) load with no cert warning on a
-  CA-trusted device, and prompt for basic-auth before showing the app.
-- `http://sonarr.lan` redirects (301) to `https://sonarr.lan`.
-- `http://jellyfin.lan` and `http://seerr.lan` are unchanged — still plain HTTP, no auth prompt.
+- `https://sonarr.lan` (and the other 12 hosts, including `jellyfin.lan`/`seerr.lan`) load with no
+  cert warning on a CA-trusted device, and prompt for basic-auth before showing the app.
+- `http://sonarr.lan` (and every other host) redirects (301) to its `https://` equivalent.
 - The Cloudflare-facing public URLs (`jellyfin.yourdomain.com` etc.) are unaffected — Cloudflare
-  Tunnel still targets Traefik's `web` (:80) entrypoint, not `websecure`.
+  Tunnel still targets Traefik's `web` (:80) entrypoint, not `websecure`, and those routers are
+  defined separately from the `.lan` ones touched here.
 
 **Cert renewal**: `mkcert`-issued leaf certs are valid for ~2.25 years (the CA root itself lasts
 ~10). Repeat Steps 1–4 (skip `-install`, the CA already exists at `mkcert -CAROOT`) before it

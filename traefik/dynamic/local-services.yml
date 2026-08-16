@@ -9,16 +9,17 @@
 #
 # Note: Requires Traefik macvlan setup (see docs/LOCAL-DNS.md)
 #
-# Admin-UI tier (everything except Media Services below): each router below
-# has a `-secure` twin on the `websecure` entrypoint requiring basicauth
-# (`admin-auth@docker`, see docker-compose.traefik.yml) and serving the
-# mkcert-issued internal cert (see docs/HTTPS-LOCAL.md). The `web` (:80)
-# router now just 301s to https via the `https-redirect` middleware instead
-# of serving the app directly - these are unauthenticated-by-default admin
-# panels (qBittorrent explicitly bypasses its own login for LAN clients),
-# so this is the only auth layer they get today. Media Services stays
-# plain HTTP on .lan, unchanged - Cloudflare already terminates TLS and
-# both apps have real app-level auth for their public-facing access.
+# Every router below has a `-secure` twin on the `websecure` entrypoint
+# requiring basicauth (`admin-auth@docker`, see docker-compose.traefik.yml)
+# and serving the mkcert-issued internal cert (see docs/HTTPS-LOCAL.md). The
+# `web` (:80) router just 301s to https via the `https-redirect` middleware
+# instead of serving the app directly. This now includes Media Services
+# (Jellyfin/Seerr) on .lan even though they have their own app-level login -
+# the extra basicauth layer is intentional here (see docs/HTTPS-LOCAL.md for
+# the caveat about non-browser clients: Kodi, mobile apps, Chromecast/smart
+# TVs may not handle an HTTP Basic Auth challenge). Their separate
+# Cloudflare-facing public routers are untouched - Cloudflare already
+# terminates TLS and those keep using app-level auth only, not admin-auth.
 
 http:
   routers:
@@ -26,23 +27,53 @@ http:
     jellyfin-lan:
       rule: "Host(`jellyfin.lan`)"
       entryPoints: [web]
+      middlewares: [https-redirect]
+      service: jellyfin-lan
+    jellyfin-lan-secure:
+      rule: "Host(`jellyfin.lan`)"
+      entryPoints: [websecure]
+      tls: {}
+      middlewares: [admin-auth@docker, security-headers]
       service: jellyfin-lan
 
     seerr-lan:
       rule: "Host(`seerr.lan`)"
       entryPoints: [web]
+      middlewares: [https-redirect]
+      service: seerr-lan
+    seerr-lan-secure:
+      rule: "Host(`seerr.lan`)"
+      entryPoints: [websecure]
+      tls: {}
+      middlewares: [admin-auth@docker, security-headers]
       service: seerr-lan
 
-    # Legacy redirects (jellyseerr/jellyseer → seerr)
+    # Legacy redirects (jellyseerr/jellyseer → seerr). Both entrypoints exist
+    # so a direct https://jellyseerr.lan request (sniStrict requires a
+    # matching cert SAN, see docs/HTTPS-LOCAL.md) still gets a clean redirect
+    # to https://seerr.lan instead of a TLS handshake failure or a 404 with
+    # no matching router.
     jellyseerr-lan:
       rule: "Host(`jellyseerr.lan`)"
       entryPoints: [web]
+      middlewares: [jellyseerr-redirect]
+      service: seerr-lan
+    jellyseerr-lan-secure:
+      rule: "Host(`jellyseerr.lan`)"
+      entryPoints: [websecure]
+      tls: {}
       middlewares: [jellyseerr-redirect]
       service: seerr-lan
 
     jellyseer-lan:
       rule: "Host(`jellyseer.lan`)"
       entryPoints: [web]
+      middlewares: [jellyseerr-redirect]
+      service: seerr-lan
+    jellyseer-lan-secure:
+      rule: "Host(`jellyseer.lan`)"
+      entryPoints: [websecure]
+      tls: {}
       middlewares: [jellyseerr-redirect]
       service: seerr-lan
 
@@ -185,8 +216,8 @@ http:
   middlewares:
     jellyseerr-redirect:
       redirectRegex:
-        regex: "^http://jellyseer{1,2}[.]lan(.*)"
-        replacement: "http://seerr.lan${1}"
+        regex: "^https?://jellyseer{1,2}[.]lan(.*)"
+        replacement: "https://seerr.lan${1}"
         permanent: true
 
   services:

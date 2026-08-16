@@ -15,23 +15,26 @@
 
 | Service | Core (IP:port) | + local DNS | + remote access |
 |---------|----------------|-------------|-----------------|
-| Jellyfin | `NAS_IP:8096` | `http://jellyfin.lan` | `https://jellyfin.DOMAIN` |
-| Seerr | `NAS_IP:5055` | `http://seerr.lan` | `https://seerr.DOMAIN` |
-| Sonarr | `NAS_IP:8989` | `http://sonarr.lan` | — |
-| Radarr | `NAS_IP:7878` | `http://radarr.lan` | — |
-| Prowlarr | `NAS_IP:9696` | `http://prowlarr.lan` | — |
-| Bazarr | `NAS_IP:6767` | `http://bazarr.lan` | — |
-| qBittorrent | `NAS_IP:8085` | `http://qbit.lan` | — |
-| SABnzbd | `NAS_IP:8082` | `http://sabnzbd.lan` | — |
-| Pi-hole | `NAS_IP:8081/admin` | `http://pihole.lan/admin` | — |
-| Traefik | — | `http://traefik.lan` | — |
-| Uptime Kuma | `NAS_IP:3001` | `http://uptime.lan` | — |
-| duc | `NAS_IP:8838` | `http://duc.lan` | — |
-| Beszel | `NAS_IP:8090` | `http://beszel.lan` | — |
+| Jellyfin | `NAS_IP:8096` | `https://jellyfin.lan`* | `https://jellyfin.DOMAIN` |
+| Seerr | `NAS_IP:5055` | `https://seerr.lan`* | `https://seerr.DOMAIN` |
+| Sonarr | `NAS_IP:8989` | `https://sonarr.lan`* | — |
+| Radarr | `NAS_IP:7878` | `https://radarr.lan`* | — |
+| Prowlarr | `NAS_IP:9696` | `https://prowlarr.lan`* | — |
+| Bazarr | `NAS_IP:6767` | `https://bazarr.lan`* | — |
+| qBittorrent | `NAS_IP:8085` | `https://qbit.lan`* | — |
+| SABnzbd | `NAS_IP:8082` | `https://sabnzbd.lan`* | — |
+| Pi-hole | `NAS_IP:8081/admin` | `https://pihole.lan`* | — |
+| Traefik | — | `https://traefik.lan`* | — |
+| Uptime Kuma | `NAS_IP:3001` | `https://uptime.lan`* | — |
+| duc | `NAS_IP:8838` | `https://duc.lan`* | — |
+| Beszel | `NAS_IP:8090` | `https://beszel.lan`* | — |
 
 **Legend:**
 - **Core** — Always works on your LAN
-- **+ local DNS** — Requires [Pi-hole + Traefik setup](LOCAL-DNS.md)
+- **+ local DNS** — Requires [Pi-hole + Traefik setup](LOCAL-DNS.md). `*` = also requires the
+  [+ HTTPS + auth](HTTPS-LOCAL.md) setup and prompts for basic-auth (`http://` still works and
+  redirects here automatically). Jellyfin/Seerr keep their own app-level login in addition to this
+  gate — see that doc's client-compatibility caveat if a non-browser device stops connecting.
 - **+ remote access** — Requires [Cloudflare Tunnel setup](REMOTE-ACCESS.md). Services marked "—" are LAN-only (not exposed to internet).
 
 ## Services & Network

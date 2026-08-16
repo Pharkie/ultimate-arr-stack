@@ -94,7 +94,7 @@ Config (⚙️) → Folders → set **absolute paths**:
 
 1. Open `http://NAS_IP:5055`
 2. Sign in with Jellyfin: URL `http://jellyfin:8096`, enter your Jellyfin credentials
-3. Settings → Jellyfin → set **External URL** to `http://jellyfin.lan` (or `http://NAS_IP:8096`) — makes "Play on Jellyfin" links work in your browser
+3. Settings → Jellyfin → set **External URL** to `https://jellyfin.lan` (or `http://NAS_IP:8096`) — makes "Play on Jellyfin" links work in your browser
 4. Settings → Services → Add Radarr:
    - Hostname: `gluetun`, Port: `7878`, Quality Profile: `UHD Bluray + WEB`
    - External URL: `http://radarr.lan` (or `http://NAS_IP:7878`)

@@ -353,7 +353,7 @@ Lets users browse and request movies/TV shows.
 2. **Sign in with Jellyfin:**
    - Jellyfin URL: `http://jellyfin:8096`
    - Enter Jellyfin credentials
-3. **Set Jellyfin External URL:** Settings → Jellyfin → **External URL:** `http://jellyfin.lan` (or `http://NAS_IP:8096`) — makes "Play on Jellyfin" links work in your browser
+3. **Set Jellyfin External URL:** Settings → Jellyfin → **External URL:** `https://jellyfin.lan` (or `http://NAS_IP:8096`) — makes "Play on Jellyfin" links work in your browser
 4. **Configure Services:**
    - Settings → Services → Add Radarr:
      - **Hostname:** `radarr` (Radarr is on the bridge with its own Docker DNS name)
