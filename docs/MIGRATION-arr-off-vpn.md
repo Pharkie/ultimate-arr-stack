@@ -6,7 +6,11 @@
 
 # Migration: move Sonarr + Radarr off the VPN
 
-**Branch:** `feat/arr-off-vpn` · **Status:** spec for review — do NOT merge or deploy until reviewed.
+**Branch:** `feat/arr-off-vpn` · **Status:** merged and live — this migration shipped; Sonarr and
+Radarr already run off the VPN namespace in `docker-compose.arr-stack.yml`. Kept here as a record
+of why and how. Note: the `arr-stack` Docker network referenced throughout this doc was later
+renamed to `arr-core` (same CIDR, no renumbering) during a subsequent network-segmentation pass —
+the IPs/procedure below are otherwise unchanged.
 
 ## Why
 
