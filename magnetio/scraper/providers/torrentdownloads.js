@@ -19,10 +19,14 @@ export async function scrape(meta) {
     const query = buildSearchQuery(meta);
     const cat   = meta.type === 'movie' ? '4' : '8';
 
+    // /search/?search=&cat= is a legacy route that 404s (confirmed live
+    // 2026-08-16) - the site's own search form is GET /search?q=<query>
+    // (no trailing slash, param name is "q" not "search"). cat still works
+    // as an extra filter on this route.
     const { data } = await tryDomains(DOMAINS, async (base) => {
-      return get(`${base}/search/`, {
+      return get(`${base}/search`, {
         limiterKey: 'torrentdownloads',
-        params: { search: query, cat },
+        params: { q: query, cat },
       });
     }, 'TorrentDownloads');
 
@@ -33,7 +37,7 @@ export async function scrape(meta) {
       if (i === 0) return;
       const $row = $(row);
       const cells = $row.find('td');
-      if (cells.length < 4) return;
+      if (cells.length < 5) return;
 
       const titleEl = cells.eq(0).find('a').first();
       const title = titleEl.text().trim();
@@ -49,9 +53,12 @@ export async function scrape(meta) {
       const hash = infoHash ?? hashFromUrl;
       if (!hash) return;
 
-      const seeders  = parseInt(cells.eq(2).text().trim(), 10) || 0;
-      const leechers = parseInt(cells.eq(3).text().trim(), 10) || 0;
-      const sizeText = cells.eq(1).text().trim();
+      // Column order on the real results table is title, age, size, seeds,
+      // leech (confirmed live 2026-08-16) - the old indices were off by one
+      // (they lined up with a different, now-dead table layout).
+      const seeders  = parseInt(cells.eq(3).text().trim(), 10) || 0;
+      const leechers = parseInt(cells.eq(4).text().trim(), 10) || 0;
+      const sizeText = cells.eq(2).text().trim();
       const size     = parseSize(sizeText);
 
       results.push({
