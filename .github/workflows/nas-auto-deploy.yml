@@ -82,10 +82,31 @@ jobs:
           printf '%s\n' "$NAS_SSH_KEY" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
           # MagicDNS can take a moment to become resolvable right after joining.
+          # Loop must hard-fail if it never gets a key: a bare `&& break` with no
+          # post-loop check exits 0 even after 10 failed attempts, which masked a
+          # real connectivity failure as a green step on 2026-08-16's run
+          # 31945201657 (the actual ssh call two steps later then burned the full
+          # ~2m OS TCP timeout before failing for real).
+          got_key=false
           for i in $(seq 1 10); do
-            ssh-keyscan -H "$NAS_SSH_HOST" >> ~/.ssh/known_hosts 2>/dev/null && break
+            echo "ssh-keyscan attempt $i/10 for $NAS_SSH_HOST"
+            if ssh-keyscan -H "$NAS_SSH_HOST" >> ~/.ssh/known_hosts 2>/tmp/keyscan-err; then
+              if [ -s ~/.ssh/known_hosts ]; then
+                got_key=true
+                break
+              fi
+            fi
+            cat /tmp/keyscan-err
             sleep 3
           done
+          echo "--- tailscale status ---"
+          tailscale status || true
+          echo "--- tailscale ping (4x) ---"
+          tailscale ping -c 4 "$NAS_SSH_HOST" || true
+          if [ "$got_key" != true ]; then
+            echo "::error::ssh-keyscan never reached $NAS_SSH_HOST after 10 attempts — see tailscale status/ping output above."
+            exit 1
+          fi
 
       - name: Determine changed compose files
         id: changes
@@ -102,7 +123,7 @@ jobs:
           NAS_USER: ${{ secrets.NAS_SSH_USER }}
         run: |
           set -e
-          ssh "${NAS_USER}@${NAS_HOST}" "
+          ssh -o ConnectTimeout=15 "${NAS_USER}@${NAS_HOST}" "
             set -e
             mkdir -p '${NAS_BACKUP_DIR}'
             cd '${NAS_STACK_DIR}'
@@ -121,7 +142,7 @@ jobs:
         run: |
           set -e
           ARRGIT="docker run --rm -v '${NAS_STACK_DIR}:/repo' -w /repo alpine/git -c safe.directory=/repo"
-          ssh "${NAS_USER}@${NAS_HOST}" "
+          ssh -o ConnectTimeout=15 "${NAS_USER}@${NAS_HOST}" "
             ${ARRGIT} fetch origin '${BRANCH}' &&
             ${ARRGIT} checkout '${BRANCH}' &&
             ${ARRGIT} pull --ff-only origin '${BRANCH}'
@@ -140,7 +161,7 @@ jobs:
             # Deliberately no --remove-orphans: this project shares one compose
             # project name across multiple files, and --remove-orphans deletes
             # every container defined in the *other* files (see CLAUDE.md).
-            ssh "${NAS_USER}@${NAS_HOST}" "cd '${NAS_STACK_DIR}' && docker compose -f '$f' up -d --build"
+            ssh -o ConnectTimeout=15 "${NAS_USER}@${NAS_HOST}" "cd '${NAS_STACK_DIR}' && docker compose -f '$f' up -d --build"
           done
 
       - name: Wait for container health
@@ -149,7 +170,7 @@ jobs:
           NAS_USER: ${{ secrets.NAS_SSH_USER }}
         run: |
           set -e
-          ssh "${NAS_USER}@${NAS_HOST}" '
+          ssh -o ConnectTimeout=15 "${NAS_USER}@${NAS_HOST}" '
             for i in $(seq 1 30); do
               STARTING=$(docker ps --filter "health=starting" --format "{{.Names}}")
               if [ -z "$STARTING" ]; then
@@ -176,7 +197,7 @@ jobs:
           # Runs ON the NAS (not from this runner) so docker-exec-gated tests
           # (VPN egress/leak/killswitch, zombie-container checks) actually run
           # instead of skipping — see tests/e2e/helpers.ts DOCKER_AVAILABLE.
-          ssh "${NAS_USER}@${NAS_HOST}" "cd '${NAS_STACK_DIR}' && npm run test:e2e"
+          ssh -o ConnectTimeout=15 "${NAS_USER}@${NAS_HOST}" "cd '${NAS_STACK_DIR}' && npm run test:e2e"
 
       - name: Merge to main
         env:
@@ -203,7 +224,7 @@ jobs:
         run: |
           set -e
           ARRGIT="docker run --rm -v '${NAS_STACK_DIR}:/repo' -w /repo alpine/git -c safe.directory=/repo"
-          ssh "${NAS_USER}@${NAS_HOST}" "
+          ssh -o ConnectTimeout=15 "${NAS_USER}@${NAS_HOST}" "
             ${ARRGIT} fetch origin main &&
             ${ARRGIT} checkout main &&
             ${ARRGIT} merge --ff-only origin/main
