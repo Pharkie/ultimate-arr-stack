@@ -57,6 +57,12 @@ jobs:
         run: |
           set -e
           git submodule update --init --recursive tests/bats-core tests/bats-support tests/bats-assert
+          # tests/hooks-installed.bats checks for the symlinks ./setup-hooks.sh
+          # creates - a one-time local-dev-machine step nobody runs on a fresh
+          # CI checkout. Run it here so that check verifies the script itself
+          # still works, instead of failing on every CI run for an unrelated
+          # reason.
+          ./setup-hooks.sh
           npm run test:bats
 
       - name: Connect to Tailscale
