@@ -17,19 +17,15 @@ export async function scrape(meta) {
 
   try {
     const query = buildSearchQuery(meta);
-    const cat   = meta.type === 'movie' ? '3' : '41';
 
+    // torrents.php?search= is a legacy route that now 302s to the homepage
+    // (confirmed live 2026-08-16) - the site's own search bar calls
+    // /get-posts/keywords:<query> via JS (searchKeyword() in the homepage
+    // markup). No category param on this route; relevance is enforced by
+    // the addon's own content filter downstream instead.
     const { data } = await tryDomains(DOMAINS, async (base) => {
-      return get(`${base}/torrents.php`, {
+      return get(`${base}/get-posts/keywords:${encodeURIComponent(query)}`, {
         limiterKey: 'torrentgalaxy',
-        params: {
-          search: query,
-          cat,
-          lang: 0,
-          nox: 1,
-          sort: 'seeders',
-          order: 'desc',
-        },
       });
     }, 'TorrentGalaxy');
 

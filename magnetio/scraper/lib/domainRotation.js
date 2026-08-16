@@ -90,8 +90,11 @@ export const PROVIDER_DOMAINS = {
     `https://torrentgalaxy.${UNBLOCKIT}`,
   ],
   yts: [
-    'https://yts.do',
-    'https://yts.mx',
+    // yts.mx is dead (no DNS record) and yts.do's API path 404s - both
+    // confirmed live 2026-08-16. yts.gg is the current working domain
+    // (yts.am redirects to it); UNBLOCKIT kept as a last-resort fallback.
+    'https://yts.gg',
+    'https://yts.am',
     `https://yts.${UNBLOCKIT}`,
   ],
   thepiratebay: [
