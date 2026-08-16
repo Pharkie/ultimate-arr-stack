@@ -212,7 +212,52 @@ jobs:
           # Runs ON the NAS (not from this runner) so docker-exec-gated tests
           # (VPN egress/leak/killswitch, zombie-container checks) actually run
           # instead of skipping — see tests/e2e/helpers.ts DOCKER_AVAILABLE.
-          ssh -o ConnectTimeout=15 "${NAS_USER}@${NAS_HOST}" "cd '${NAS_STACK_DIR}' && npm run test:e2e"
+          #
+          # The NAS OS has no npm (only a stripped internal Node.js runtime
+          # for its own admin panel — confirmed 2026-08-16, node v18.20.4 at
+          # /usr/bin/node with no npm anywhere on the system), so the suite
+          # runs inside tests/e2e/Dockerfile's Playwright+docker-cli image
+          # instead, matching this repo's existing containerized-tool pattern
+          # (alpine/git above). --network host so localhost:<port> URLs in
+          # tests/e2e/helpers.ts resolve to the NAS's own published ports.
+          #
+          # `npx playwright install chromium` runs every time (not baked into
+          # the Dockerfile): package-lock.json is gitignored, so `npm install`
+          # floats @playwright/test to whatever's newest on each run, which
+          # can drift past the browser build baked into the pinned
+          # mcr.microsoft.com/playwright:v1.50.0-noble base image — seen live
+          # in run 31959525960 (npm resolved 1.62.1, image only had 1.50.0's
+          # browser, all UI-screenshot tests failed with "Executable doesn't
+          # exist"). Installing at runtime always matches whatever npm
+          # actually resolved.
+          #
+          # No --dns / --add-host needed: tests/e2e/networking.spec.ts's
+          # Traefik-routing test used to rely on real .lan DNS resolution
+          # when following an app's login-redirect Location header (which
+          # can't reuse the initial request's "connect by IP, spoof Host"
+          # trick) — that chased through ENOTFOUND (run 31967698968, fixed
+          # with --dns), then a Pi-hole AAAA quirk landing on the NAS's own
+          # UGOS admin panel instead of failing (run 31968540414 and
+          # 31968968267 — NODE_OPTIONS=--dns-result-order=ipv4first and
+          # --add-host both fixed a plain `node -e dns.lookup()` call but not
+          # Playwright's own APIRequestContext, which resolves via
+          # dns.resolve4/6 and bypasses both). Fixed at the actual source
+          # instead: the test now disables auto-redirect-follow and re-issues
+          # the follow-up request by path against TRAEFIK_LAN_IP with the
+          # same spoofed Host header, so it never needs real DNS at all — the
+          # only remaining .lan DNS test (`dig @<NAS_IP> jellyfin.lan`)
+          # already queries Pi-hole directly by IP, not via this container's
+          # own resolver.
+          ssh -o ConnectTimeout=15 "${NAS_USER}@${NAS_HOST}" "
+            cd '${NAS_STACK_DIR}' &&
+            docker build -t arr-stack-e2e -f tests/e2e/Dockerfile . &&
+            docker run --rm --network host \
+              -v '${NAS_STACK_DIR}:/repo' \
+              -v /var/run/docker.sock:/var/run/docker.sock \
+              -w /repo \
+              arr-stack-e2e \
+              bash -c 'npm install && npx playwright install chromium && npx playwright test --config tests/e2e/playwright.config.ts'
+          "
 
       - name: Merge to main
         env:

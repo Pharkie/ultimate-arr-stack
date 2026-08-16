@@ -39,10 +39,32 @@ test.describe('Traefik routing', () => {
     test(`curling ${domain} end-to-end returns the real backend, not a Traefik routing error`, async ({ request }) => {
       test.skip(!TRAEFIK_LAN_IP, 'TRAEFIK_LAN_IP not set');
 
-      const res = await request.get(`http://${TRAEFIK_LAN_IP}${expectPath}`, {
+      // maxRedirects: 0 and a manual re-request by path (never by the
+      // Location header's hostname) keeps this test's "connect by IP, spoof
+      // Host" trick intact through a login redirect too. Auto-following
+      // (Playwright's default) issues the follow-up request against the
+      // Location header's actual hostname, which needs real DNS — and
+      // Playwright's own request context resolves via dns.resolve4/6
+      // (bypassing /etc/hosts and Node's --dns-result-order), so neither
+      // --add-host nor NODE_OPTIONS could fix it. This app (e.g. Sonarr)
+      // redirects to a *.lan hostname whose AAAA record is deliberately "::"
+      // (see pihole/dnsmasq.d/02-local-dns.conf.example) for musl containers
+      // elsewhere in the stack — resolving that "::" here landed on the
+      // NAS's own loopback-bound UGOS admin panel instead of failing,
+      // producing a confusing false result (run 31968540414).
+      let res = await request.get(`http://${TRAEFIK_LAN_IP}${expectPath}`, {
         headers: { Host: domain },
         ignoreHTTPSErrors: true,
+        maxRedirects: 0,
       });
+      if (res.status() >= 300 && res.status() < 400) {
+        const location = new URL(res.headers()['location'], `http://${domain}`);
+        res = await request.get(`http://${TRAEFIK_LAN_IP}${location.pathname}${location.search}`, {
+          headers: { Host: domain },
+          ignoreHTTPSErrors: true,
+          maxRedirects: 0,
+        });
+      }
       expect(res.status()).toBe(200);
       const body = await res.text();
       expect(body).toContain(expectMarker);
