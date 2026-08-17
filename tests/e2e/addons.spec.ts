@@ -44,3 +44,24 @@ test.describe('stremio-jellyfin', () => {
     expect(manifest.id ?? manifest.name).toBeTruthy();
   });
 });
+
+// Container-toolchain contracts. Regression for snags #14/#15 from the
+// credential-drift work (2026-08-17): scripts written against an assumed
+// toolchain broke live when a base image didn't have what was expected
+// (Bazarr has no pyyaml, Seerr has no curl). These assert the toolchain
+// shape the detector script and its tests rely on, so a future base-image
+// bump that silently changes it fails here instead of in production.
+test.describe('Container toolchain contracts', () => {
+  test('seerr has no curl but does have node', () => {
+    test.skip(!DOCKER_AVAILABLE, 'docker CLI not available — run on the NAS directly');
+
+    expect(() => dockerExec('seerr', ['which', 'curl'])).toThrow();
+    expect(() => dockerExec('seerr', ['which', 'node'])).not.toThrow();
+  });
+
+  test('bazarr has no importable yaml module', () => {
+    test.skip(!DOCKER_AVAILABLE, 'docker CLI not available — run on the NAS directly');
+
+    expect(() => dockerExec('bazarr', ['python3', '-c', 'import yaml'])).toThrow();
+  });
+});

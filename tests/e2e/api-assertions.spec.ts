@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { url } from './helpers';
+import { url, DOCKER_AVAILABLE, dockerExec } from './helpers';
 
 test.describe('API assertions', () => {
   test('Radarr — root folder is /data/media/movies', async ({ request }) => {
@@ -194,5 +194,79 @@ test.describe('API assertions', () => {
     const issues = await res.json();
     const errors = issues.filter((i: { type: string }) => i.type === 'error');
     expect(errors).toEqual([]);
+  });
+
+  // --- Credential-propagation live checks. These exercise the exact three
+  // directions that broke live on 2026-08-17 (Prowlarr -> Sonarr/Radarr
+  // Applications, Seerr -> Sonarr/Radarr, Bazarr -> Sonarr/Radarr) and were
+  // previously only caught by a 30-minute NAS timer, not by anything that
+  // runs on every test:e2e pass. Mirrors scripts/detect-credential-drift.sh's
+  // own checks so both stay in sync. ---
+
+  test('Prowlarr — Applications test passes for Sonarr/Radarr', async ({ request }) => {
+    const apiKey = process.env.PROWLARR_API_KEY;
+    test.skip(!apiKey, 'PROWLARR_API_KEY not set');
+
+    const apps = await request.get(url('prowlarr', '/api/v1/applications'), {
+      headers: { 'X-Api-Key': apiKey! },
+    });
+    expect(apps.ok()).toBeTruthy();
+    const appList = await apps.json();
+    expect(appList.length).toBeGreaterThan(0);
+
+    for (const app of appList) {
+      const testRes = await request.post(url('prowlarr', '/api/v1/applications/test'), {
+        headers: { 'X-Api-Key': apiKey!, 'Content-Type': 'application/json' },
+        data: app,
+      });
+      expect(testRes.ok(), `Prowlarr application test failed for ${app.name}`).toBeTruthy();
+    }
+  });
+
+  test('Seerr — Radarr/Sonarr service probes succeed', async ({ request }) => {
+    test.skip(!DOCKER_AVAILABLE, 'requires docker exec access (run on the NAS)');
+
+    let seerrKey: string;
+    try {
+      seerrKey = dockerExec('seerr', [
+        'node',
+        '-e',
+        'console.log(require("/app/config/settings.json").main.apiKey)',
+      ]).trim();
+    } catch {
+      test.skip(true, "could not read Seerr's own key - is the container up?");
+      return;
+    }
+    expect(seerrKey.length).toBeGreaterThan(0);
+
+    for (const svc of ['radarr', 'sonarr']) {
+      const res = await request.get(url('seerr', `/api/v1/service/${svc}/0`), {
+        headers: { 'X-Api-Key': seerrKey },
+      });
+      expect(res.ok(), `Seerr -> ${svc} service probe failed`).toBeTruthy();
+    }
+  });
+
+  test('Bazarr — stored Sonarr/Radarr apiKey matches the current key', async ({ request }) => {
+    const bazarrKey = process.env.BAZARR_API_KEY;
+    const sonarrKey = process.env.SONARR_API_KEY;
+    const radarrKey = process.env.RADARR_API_KEY;
+    test.skip(
+      !bazarrKey || !sonarrKey || !radarrKey,
+      'BAZARR_API_KEY / SONARR_API_KEY / RADARR_API_KEY not set',
+    );
+
+    // Unlike Sonarr/Radarr's own APIs (which mask secret fields on every GET
+    // - see the note above), Bazarr's /api/system/settings does NOT mask
+    // its stored sonarr.apikey/radarr.apikey fields (confirmed live
+    // 2026-08-17). So a direct comparison is a valid drift check here,
+    // where it would be a structural dead end for Sonarr/Radarr themselves.
+    const res = await request.get(url('bazarr', '/api/system/settings'), {
+      headers: { 'X-API-KEY': bazarrKey! },
+    });
+    expect(res.ok()).toBeTruthy();
+    const settings = await res.json();
+    expect(settings.sonarr.apikey).toBe(sonarrKey);
+    expect(settings.radarr.apikey).toBe(radarrKey);
   });
 });

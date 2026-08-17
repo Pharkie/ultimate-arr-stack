@@ -49,13 +49,27 @@ set -uo pipefail
 # this one, and their `systemctl --user ...` install commands in the repo's
 # deploy notes.
 
-: "${RADARR_API_KEY:?RADARR_API_KEY not set - source .env first}"
-: "${SONARR_API_KEY:?SONARR_API_KEY not set - source .env first}"
-: "${PROWLARR_API_KEY:?PROWLARR_API_KEY not set - source .env first}"
-
 findings=""
+# Redacts anything credential-shaped before it enters finding text - upstream
+# error bodies (e.g. Prowlarr's application/test response) can embed a raw
+# apikey=... value in an indexer URL (confirmed live 2026-08-17, leaked into
+# a chat transcript that way). Finding text is what
+# detect-credential-drift-alert.service POSTs to ntfy.sh, a third-party
+# service, so this has to run on every add_finding call, not just the one
+# call site that happened to trigger the original leak.
+redact_secrets() {
+  python3 -c "
+import re, sys
+text = sys.stdin.read()
+text = re.sub(r'(?i)(apikey|api_key)=[A-Za-z0-9]+', r'\1=***REDACTED***', text)
+text = re.sub(r'(?i)(x-api-key:\s*)[A-Za-z0-9]+', r'\1***REDACTED***', text)
+sys.stdout.write(text)
+"
+}
 add_finding() {
-  findings+=$'\n'"-- $1 --"$'\n'"$2"$'\n'
+  local redacted
+  redacted=$(printf '%s' "$2" | redact_secrets)
+  findings+=$'\n'"-- $1 --"$'\n'"$redacted"$'\n'
 }
 
 # --- Radarr/Sonarr: live indexer test. Also covers Prowlarr's proxy key
@@ -86,9 +100,6 @@ for i in data:
 " 2>/dev/null)
   [[ -n "$bad" ]] && add_finding "${app} (live indexer test)" "$bad"
 }
-check_indexers "Radarr" 7878 "$RADARR_API_KEY"
-check_indexers "Sonarr" 8989 "$SONARR_API_KEY"
-
 # --- Prowlarr: live Applications test (the Prowlarr -> Sonarr/Radarr
 # direction; Terraform manages this pairing but only applies on drift, it
 # doesn't alert - this exercises the same live connection Terraform's plan
@@ -107,8 +118,6 @@ check_application() {
     add_finding "Prowlarr -> ${name}" "application test failed (HTTP ${code}): ${resp_body}"
   fi
 }
-check_application 1 "Sonarr"
-check_application 2 "Radarr"
 
 # --- Seerr: probes the same live radarr/sonarr connection its own Settings
 # UI exercises when you hit "Test" - a genuine round trip through Seerr's
@@ -125,7 +134,6 @@ check_seerr() {
     [[ "$code" != "200" ]] && add_finding "Seerr -> ${svc}" "service probe returned HTTP ${code}"
   done
 }
-check_seerr
 
 # --- Bazarr: no live-test endpoint equivalent to the ones above was found
 # (confirmed 2026-08-17) - falls back to a log scan for this one app only.
@@ -133,21 +141,44 @@ check_seerr
 # addresses, and stack-trace line numbers all contain stray "401"
 # substrings often enough to make that alone pure noise (confirmed live
 # against real logs across three other containers before this script moved
-# them to live API tests instead).
+# them to live API tests instead). Named as a variable (not inlined into the
+# grep call) so tests can exercise the exact same pattern the script uses,
+# without duplicating it and risking drift.
+BAZARR_LOG_PATTERN='[Uu]nauthorized|[Ii]nvalid credentials|[Aa]pi[Kk]ey.*(invalid|incorrect|expired)'
 check_bazarr_logs() {
   local hits
   hits=$(docker logs bazarr --since 35m 2>&1 \
-    | grep -iE '[Uu]nauthorized|[Ii]nvalid credentials|[Aa]pi[Kk]ey.*(invalid|incorrect|expired)' \
+    | grep -iE "$BAZARR_LOG_PATTERN" \
     | tail -3)
   [[ -n "$hits" ]] && add_finding "Bazarr (log scan - no live-test endpoint)" "$hits"
 }
-check_bazarr_logs
 
-if [[ -n "$findings" ]]; then
-  echo "CREDENTIAL DRIFT DETECTED:"
-  echo "$findings"
-  echo "Fix: from a local checkout, run 'cd terraform && bw unlock && ./apply.sh'"
-  exit 1
+main() {
+  : "${RADARR_API_KEY:?RADARR_API_KEY not set - source .env first}"
+  : "${SONARR_API_KEY:?SONARR_API_KEY not set - source .env first}"
+  : "${PROWLARR_API_KEY:?PROWLARR_API_KEY not set - source .env first}"
+
+  check_indexers "Radarr" 7878 "$RADARR_API_KEY"
+  check_indexers "Sonarr" 8989 "$SONARR_API_KEY"
+  check_application 1 "Sonarr"
+  check_application 2 "Radarr"
+  check_seerr
+  check_bazarr_logs
+
+  if [[ -n "$findings" ]]; then
+    echo "CREDENTIAL DRIFT DETECTED:"
+    echo "$findings"
+    echo "Fix: from a local checkout, run 'cd terraform && bw unlock && ./apply.sh'"
+    exit 1
+  fi
+
+  echo "OK: all live connectivity tests passed, no cross-app auth failures"
+}
+
+# Only runs when executed directly (systemd's ExecStart, or manually) - not
+# when sourced by tests/credential-drift.bats, so bats can exercise
+# individual check_* functions against fixtures without triggering real
+# curl/docker calls against localhost every test run.
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+  main "$@"
 fi
-
-echo "OK: all live connectivity tests passed, no cross-app auth failures"

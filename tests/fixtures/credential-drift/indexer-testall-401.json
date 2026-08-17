@@ -1,0 +1,11 @@
+[
+  {
+    "id": 3,
+    "isValid": false,
+    "validationFailures": [
+      {
+        "errorMessage": "Indexer returned 401 Unauthorized - check the stored apikey"
+      }
+    ]
+  }
+]

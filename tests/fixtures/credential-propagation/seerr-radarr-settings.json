@@ -1,0 +1,9 @@
+[
+  {
+    "id": 0,
+    "name": "Radarr",
+    "apiKey": "stale-radarr-key",
+    "hostname": "gluetun",
+    "port": 7878
+  }
+]

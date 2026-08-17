@@ -1,0 +1,11 @@
+[
+  {
+    "id": 4,
+    "isValid": false,
+    "validationFailures": [
+      {
+        "errorMessage": "Request limit reached (429) - too many requests, try again later"
+      }
+    ]
+  }
+]

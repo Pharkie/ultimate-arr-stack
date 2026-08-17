@@ -1,0 +1,18 @@
+[
+  {
+    "id": 2,
+    "name": "IndexerA",
+    "fields": [
+      { "name": "apiKey", "value": "stale-prowlarr-key" },
+      { "name": "baseUrl", "value": "http://prowlarr:9696" }
+    ]
+  },
+  {
+    "id": 3,
+    "name": "IndexerB",
+    "fields": [
+      { "name": "apiKey", "value": "stale-prowlarr-key" },
+      { "name": "baseUrl", "value": "http://prowlarr:9696" }
+    ]
+  }
+]
