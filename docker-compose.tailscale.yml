@@ -59,7 +59,19 @@ services:
       # --advertise-exit-node lets tailnet devices route ALL their internet
       # traffic through the NAS's connection (approve in the admin console,
       # or the enabledRoutes API, same as subnet routes).
-      - TS_EXTRA_ARGS=--advertise-routes=${LAN_SUBNET}${TS_EXTRA_ROUTES:+,${TS_EXTRA_ROUTES}} --accept-routes --advertise-exit-node
+      # --advertise-tags=tag:nas-router requires tag:nas-router to already
+      # exist in the tailnet's ACL policy's tagOwners (see docs/TAILSCALE.md
+      # step 6). Confirmed live 2026-08-17: requesting a tag not yet in
+      # tagOwners doesn't just drop the tag with a warning — it fails the
+      # entire `tailscale up` authorization, so the node can't log in at all
+      # until the tag is removed or the policy grants it. ACL policy with
+      # tag:nas-router confirmed live 2026-08-17 before this flag was added
+      # back — don't remove tag:nas-router from tagOwners without also
+      # removing --advertise-tags here first, same failure mode in reverse.
+      # --reset is needed once, to clear the stuck state from the earlier
+      # failed attempt (see docs/TAILSCALE.md troubleshooting) — safe to
+      # drop after this recreate is confirmed stable.
+      - TS_EXTRA_ARGS=--advertise-routes=${LAN_SUBNET}${TS_EXTRA_ROUTES:+,${TS_EXTRA_ROUTES}} --accept-routes --advertise-exit-node --advertise-tags=tag:nas-router --reset
     healthcheck:
       test: ["CMD", "tailscale", "status", "--peers=false"]
       interval: 30s
