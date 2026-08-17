@@ -1,13 +1,17 @@
 #!/bin/bash
-# Propagates the current Sonarr/Radarr/SABnzbd API keys into every app that
-# stores a copy of them as a client credential (Prowlarr's Applications,
-# Sonarr/Radarr's SABnzbd download clients via Terraform; Bazarr's Sonarr/
-# Radarr connections via a direct API call, since Bazarr has no Terraform
-# provider). Run this after rotating any of those keys, or any time you
-# want to confirm the stack matches what's declared here.
+# Propagates the current Sonarr/Radarr/Prowlarr/SABnzbd API keys into every
+# app that stores a copy of them as a client credential: Prowlarr's
+# Applications and Sonarr/Radarr's SABnzbd download clients via Terraform;
+# Bazarr's and Seerr's Sonarr/Radarr connections, and Sonarr/Radarr's own
+# Indexer entries (which separately cache Prowlarr's key to query indexers
+# through Prowlarr's proxy - the reverse direction from Applications, and
+# not covered by the Terraform resources above), via direct API calls, since
+# none of the four have a Terraform provider/resource for this. Run this
+# after rotating any of those keys, or any time you want to confirm the
+# stack matches what's declared here.
 #
 # Requires: `bw` unlocked with BW_SESSION exported in this shell, `terraform`,
-# `curl`, and SSH access to the NAS (for the Bazarr restart).
+# `curl`, `jq`, and SSH access to the NAS (for the Bazarr/Seerr restarts).
 #
 # Usage: ./apply.sh [-auto-approve]
 
@@ -29,6 +33,7 @@ RADARR_KEY=$(bw_note "arr-stack: Radarr API key")
 PROWLARR_KEY=$(bw_note "arr-stack: Prowlarr API key")
 SABNZBD_KEY=$(bw_note "arr-stack: SABnzbd API key")
 BAZARR_KEY=$(bw_note "arr-stack: Bazarr API key")
+SEERR_KEY=$(bw_note "arr-stack: Seerr API key")
 
 # Provider auth (native env vars, never written to a .tf file or state as
 # provider config - only appear in resource attribute values, which
@@ -58,3 +63,49 @@ curl -sf -X POST "${BAZARR_BASE}/api/system/settings" \
   >/dev/null
 ssh cloud-nas "docker restart bazarr" >/dev/null
 echo "Bazarr synced and restarted."
+
+echo
+echo "== Syncing Seerr's Sonarr/Radarr connections (no Terraform provider) =="
+SEERR_BASE="http://${NAS_IP}:5055"
+RADARR_PAYLOAD=$(curl -sf -H "X-Api-Key: ${SEERR_KEY}" "${SEERR_BASE}/api/v1/settings/radarr" \
+  | jq -c --arg k "$RADARR_KEY" '.[0] | .apiKey = $k | del(.id)')
+SONARR_PAYLOAD=$(curl -sf -H "X-Api-Key: ${SEERR_KEY}" "${SEERR_BASE}/api/v1/settings/sonarr" \
+  | jq -c --arg k "$SONARR_KEY" '.[0] | .apiKey = $k | del(.id)')
+curl -sf -X PUT "${SEERR_BASE}/api/v1/settings/radarr/0" \
+  -H "X-Api-Key: ${SEERR_KEY}" -H "Content-Type: application/json" -d "$RADARR_PAYLOAD" >/dev/null
+curl -sf -X PUT "${SEERR_BASE}/api/v1/settings/sonarr/0" \
+  -H "X-Api-Key: ${SEERR_KEY}" -H "Content-Type: application/json" -d "$SONARR_PAYLOAD" >/dev/null
+# Seerr caches its Radarr/Sonarr API clients at process start - a settings
+# PUT updates the stored config but not the already-running client, so the
+# background Download Tracker job keeps 401ing against the old key until
+# restarted (confirmed live 2026-08-17: PUT alone was not enough).
+ssh cloud-nas "docker restart seerr" >/dev/null
+echo "Seerr synced and restarted."
+
+echo
+echo "== Syncing Sonarr/Radarr indexer connections (Prowlarr proxy key) =="
+# Each Indexer entry Prowlarr's sync created in Sonarr/Radarr stores its own
+# copy of PROWLARR'S key (used to query indexers through Prowlarr's proxy) -
+# a separate credential direction from the prowlarr_application_* resources
+# above, which only propagate Sonarr/Radarr's key TO Prowlarr, never the
+# reverse. Nothing above touches this, so it drifts silently whenever
+# Prowlarr's key rotates (confirmed live 2026-08-17: this, not the Terraform
+# resources, was the actual cause of a real Radarr 401 - terraform apply
+# reported "no changes" because it was only checking the other direction).
+# No restart needed: unlike Seerr, Sonarr/Radarr re-read indexer config per
+# request rather than caching a client at startup.
+sync_indexer_keys() {
+  local app_name="$1" base="$2" app_key="$3"
+  local indexers ids id body
+  indexers=$(curl -sf -H "X-Api-Key: ${app_key}" "${base}/api/v3/indexer")
+  ids=$(echo "$indexers" | jq -r '.[].id')
+  for id in $ids; do
+    body=$(echo "$indexers" | jq -c --argjson id "$id" --arg k "$PROWLARR_KEY" \
+      '.[] | select(.id == $id) | .fields |= map(if .name == "apiKey" then .value = $k else . end)')
+    curl -sf -X PUT "${base}/api/v3/indexer/${id}" \
+      -H "X-Api-Key: ${app_key}" -H "Content-Type: application/json" -d "$body" >/dev/null
+  done
+  echo "${app_name} indexer keys synced (ids: $(echo "$ids" | tr '\n' ' '))"
+}
+sync_indexer_keys "Radarr" "http://${NAS_IP}:7878" "$RADARR_KEY"
+sync_indexer_keys "Sonarr" "http://${NAS_IP}:8989" "$SONARR_KEY"
