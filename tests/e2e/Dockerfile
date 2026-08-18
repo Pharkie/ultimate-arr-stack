@@ -12,7 +12,7 @@
 FROM mcr.microsoft.com/playwright:v1.50.0-noble
 
 RUN apt-get update -qq \
-    && apt-get install -y -qq --no-install-recommends docker.io \
+    && apt-get install -y -qq --no-install-recommends docker.io dnsutils \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /repo
