@@ -692,7 +692,7 @@ services:
       # this value directly into poster/stream URLs it hands back to Stremio
       # clients on your phone/laptop, which can't resolve "jellyfin" as a
       # hostname the way containers on the arr-core network can.
-      - JELLYFIN_SERVER=http://192.168.8.246:8096
+      - JELLYFIN_SERVER=http://${NAS_IP}:8096
       - JELLYFIN_USER=${STREMIO_JELLYFIN_USER}
       - JELLYFIN_PASSWORD=${STREMIO_JELLYFIN_PASSWORD}
     networks:
