@@ -67,7 +67,6 @@ main() {
   RADARR_KEY=$(bw_note "arr-stack: Radarr API key")
   PROWLARR_KEY=$(bw_note "arr-stack: Prowlarr API key")
   SABNZBD_KEY=$(bw_note "arr-stack: SABnzbd API key")
-  BAZARR_KEY=$(bw_note "arr-stack: Bazarr API key")
   SEERR_KEY=$(bw_note "arr-stack: Seerr API key")
 
   # Provider auth (native env vars, never written to a .tf file or state as
@@ -90,14 +89,48 @@ main() {
 
   echo
   echo "== Syncing Bazarr's Sonarr/Radarr connections (no Terraform provider) =="
-  BAZARR_BASE="http://${NAS_IP}:6767"
-  curl -sf -X POST "${BAZARR_BASE}/api/system/settings" \
-    -H "X-API-KEY: ${BAZARR_KEY}" \
-    -H "Content-Type: application/json" \
-    -d "{\"sonarr\": {\"ip\": \"gluetun\", \"port\": \"8989\", \"apikey\": \"${SONARR_KEY}\", \"base_url\": \"\"}, \"radarr\": {\"ip\": \"gluetun\", \"port\": \"7878\", \"apikey\": \"${RADARR_KEY}\", \"base_url\": \"\"}}" \
-    >/dev/null
-  ssh cloud-nas "docker restart bazarr" >/dev/null
-  echo "Bazarr synced and restarted."
+  # Bazarr's private /api/system/settings POST does not reliably persist a
+  # partial sonarr/radarr update (confirmed live 2026-08-18: returns 204 but
+  # silently no-ops on the apikey field, most likely a JSON-vs-form-payload
+  # mismatch in its undocumented settings-save endpoint -- it was also
+  # sending the wrong "ip" value, "gluetun", which Bazarr can't resolve
+  # since it isn't on Gluetun's network namespace, though that turned out
+  # not to be the actual blocker). Editing config.yaml directly and
+  # restarting is the same mechanism already proven for rotating Bazarr's
+  # own key. Section-scoped via awk (not an absolute line number, which
+  # would drift if config.yaml's structure changes) so only the target
+  # section's apikey line is touched -- the file has several apikey lines
+  # (auth, jellyfin, plex, radarr, sonarr, subsource all have their own).
+  # Live-verified idempotent 2026-08-18: re-running against an
+  # already-correct key produces a byte-identical file.
+  # Validates the awk output contains the new key before copying it into the
+  # container, so a section-header regex that stops matching (config.yaml
+  # restructured, section renamed) fails loudly instead of silently copying
+  # an unchanged file over the container's config while reporting success.
+  sync_bazarr_key() {
+    local section="$1" new_key="$2"
+    ssh -o ConnectTimeout=15 cloud-nas bash -s -- "${section}:" "$new_key" <<'REMOTE'
+set -e
+section="$1"
+new_key="$2"
+tmpfile="/tmp/bazarr_config_new.$$.yaml"
+trap 'rm -f "$tmpfile"' EXIT
+docker exec bazarr awk -v key="$new_key" -v section="$section" '
+  /^[a-zA-Z0-9_-]+:$/ { in_section = ($0 == section) }
+  in_section && /^  apikey:/ { print "  apikey: " key; next }
+  { print }
+' /config/config/config.yaml > "$tmpfile"
+grep -qF "  apikey: $new_key" "$tmpfile" || {
+  echo "sync_bazarr_key: apikey line not found for section $section after awk -- aborting, config.yaml not touched" >&2
+  exit 1
+}
+docker cp "$tmpfile" bazarr:/config/config/config.yaml
+REMOTE
+  }
+  sync_bazarr_key "sonarr" "$SONARR_KEY"
+  sync_bazarr_key "radarr" "$RADARR_KEY"
+  ssh -o ConnectTimeout=15 cloud-nas "docker restart bazarr" >/dev/null
+  echo "Bazarr synced (config.yaml edited directly) and restarted."
 
   echo
   echo "== Syncing Seerr's Sonarr/Radarr connections (no Terraform provider) =="
