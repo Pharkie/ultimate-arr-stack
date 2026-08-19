@@ -45,6 +45,18 @@ test.describe('stremio-jellyfin', () => {
   });
 });
 
+test.describe('Homepage', () => {
+  test('Homepage dashboard responds', async ({ request }) => {
+    const res = await request.get(url('homepage', '/'));
+    expect(res.ok()).toBeTruthy();
+  });
+
+  test('Homepage healthcheck endpoint responds', async ({ request }) => {
+    const res = await request.get(url('homepage', '/api/healthcheck'));
+    expect(res.ok()).toBeTruthy();
+  });
+});
+
 // Container-toolchain contracts. Regression for snags #14/#15 from the
 // credential-drift work (2026-08-17): scripts written against an assumed
 // toolchain broke live when a base image didn't have what was expected

@@ -1,0 +1,8 @@
+- search:
+    provider: duckduckgo
+    target: _blank
+
+- resources:
+    cpu: true
+    memory: true
+    disk: /

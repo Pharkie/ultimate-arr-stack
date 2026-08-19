@@ -23,6 +23,7 @@ export const PORTS = {
   decypharr: 8282,
   magnetioAddon: 7000,
   stremioJellyfin: 60421,
+  homepage: 3000,
 } as const;
 
 export function url(service: keyof typeof PORTS, pathStr = '') {

@@ -11,12 +11,53 @@ docker compose -f docker-compose.utilities.yml up -d
 | Service | Description | Access |
 |---------|-------------|--------|
 | **deunhealth** | Auto-restarts services when VPN recovers | Internal |
+| **Homepage** | Unified dashboard with live status widgets for every app | http://homepage.lan |
 | **Uptime Kuma** | Service monitoring dashboard | http://uptime.lan |
 | **Beszel** | System metrics (CPU, RAM, disk, containers) | http://beszel.lan |
 | **duc** | Disk usage analyzer (treemap UI) | http://duc.lan |
 | **Configarr** | Syncs TRaSH Guides quality profiles to Sonarr/Radarr | Run manually |
 
 > **Want Docker log viewing?** [Dozzle](https://dozzle.dev/) is a lightweight web UI for viewing container logs in real-time. Not included in the stack, but easy to add if you want it.
+
+## Homepage Setup
+
+Homepage is a unified dashboard showing live status widgets for every app in
+the stack, in one place. Config lives in tracked YAML files under
+`homepage/config/` (`settings.yaml`, `services.yaml`, `widgets.yaml`,
+`bookmarks.yaml`) — no secrets in those files; widget credentials are
+templated in from `.env` via `{{HOMEPAGE_VAR_*}}` at container start.
+
+**First access**: open http://NAS_IP:3000 (or http://homepage.lan).
+
+**Add the widget credentials to `.env`** (see `.env.example`'s Homepage
+section) — Sonarr/Radarr/Prowlarr reuse the keys already used elsewhere in
+the stack; Bazarr/SABnzbd/qBittorrent/Jellyfin/Seerr/Pi-hole need their own
+values populated from Bitwarden or each app's own settings UI.
+
+**Widget URLs** (inside the container — same reachability rules as every
+other cross-container call in this stack):
+
+| App | Widget URL | Notes |
+|---|---|---|
+| Sonarr | `http://sonarr:8989` | bridge network |
+| Radarr | `http://radarr:7878` | bridge network |
+| Prowlarr | `http://gluetun:9696` | VPN-tunneled, use gluetun + internal port |
+| Bazarr | `http://bazarr:6767` | bridge network |
+| SABnzbd | `http://gluetun:8080` | VPN-tunneled, use gluetun + internal port |
+| qBittorrent | `http://gluetun:8085` | VPN-tunneled, use gluetun + internal port |
+| Jellyfin | `http://jellyfin:8096` | bridge network |
+| Seerr | `http://seerr:5055` | bridge network |
+| Pi-hole | `http://pihole:80` | bridge network |
+| Uptime Kuma | `http://uptime-kuma:3001` | bridge network — needs a Status Page slug, see below |
+
+**Uptime Kuma widget**: needs a Status Page slug rather than a whole-instance
+credential. In Uptime Kuma's UI, create a Status Page (any name), then copy
+the slug from its URL into `.env`'s `UPTIME_KUMA_SLUG`.
+
+**`HOMEPAGE_ALLOWED_HOSTS`**: Homepage rejects requests with an unrecognized
+`Host` header unless allowlisted — already set in
+`docker-compose.utilities.yml` to cover `homepage.lan`, the bare NAS IP, and
+its own container IP. Add any other hostname you access it by.
 
 ## Uptime Kuma Setup
 

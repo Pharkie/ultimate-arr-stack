@@ -213,6 +213,18 @@ http:
       middlewares: [admin-auth@docker, security-headers]
       service: beszel-lan
 
+    homepage-lan:
+      rule: "Host(`homepage.lan`)"
+      entryPoints: [web]
+      middlewares: [https-redirect]
+      service: homepage-lan
+    homepage-lan-secure:
+      rule: "Host(`homepage.lan`)"
+      entryPoints: [websecure]
+      tls: {}
+      middlewares: [admin-auth@docker, security-headers]
+      service: homepage-lan
+
   middlewares:
     jellyseerr-redirect:
       redirectRegex:
@@ -287,3 +299,8 @@ http:
       loadBalancer:
         servers:
           - url: "http://172.20.0.15:8090"
+
+    homepage-lan:
+      loadBalancer:
+        servers:
+          - url: "http://172.20.0.22:3000"

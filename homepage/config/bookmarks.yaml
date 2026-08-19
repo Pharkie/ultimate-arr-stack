@@ -1,0 +1,12 @@
+- Infrastructure:
+    - Traefik Dashboard:
+        - icon: traefik.png
+          href: http://traefik.lan
+    - Router Admin:
+        - icon: mdi-router-network
+          href: http://192.168.8.1
+
+- Project:
+    - GitHub Repo:
+        - icon: github.png
+          href: https://github.com/leonardoazeredo/ultimate-arr-stack

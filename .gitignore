@@ -26,6 +26,9 @@ traefik/dynamic/*.local.yml
 # Pi-hole Local DNS (copy from .example and customize)
 pihole/dnsmasq.d/02-local-dns.conf
 
+# Homepage dashboard - runtime-generated logs (config YAML is tracked)
+homepage/config/logs/
+
 # Configarr (copy from .example and customize)
 configarr/config.yml
 
