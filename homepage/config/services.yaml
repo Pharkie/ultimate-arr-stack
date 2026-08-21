@@ -1,0 +1,96 @@
+- Media:
+    - Jellyfin:
+        icon: jellyfin.png
+        href: http://jellyfin.lan
+        description: Media server
+        widget:
+          type: jellyfin
+          url: http://jellyfin:8096
+          key: "{{HOMEPAGE_VAR_JELLYFIN_API_KEY}}"
+
+    - Seerr:
+        icon: jellyseerr.png
+        href: http://seerr.lan
+        description: Request portal
+        widget:
+          type: jellyseerr
+          url: http://seerr:5055
+          key: "{{HOMEPAGE_VAR_SEERR_API_KEY}}"
+
+- "*arr Stack":
+    - Sonarr:
+        icon: sonarr.png
+        href: http://sonarr.lan
+        description: TV manager
+        widget:
+          type: sonarr
+          url: http://sonarr:8989
+          key: "{{HOMEPAGE_VAR_SONARR_API_KEY}}"
+
+    - Radarr:
+        icon: radarr.png
+        href: http://radarr.lan
+        description: Movie manager
+        widget:
+          type: radarr
+          url: http://radarr:7878
+          key: "{{HOMEPAGE_VAR_RADARR_API_KEY}}"
+
+    - Prowlarr:
+        icon: prowlarr.png
+        href: http://prowlarr.lan
+        description: Indexer manager (VPN-protected)
+        widget:
+          type: prowlarr
+          url: http://gluetun:9696
+          key: "{{HOMEPAGE_VAR_PROWLARR_API_KEY}}"
+
+    - Bazarr:
+        icon: bazarr.png
+        href: http://bazarr.lan
+        description: Subtitles
+        widget:
+          type: bazarr
+          url: http://bazarr:6767
+          key: "{{HOMEPAGE_VAR_BAZARR_API_KEY}}"
+
+- Downloads:
+    - qBittorrent:
+        icon: qbittorrent.png
+        href: http://qbit.lan
+        description: Torrent client (VPN-protected)
+        widget:
+          type: qbittorrent
+          url: http://gluetun:8085
+          username: "{{HOMEPAGE_VAR_QBITTORRENT_USER}}"
+          password: "{{HOMEPAGE_VAR_QBITTORRENT_PASS}}"
+
+    - SABnzbd:
+        icon: sabnzbd.png
+        href: http://sabnzbd.lan
+        description: Usenet client (VPN-protected)
+        widget:
+          type: sabnzbd
+          url: http://gluetun:8080
+          key: "{{HOMEPAGE_VAR_SABNZBD_API_KEY}}"
+
+- Infrastructure:
+    - Pi-hole:
+        icon: pihole.png
+        href: http://pihole.lan
+        description: DNS / ad-blocking
+        widget:
+          type: pihole
+          url: http://pihole:80
+          version: 6
+          key: "{{HOMEPAGE_VAR_PIHOLE_API_TOKEN}}"
+
+- Monitoring:
+    - Uptime Kuma:
+        icon: uptime-kuma.png
+        href: http://uptime.lan
+        description: Service monitoring
+        widget:
+          type: uptimekuma
+          url: http://uptime-kuma:3001
+          slug: "{{HOMEPAGE_VAR_UPTIME_KUMA_SLUG}}"

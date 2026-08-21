@@ -296,6 +296,46 @@ services:
       start_period: 30s
 
   # ═══════════════════════════════════════════════════════════════════════════
+  # HOMEPAGE - Unified dashboard with live status widgets for every app.
+  # Access: homepage.lan | NAS_IP:3000 (LAN-only, use WireGuard/Tailscale for remote)
+  # ═══════════════════════════════════════════════════════════════════════════
+  homepage:
+    image: ghcr.io/gethomepage/homepage:v2.0.0
+    container_name: homepage
+    <<: *default-security
+    restart: always
+    ports:
+      - "3000:3000"  # Local network access only
+    environment:
+      - TZ=${TZ}
+      - HOMEPAGE_ALLOWED_HOSTS=homepage.lan,${NAS_IP}:3000,172.20.0.22:3000
+      - HOMEPAGE_VAR_SONARR_API_KEY=${SONARR_API_KEY}
+      - HOMEPAGE_VAR_RADARR_API_KEY=${RADARR_API_KEY}
+      - HOMEPAGE_VAR_PROWLARR_API_KEY=${PROWLARR_API_KEY}
+      - HOMEPAGE_VAR_BAZARR_API_KEY=${BAZARR_API_KEY}
+      - HOMEPAGE_VAR_SABNZBD_API_KEY=${SABNZBD_API_KEY}
+      - HOMEPAGE_VAR_QBITTORRENT_USER=${QBITTORRENT_USER}
+      - HOMEPAGE_VAR_QBITTORRENT_PASS=${QBITTORRENT_PASS}
+      - HOMEPAGE_VAR_JELLYFIN_API_KEY=${JELLYFIN_API_KEY}
+      - HOMEPAGE_VAR_SEERR_API_KEY=${SEERR_API_KEY}
+      - HOMEPAGE_VAR_PIHOLE_API_TOKEN=${PIHOLE_API_TOKEN}
+      - HOMEPAGE_VAR_UPTIME_KUMA_SLUG=${UPTIME_KUMA_SLUG}
+    networks:
+      arr-core:
+        ipv4_address: 172.20.0.22
+    volumes:
+      - ./homepage/config:/app/config
+      # No docker.sock mount - matches Uptime Kuma's minimal-privilege
+      # precedent above. Widgets reach apps over HTTP, not the Docker API.
+    logging: *default-logging
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3000/api/healthcheck"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # ═══════════════════════════════════════════════════════════════════════════
   # DUC - Disk usage analyzer. Visual treemap UI showing what's using storage.
   # Access: duc.lan | NAS_IP:8838 (LAN-only, use WireGuard for remote)
   # Note: Re-indexes daily at 4am. Manual: docker restart duc

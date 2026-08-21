@@ -47,6 +47,10 @@ Large volumes that regenerate automatically are excluded:
 
 > **Note:** If you want to preserve watch history (Jellyfin) or avoid re-scanning, you can manually backup these volumes using the same docker command shown below.
 
+**Homepage** (`homepage/config/`) isn't a Docker volume at all — it's a
+bind-mounted, git-tracked directory, so its config is already backed up by
+version control. Nothing to add here; restoring it is just `git pull`.
+
 ---
 
 ## Running a Backup

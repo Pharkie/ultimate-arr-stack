@@ -1,0 +1,21 @@
+title: arr-stack
+theme: dark
+color: slate
+headerStyle: boxed
+
+layout:
+  Media:
+    style: row
+    columns: 3
+  "*arr Stack":
+    style: row
+    columns: 4
+  Downloads:
+    style: row
+    columns: 3
+  Infrastructure:
+    style: row
+    columns: 2
+  Monitoring:
+    style: row
+    columns: 2

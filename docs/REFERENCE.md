@@ -80,6 +80,7 @@
 | Beszel | 172.20.0.15 | 8090 | System monitoring |
 | DIUN | 172.20.0.16 | — | Image update notifier (no UI) |
 | Configarr | — | — | TRaSH Guides sync (one-shot, no UI) |
+| Homepage | 172.20.0.22 | 3000 | Unified dashboard |
 
 ### Service Connection Guide
 
