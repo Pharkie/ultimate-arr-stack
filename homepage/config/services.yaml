@@ -82,6 +82,7 @@
         widget:
           type: pihole
           url: http://pihole:80
+          version: 6
           key: "{{HOMEPAGE_VAR_PIHOLE_API_TOKEN}}"
 
 - Monitoring:
