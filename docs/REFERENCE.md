@@ -28,6 +28,7 @@
 | Uptime Kuma | `NAS_IP:3001` | `https://uptime.lan`* | — |
 | duc | `NAS_IP:8838` | `https://duc.lan`* | — |
 | Beszel | `NAS_IP:8090` | `https://beszel.lan`* | — |
+| Homepage | `NAS_IP:3000` | `https://homepage.lan`* | — |
 
 **Legend:**
 - **Core** — Always works on your LAN
