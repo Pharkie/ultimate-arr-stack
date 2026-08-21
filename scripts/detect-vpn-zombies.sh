@@ -41,6 +41,26 @@ for c in "${DEPENDENTS[@]}"; do
     fi
 done
 
+# Second gateway: gluetun-exit (docker-compose.tailscale.yml), the dedicated
+# ProtonVPN tunnel behind the Tailscale exit node. Its dependents hit exactly
+# the same stale-netns failure mode, but they can't be folded into DEPENDENTS
+# above — they're bound to a DIFFERENT gateway container, so they'd be flagged
+# as zombies against gluetun's ID every single time.
+#
+# Unlike gluetun, a missing gluetun-exit is NOT an error: the exit-node stack
+# is opt-in, so most deployments won't have it running.
+EXIT_DEPENDENTS=(tailscale-exit tailscale-exit-routing)
+
+if GLUETUN_EXIT_ID=$(docker inspect --format '{{.Id}}' gluetun-exit 2>/dev/null); then
+    for c in "${EXIT_DEPENDENTS[@]}"; do
+        mode=$(docker inspect --format '{{.HostConfig.NetworkMode}}' "$c" 2>/dev/null) || continue
+        [[ "$mode" == container:* ]] || continue
+        if [[ "$mode" != "container:$GLUETUN_EXIT_ID" ]]; then
+            zombies+=("$c")
+        fi
+    done
+fi
+
 if [[ ${#zombies[@]} -gt 0 ]]; then
     echo "ZOMBIE CONTAINERS (stale netns binding to a dead Gluetun): ${zombies[*]}"
     echo "Fix: docker restart ${zombies[*]}"

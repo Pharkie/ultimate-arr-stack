@@ -55,6 +55,135 @@ The compose file also advertises the NAS as an exit node (`--advertise-exit-node
 
 If you host a NAS on a locked-down system (sysctls mounted read-only inside containers), you may need to enable `net.ipv6.conf.all.forwarding` and `net.ipv4.conf.all.src_valid_mark` on the host directly (`sysctl -w ...`, then persist in `/etc/sysctl.conf` or `/etc/sysctl.d/`) — check `docker exec tailscale tailscale status --json | grep -A2 Health` for a forwarding warning after enabling the exit node.
 
+### Optional: a ProtonVPN exit node (get both at once)
+
+The exit node above has a real limitation: your traffic leaves via **your home
+ISP's IP**. That's fine for encrypting untrusted WiFi, but it's the opposite of
+anonymity — sites see an address tied to your actual home account — and it can't
+geo-unblock anything, because the exit is always your own country.
+
+The fix is a **second** Tailscale node whose own internet egress goes through
+ProtonVPN. Your phone then picks *that* node as its exit node and gets home LAN
+access **and** a Proton IP from a single VPN connection — which is otherwise
+impossible on mobile, since the OS only allows one VPN app at a time.
+
+```
+ phone ──▶ tailscale        (host netns)   → LAN routes, .lan DNS
+       └─▶ tailscale-exit   (in gluetun-exit's netns) → ProtonVPN → internet
+```
+
+Three services in `docker-compose.tailscale.yml` implement this, all opt-in:
+
+| Service | Role |
+|---|---|
+| `gluetun-exit` | A **dedicated second** ProtonVPN tunnel (172.20.0.18) |
+| `tailscale-exit` | Second tailnet node, exit-node only, sharing that netns |
+| `tailscale-exit-routing` | Reconcile sidecar that keeps the routing/firewall fixes applied |
+
+**Why a second Gluetun rather than reusing the download one?** Opening the
+FORWARD chain on the main `gluetun` would require `FIREWALL=off`, destroying the
+kill switch for qBittorrent/SABnzbd/Prowlarr. And `gluetun-rotator` restarts that
+container every 6 hours by design to rotate exit servers, which would drop every
+in-flight exit-node session four times a day. It also lets the browsing exit
+country differ from the download country.
+
+#### Setup
+
+1. **Generate a second WireGuard config** at
+   [account.protonvpn.com/downloads](https://account.protonvpn.com/downloads) —
+   a *new* one, not the key already used by the download tunnel. It counts as
+   another device against your plan's simultaneous-connection limit. Leave
+   NAT-PMP port forwarding **off** (it doesn't help here — see below).
+2. **Generate a Tailscale auth key** (Settings → Keys). Make it **reusable** and
+   **non-ephemeral**. This is effectively required rather than optional: unlike
+   the host-network node, this container can't easily be authed interactively.
+3. **Add to the NAS's `.env`**: `VPN_EXIT_WIREGUARD_PRIVATE_KEY`,
+   `VPN_EXIT_WIREGUARD_ADDRESSES`, `VPN_EXIT_COUNTRIES`, `TS_EXIT_AUTHKEY`,
+   and optionally `TS_EXIT_HOSTNAME`.
+4. **Check the ACL policy first.** The node advertises `tag:nas-router`, which
+   step 6's policy already lists in both `tagOwners` and `autoApprovers.exitNode`
+   — so **no ACL edit is needed and the exit node self-approves**. But verify the
+   live policy still matches before first boot: advertising a tag that isn't in
+   `tagOwners` fails `tailscale up` entirely, it doesn't just warn.
+5. **Start it**, naming the services explicitly so the existing `tailscale`
+   container isn't reconciled and briefly dropped:
+   ```bash
+   docker compose -f docker-compose.tailscale.yml up -d gluetun-exit
+   # wait for healthy, then:
+   docker compose -f docker-compose.tailscale.yml up -d tailscale-exit tailscale-exit-routing
+   ```
+6. **On the phone**: Tailscale app → Exit Node → select `arr-stack-vpn-exit`.
+
+#### Verify
+
+```bash
+# Exit node registered and self-approved
+docker exec tailscale-exit tailscale status --json | grep -A3 '"Self"'
+
+# Forwarding sysctls landed in the SHARED netns (set on gluetun-exit, the
+# namespace owner — Docker skips net.* sysctls for containers that JOIN a netns)
+docker exec tailscale-exit cat /proc/sys/net/ipv4/ip_forward     # → 1
+
+# The return-path fix: pref 99 must sit ABOVE gluetun's pref ~101 rule
+docker exec gluetun-exit ip rule show | grep 100.64.0.0/10
+
+# Gluetun's DROP policy AND tailscale's chains coexist
+docker exec gluetun-exit iptables -S FORWARD
+
+# The headline proof — these two must DIFFER
+docker exec gluetun-exit sh -c 'wget -qO- https://ifconfig.me/ip'  # Proton IP
+docker exec sonarr sh -c 'curl -s https://ifconfig.me/ip'          # home WAN IP
+```
+
+Then from the phone **with the exit node active**: `https://ifconfig.me/ip` must
+match `gluetun-exit`, and `http://sonarr.lan` must still load (proving subnet
+routes and split DNS survive alongside the exit node).
+
+**Leak test** — `docker stop gluetun-exit` while the phone is on the exit node.
+The phone should lose internet **entirely**. If it silently falls back to
+working, the kill switch failed and traffic is leaving on your home IP.
+
+#### Performance: direct vs relay
+
+The one thing worth measuring. Run `tailscale status` on the phone/laptop:
+
+- `direct 185.x.x.x:41641` — hole punching worked. Full speed.
+- `relay "ams"` — falling back to DERP, Tailscale's shared relay
+  infrastructure. It's rate-shaped on their side, so a fast home link doesn't
+  help. Reported throughput varies enormously (roughly 10–40 Mbps, occasionally
+  far worse). 30 Mbps is fine for browsing and 1080p; under ~5 Mbps isn't usable.
+
+`tailscale ping arr-stack-vpn-exit` reports DERP for the first packet or two then
+upgrades — run it several times and read the steady state, not the first line.
+
+If it relays, the mitigation is **peer relays** (Tailscale 1.86+): make the
+host-network node a relay with
+`docker exec tailscale tailscale set --relay-server-port=41641` plus a
+`tailscale.com/cap/relay` grant in the ACL. Note this requires dropping `--reset`
+from that node's `TS_EXTRA_ARGS` first, or the setting is wiped on every restart.
+
+> **Why port forwarding doesn't help.** Gluetun does support ProtonVPN NAT-PMP,
+> but it hands out a *dynamic* port re-leased about every 60 seconds while
+> `tailscaled --port` is static — and even reconciled it wouldn't matter, since
+> Tailscale advertises whatever STUN discovers rather than an endpoint you pick.
+> `VPN_PORT_FORWARDING` is deliberately left off.
+
+#### Rollback
+
+The existing `tailscale` node is left completely untouched and still advertises
+its own exit node, which makes rollback trivial even from far away:
+
+1. **From the phone, anywhere**: Exit Node → pick `arr-stack-nas` or **None**.
+   LAN access is unaffected either way.
+2. **Admin console**: Machines → `arr-stack-vpn-exit` → Disable/Remove.
+3. **On the NAS**: `docker compose -f docker-compose.tailscale.yml stop tailscale-exit tailscale-exit-routing gluetun-exit`
+
+> **Alternative worth pricing first:** Tailscale sells **Mullvad exit nodes** as
+> a tailnet add-on, which achieves the same outcome (LAN access + a non-home exit
+> IP with a country picker) with no extra containers and direct routing by
+> design. It costs a monthly add-on and it's Mullvad rather than Proton, but it's
+> minutes of work instead of the setup above.
+
 ## 4. Install Tailscale on your devices
 
 - **iOS/Android**: install the Tailscale app, sign in with the same account

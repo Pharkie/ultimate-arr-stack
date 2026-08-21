@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process';
 import { test, expect } from '@playwright/test';
 import { DOCKER_AVAILABLE, egressIp } from './helpers';
 
@@ -51,6 +52,53 @@ test.describe('VPN egress — leak detection', () => {
       expect(serviceIp).not.toBe(gluetunIp);
     });
   }
+});
+
+test.describe('ProtonVPN exit node egress', () => {
+  // Covers docker-compose.tailscale.yml's gluetun-exit / tailscale-exit pair:
+  // a SECOND ProtonVPN tunnel whose only job is to be the internet egress for
+  // the Tailscale exit node, so a phone using it gets home LAN access AND a
+  // Proton IP simultaneously. Opt-in, so these skip when it isn't deployed.
+  const running = (name: string): boolean => {
+    try {
+      return execFileSync('docker', ['inspect', '--format', '{{.State.Running}}', name], {
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'ignore'],
+      }).trim() === 'true';
+    } catch {
+      return false;
+    }
+  };
+
+  test.beforeEach(() => {
+    test.skip(!DOCKER_AVAILABLE, 'docker CLI not available — run on the NAS directly');
+    test.skip(!running('gluetun-exit'), 'gluetun-exit not deployed — the ProtonVPN exit-node stack is opt-in');
+  });
+
+  test('gluetun-exit egress IP differs from host WAN IP', () => {
+    // The whole point: traffic leaving the exit node must NOT carry the home
+    // IP. If these ever match, the exit node is giving away exactly what the
+    // user wanted hidden — and it would look fine from the phone.
+    const exitIp = egressIp('gluetun-exit');
+    const hostIp = egressIp('sonarr'); // bridge-only — gives host WAN egress
+    expect(exitIp).toBeTruthy();
+    expect(hostIp).toBeTruthy();
+    expect(exitIp).not.toBe(hostIp);
+  });
+
+  test('tailscale-exit egress IP matches gluetun-exit (sharing its netns, not leaking)', () => {
+    // Deliberately NOT asserting gluetun-exit differs from gluetun: both are
+    // pinned to VPN_EXIT_COUNTRIES/VPN_COUNTRIES=Netherlands and may
+    // legitimately land on the same Proton server, which would make that a
+    // flaky test rather than a meaningful one.
+    const exitIp = egressIp('gluetun-exit');
+    const tsIp = egressIp('tailscale-exit');
+    const hostIp = egressIp('sonarr');
+    expect(exitIp).toBeTruthy();
+    expect(tsIp).toBeTruthy();
+    expect(tsIp).toBe(exitIp);
+    expect(tsIp).not.toBe(hostIp);
+  });
 });
 
 test.describe('VPN killswitch — chaos test', () => {

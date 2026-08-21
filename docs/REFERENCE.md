@@ -71,6 +71,9 @@
 | Service | IP | Port | Notes |
 |---------|-----|------|-------|
 | Tailscale | host-network | — | Subnet router, advertises `LAN_SUBNET` to tailnet |
+| **Gluetun-exit** | **172.20.0.18** | — | Dedicated 2nd ProtonVPN tunnel (optional — see [TAILSCALE.md](TAILSCALE.md)) |
+| ↳ tailscale-exit | (via Gluetun-exit) | — | 2nd tailnet node, exit-node only — egress is ProtonVPN |
+| ↳ tailscale-exit-routing | (via Gluetun-exit) | — | Reconciles the exit node's routing/firewall rules every 30s |
 
 **Optional** (utilities.yml):
 
@@ -196,6 +199,9 @@ Services start in dependency order (handled automatically by `depends_on`):
 | Service | Description |
 |---------|-------------|
 | Tailscale | Mesh VPN subnet router — private full-LAN access from anywhere |
+| Gluetun-exit | Dedicated 2nd ProtonVPN tunnel for the exit node (optional) |
+| tailscale-exit | 2nd tailnet node — LAN access *and* a Proton exit IP at once (optional) |
+| tailscale-exit-routing | Keeps the exit node's routing/firewall fixes applied (optional) |
 
 ### `docker-compose.utilities.yml` (Optional)
 

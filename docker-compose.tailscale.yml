@@ -85,5 +85,236 @@ services:
         max-size: "10m"
         max-file: "3"
 
+  # ═══════════════════════════════════════════════════════════════════════════
+  # GLUETUN-EXIT - a SECOND, dedicated ProtonVPN tunnel whose only job is to be
+  # the internet egress for the tailscale-exit node below. Deliberately NOT the
+  # `gluetun` in docker-compose.arr-stack.yml:
+  #   - making Tailscale forward through Gluetun needs the FORWARD chain
+  #     opened, and the commonly published fix (FIREWALL=off) would gut the
+  #     download stack's kill switch — the entire reason gluetun exists here;
+  #   - gluetun-rotator (docker-compose.utilities.yml) runs `docker restart
+  #     gluetun` every GLUETUN_ROTATE_INTERVAL_SECONDS (default 6h) BY DESIGN
+  #     to rotate exit servers, which would destroy this netns and drop every
+  #     in-flight exit-node session four times a day;
+  #   - it lets the browsing exit country diverge from the download country.
+  # Costs a second ProtonVPN device slot against your plan's connection limit.
+  # ═══════════════════════════════════════════════════════════════════════════
+  gluetun-exit:
+    image: qmcgaw/gluetun:v3.41
+    container_name: gluetun-exit
+    security_opt:
+      - no-new-privileges:true
+    cap_add:
+      - NET_ADMIN
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    # net.* sysctls are network-NAMESPACED, and Docker only applies them to a
+    # container that CREATES its own netns — it skips them for a container
+    # joining an existing one. tailscale-exit joins THIS netns, so its
+    # exit-node forwarding sysctls must be declared here, not there.
+    # If gluetun-exit refuses to start with "invalid argument", drop the ipv6
+    # line (IPv6 disabled in this netns) — IPv4 exit-node still works.
+    sysctls:
+      - net.ipv4.ip_forward=1
+      - net.ipv4.conf.all.src_valid_mark=1
+      - net.ipv6.conf.all.forwarding=1
+    volumes:
+      - gluetun-exit-config:/gluetun
+      # Custom iptables rules, run by gluetun at container start after its own.
+      # Lets us open the FORWARD chain for exit-node traffic while keeping
+      # FIREWALL=on, instead of the published FIREWALL=off workaround.
+      - ./tailscale/gluetun-exit-post-rules.txt:/iptables/post-rules.txt:ro
+    environment:
+      - VPN_SERVICE_PROVIDER=${VPN_SERVICE_PROVIDER}
+      - VPN_TYPE=${VPN_TYPE}
+      - WIREGUARD_PRIVATE_KEY=${VPN_EXIT_WIREGUARD_PRIVATE_KEY}
+      - WIREGUARD_ADDRESSES=${VPN_EXIT_WIREGUARD_ADDRESSES}
+      - SERVER_COUNTRIES=${VPN_EXIT_COUNTRIES}
+      - TZ=${TZ}
+      # Deliberately NOT DNS_ADDRESS=172.20.0.5 (Pi-hole), unlike the download
+      # gluetun: with an exit node selected, the PHONE's DNS is resolved here.
+      # Pi-hole blocklists would then apply to all remote browsing (surprising
+      # false positives away from home) and Pi-hole downtime would kill the
+      # exit node's DNS entirely. Gluetun's built-in DoT default is used.
+      - FIREWALL_OUTBOUND_SUBNETS=${LAN_SUBNET},172.20.0.0/24
+      # NOT enabling VPN_PORT_FORWARDING: NAT-PMP hands out a DYNAMIC port
+      # re-leased ~every 60s, while `tailscaled --port` is static — and even
+      # reconciled it wouldn't help, since Tailscale advertises whatever STUN
+      # discovers rather than a chosen endpoint. See docs/TAILSCALE.md.
+    networks:
+      arr-core:
+        ipv4_address: 172.20.0.18
+    restart: always
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    healthcheck:
+      test: ["CMD", "/gluetun-entrypoint", "healthcheck"]
+      interval: 1m
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # TAILSCALE-EXIT - second tailnet node, exit-node ONLY (no subnet routes;
+  # the host-network `tailscale` above owns those and is left untouched, which
+  # is also the rollback: pick a different exit node from the phone).
+  # Shares gluetun-exit's netns, so its internet egress IS the ProtonVPN tunnel
+  # by construction.
+  #
+  # Reuses tag:nas-router, which docs/TAILSCALE.md's ACL policy already lists
+  # in BOTH tagOwners and autoApprovers.exitNode — so this node self-approves
+  # its exit node with zero admin-console clicks, and sidesteps the documented
+  # hard-fail when advertising a tag that isn't in tagOwners.
+  #
+  # No `ports:` — a container sharing another's netns cannot declare its own
+  # (same constraint magnetio-addon documents). None is needed anyway: peers
+  # reach this node via the ProtonVPN exit IP, not the home WAN IP.
+  # ═══════════════════════════════════════════════════════════════════════════
+  tailscale-exit:
+    image: tailscale/tailscale:v1.98.10
+    container_name: tailscale-exit
+    network_mode: "service:gluetun-exit"
+    depends_on:
+      gluetun-exit:
+        condition: service_healthy
+        restart: true
+    security_opt:
+      - no-new-privileges:true
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    volumes:
+      - tailscale-exit-state:/var/lib/tailscale
+    environment:
+      - TS_STATE_DIR=/var/lib/tailscale
+      - TS_USERSPACE=false
+      - TS_ACCEPT_DNS=false
+      # An auth key is effectively REQUIRED here (unlike the host-network node,
+      # which can be authed interactively): this container has no host
+      # networking, so reading a login URL out of its logs is the only other
+      # path. Use a REUSABLE, non-ephemeral key so a recreate re-auths cleanly.
+      - TS_AUTHKEY=${TS_EXIT_AUTHKEY:-}
+      - TS_HOSTNAME=${TS_EXIT_HOSTNAME:-arr-stack-vpn-exit}
+      # Gluetun's Alpine base drives nftables through the iptables-nft compat
+      # layer. Forcing tailscaled to the same backend puts its ts-forward /
+      # ts-postrouting chains in the SAME table gluetun manages, so ordering is
+      # deterministic. Left on `auto`, tailscaled can pick the legacy backend
+      # and silently write rules nothing ever evaluates. If `iptables -S
+      # FORWARD` shows no ts-forward jump, try nftables here instead.
+      - TS_DEBUG_FIREWALL_MODE=iptables
+      # Exit node ONLY — no --advertise-routes (node 1 owns subnet routing),
+      # and deliberately NO --reset (node 1 needs it once; here it would wipe
+      # any `tailscale set` tweaks, e.g. peer-relay config, on every restart).
+      - TS_EXTRA_ARGS=--advertise-exit-node --advertise-tags=tag:nas-router
+    labels:
+      # This label + the network-touching healthcheck below are what cover the
+      # "running zombie on a dead netns" failure mode that gluetun-recover
+      # exists for: unlike a localhost-only check, this one FAILS when
+      # gluetun-exit's netns is destroyed, so deunhealth restarts it.
+      - deunhealth.restart.on.unhealthy=true
+      - gluetun-exit.dependent=true
+    restart: always
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    healthcheck:
+      test: ["CMD-SHELL", "tailscale status --peers=false && wget -q --spider --timeout=5 https://controlplane.tailscale.com"]
+      interval: 60s
+      timeout: 15s
+      retries: 3
+      start_period: 60s
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # TAILSCALE-EXIT-ROUTING - the piece that makes the above actually work.
+  #
+  # Gluetun installs a high-priority `ip rule` (~pref 101) sending ALL traffic
+  # to the VPN table. Exit-node RETURN traffic destined for the tailnet
+  # (100.64.0.0/10) therefore goes back out the VPN interface instead of
+  # tailscale0 — a black hole. Tailscale's own rule for its table 52 sits at
+  # pref 5270, far too late to win. Fix: one higher-priority rule at pref 99.
+  # Gluetun's FORWARD policy is also DROP, so exit-node traffic needs explicit
+  # ACCEPTs on top of the post-rules file.
+  #
+  # Reconciled in a loop rather than applied once, because gluetun rebuilds its
+  # routing on every tunnel reconnect and tailscaled rebuilds table 52 on every
+  # restart. Every operation is guarded by a check, so it's idempotent and safe
+  # to run forever.
+  #
+  # Reuses the already-pinned tailscale image purely because it ships iproute2
+  # + iptables — no new image to pin, no runtime `apk add`. Inline
+  # `entrypoint: /bin/sh -c |` sidecars are an established pattern in this repo
+  # (see gluetun-recover / gluetun-rotator in docker-compose.utilities.yml).
+  # ═══════════════════════════════════════════════════════════════════════════
+  tailscale-exit-routing:
+    image: tailscale/tailscale:v1.98.10
+    container_name: tailscale-exit-routing
+    network_mode: "service:gluetun-exit"
+    depends_on:
+      gluetun-exit:
+        condition: service_healthy
+        restart: true
+    security_opt:
+      - no-new-privileges:true
+    cap_add:
+      - NET_ADMIN
+    labels:
+      - gluetun-exit.dependent=true
+    restart: always
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        echo "tailscale-exit-routing: reconciling every 30s"
+        while true; do
+          # Whichever interface gluetun brought up (wg0 wireguard, tun0 openvpn).
+          VPN_IF=""
+          for i in wg0 tun0; do
+            ip link show "$$i" >/dev/null 2>&1 && VPN_IF="$$i"
+          done
+          if [ -n "$$VPN_IF" ]; then
+            # 1. Return path: tailnet-destined packets must use tailscale's
+            #    table 52, not gluetun's VPN table.
+            ip rule show | grep -q "100.64.0.0/10" || \
+              ip rule add to 100.64.0.0/10 priority 99 lookup 52
+            ip -6 rule show 2>/dev/null | grep -q "fd7a:115c:a1e0::/48" || \
+              ip -6 rule add to fd7a:115c:a1e0::/48 priority 99 lookup 52 2>/dev/null || true
+            # 2. Forward path: gluetun's FORWARD policy is DROP.
+            iptables -C FORWARD -i tailscale0 -o "$$VPN_IF" -j ACCEPT 2>/dev/null || \
+              iptables -A FORWARD -i tailscale0 -o "$$VPN_IF" -j ACCEPT
+            iptables -C FORWARD -i "$$VPN_IF" -o tailscale0 -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT 2>/dev/null || \
+              iptables -A FORWARD -i "$$VPN_IF" -o tailscale0 -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+            # 3. SNAT out the tunnel. Tailscale's ts-postrouting normally does
+            #    this via its 0x40000 fwmark; belt-and-braces because that rule
+            #    is the piece most likely to land in a table gluetun ignores.
+            iptables -t nat -C POSTROUTING -o "$$VPN_IF" -j MASQUERADE 2>/dev/null || \
+              iptables -t nat -A POSTROUTING -o "$$VPN_IF" -j MASQUERADE
+          fi
+          sleep 30
+        done
+
 volumes:
   tailscale-state:
+  tailscale-exit-state:
+  gluetun-exit-config:
+
+# arr-core is created by docker-compose.arr-stack.yml. This is the one place
+# this file couples to another compose project — accepted so gluetun-exit gets
+# a static IP that uptime-kuma can poll at
+# http://172.20.0.18:8000/v1/publicip/ip as a standing "is the exit node still
+# on a Proton IP" monitor. Consequence: this file now needs arr-stack to have
+# been brought up first (boot-compose-up.sh already does that ordering).
+networks:
+  arr-core:
+    external: true
