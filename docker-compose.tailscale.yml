@@ -313,8 +313,16 @@ volumes:
 # this file couples to another compose project — accepted so gluetun-exit gets
 # a static IP that uptime-kuma can poll at
 # http://172.20.0.18:8000/v1/publicip/ip as a standing "is the exit node still
-# on a Proton IP" monitor. Consequence: this file now needs arr-stack to have
+# on a Proton IP" monitor. It does mean gluetun-exit needs arr-stack to have
 # been brought up first (boot-compose-up.sh already does that ordering).
+#
+# Verified live on the NAS 2026-08-21 that this does NOT put the existing
+# host-network `tailscale` service at risk: compose only resolves an external
+# network for services that actually reference it. With the network deliberately
+# missing, `up --dry-run` of a network_mode: host service still reached
+# "Container Created", while a service listing that network failed with
+# "declared as external, but could not be found". So a missing/renamed arr-core
+# can block gluetun-exit, but can never stop the tunnel this file exists to run.
 networks:
   arr-core:
     external: true
