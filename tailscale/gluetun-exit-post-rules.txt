@@ -16,6 +16,15 @@
 # Referencing tailscale0 before it exists is fine — iptables accepts rules for
 # an interface that has not been created yet, and tailscale-exit starts later.
 #
+# WHY THESE ACCEPT UNCONDITIONALLY RATHER THAN JUMPING TO ts-forward
+# Gluetun's iptables is nf_tables; the Tailscale image symlinks iptables ->
+# iptables-legacy, so tailscaled's ts-forward/ts-postrouting chains (and the
+# sidecar's rules) land in the LEGACY tables, not these. The kernel evaluates
+# both backends at the same hooks, so the layers compose — but a `-j ts-forward`
+# jump written here would target a chain that does not exist in this backend.
+# Verified live on the NAS: `iptables -S FORWARD` here shows no ts-forward and
+# that is correct; `iptables-legacy -S FORWARD` is where it lives.
+#
 # NOTE: tailscale-exit-routing re-adds the equivalent rules every 30s. That is
 # not redundancy for its own sake — Gluetun rebuilds its firewall on every
 # tunnel reconnect, and it is documented as running this file only at CONTAINER

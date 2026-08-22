@@ -87,6 +87,30 @@ container every 6 hours by design to rotate exit servers, which would drop every
 in-flight exit-node session four times a day. It also lets the browsing exit
 country differ from the download country.
 
+**Two firewall backends share this netns — by design, not by accident.** Gluetun's
+`iptables` is `nf_tables`; the Tailscale image symlinks `iptables` →
+`iptables-legacy`, so both `tailscaled` and the reconcile sidecar write into the
+*legacy* tables. The kernel evaluates both at the same netfilter hooks, so the
+two layers compose:
+
+| Layer | Backend | Contents |
+|---|---|---|
+| Gluetun's kill switch | nft | `-P FORWARD DROP` + `post-rules.txt`'s two `tailscale0` ACCEPTs |
+| Tailscale + sidecar | legacy | `ts-forward`/`ts-postrouting`, the sidecar's ACCEPTs, and `-t nat -o tun0 -j MASQUERADE` |
+
+This is why `post-rules.txt` accepts on `tailscale0` **unconditionally** instead
+of jumping to `ts-forward`: the chain it would jump to lives in the other
+backend. Two consequences worth knowing:
+
+- **`iptables -S FORWARD` inside `gluetun-exit` will not show `ts-forward`, and
+  that is correct** — it's an nft view of legacy-resident chains. Use
+  `iptables-legacy -S FORWARD` to see them. Don't read the absence as a
+  misconfigured `TS_DEBUG_FIREWALL_MODE`.
+- All NAT ends up in legacy. Gluetun adds no nft NAT of its own (only Docker's
+  `127.0.0.11` DNS rule), so there's no legacy/nft NAT conflict here — but if a
+  future Gluetun version starts masquerading in nft, revisit this, because mixing
+  NAT across the two backends is genuinely unsafe.
+
 #### Setup
 
 1. **Generate a second WireGuard config** at
@@ -94,9 +118,19 @@ country differ from the download country.
    a *new* one, not the key already used by the download tunnel. It counts as
    another device against your plan's simultaneous-connection limit. Leave
    NAT-PMP port forwarding **off** (it doesn't help here — see below).
-2. **Generate a Tailscale auth key** (Settings → Keys). Make it **reusable** and
-   **non-ephemeral**. This is effectively required rather than optional: unlike
-   the host-network node, this container can't easily be authed interactively.
+   **The server the download page picks doesn't matter.** Only the config's
+   `PrivateKey` and `Address` are used; Gluetun ignores its `Endpoint` and
+   selects a server from `VPN_EXIT_COUNTRIES` using its own embedded list.
+   Live-verified: a Belgian (`BE#47`) config with `VPN_EXIT_COUNTRIES=Netherlands`
+   connected to a Dutch server and reported an NL egress IP.
+2. **Get the node authenticated.** Either works:
+   - *Auth key* (Settings → Keys), **reusable** and **non-ephemeral**, set as
+     `TS_EXIT_AUTHKEY`. Best for unattended rebuilds.
+   - *Interactive login* — leave `TS_EXIT_AUTHKEY` empty and read the URL out of
+     `docker logs tailscale-exit` (`To authenticate, visit: …`). The container has
+     no host networking, but its login URL still reaches the log, so this is a
+     perfectly usable path — just remember nothing re-auths automatically if the
+     state volume is ever lost.
 3. **Add to the NAS's `.env`**: `VPN_EXIT_WIREGUARD_PRIVATE_KEY`,
    `VPN_EXIT_WIREGUARD_ADDRESSES`, `VPN_EXIT_COUNTRIES`, `TS_EXIT_AUTHKEY`,
    and optionally `TS_EXIT_HOSTNAME`.
@@ -127,8 +161,12 @@ docker exec tailscale-exit cat /proc/sys/net/ipv4/ip_forward     # → 1
 # The return-path fix: pref 99 must sit ABOVE gluetun's pref ~101 rule
 docker exec gluetun-exit ip rule show | grep 100.64.0.0/10
 
-# Gluetun's DROP policy AND tailscale's chains coexist
+# Gluetun's DROP policy, with post-rules.txt's hole punched through it
 docker exec gluetun-exit iptables -S FORWARD
+
+# ...and the legacy tables, where tailscaled's and the sidecar's rules live
+docker exec gluetun-exit iptables-legacy -S FORWARD
+docker exec gluetun-exit iptables-legacy -t nat -S POSTROUTING
 
 # The headline proof — these two must DIFFER
 docker exec gluetun-exit sh -c 'wget -qO- https://ifconfig.me/ip'  # Proton IP
