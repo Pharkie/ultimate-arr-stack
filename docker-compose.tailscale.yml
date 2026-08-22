@@ -225,7 +225,22 @@ services:
         max-size: "10m"
         max-file: "3"
     healthcheck:
-      test: ["CMD-SHELL", "tailscale status --peers=false && wget -q --spider --timeout=5 https://controlplane.tailscale.com"]
+      # Reachable => also require real egress (catches the dead-netns zombie).
+      # NOT reachable because we're logged OUT is a different thing entirely,
+      # and how it's handled depends on whether we can self-heal:
+      #   - TS_AUTHKEY set    => a restart re-authenticates, so fail and let
+      #                          deunhealth restart us.
+      #   - TS_AUTHKEY empty  => a restart CANNOT log us back in. Worse, each
+      #                          one makes `tailscale up` mint a fresh nodekey,
+      #                          invalidating any interactive login URL already
+      #                          issued and leaving an orphaned machine in the
+      #                          tailnet. Observed live: 9 restarts, 9 dead
+      #                          nodekeys, and a login the user had already
+      #                          completed silently detached. Report healthy
+      #                          and let the operator see "Logged out" in the
+      #                          logs instead of spinning.
+      # $$ escapes compose's own interpolation so the shell expands it.
+      test: ["CMD-SHELL", 'if tailscale status --peers=false >/dev/null 2>&1; then wget -q --spider --timeout=5 https://controlplane.tailscale.com; else [ -z "$$TS_AUTHKEY" ] && exit 0; exit 1; fi']
       interval: 60s
       timeout: 15s
       retries: 3

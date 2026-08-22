@@ -127,10 +127,18 @@ backend. Two consequences worth knowing:
    - *Auth key* (Settings → Keys), **reusable** and **non-ephemeral**, set as
      `TS_EXIT_AUTHKEY`. Best for unattended rebuilds.
    - *Interactive login* — leave `TS_EXIT_AUTHKEY` empty and read the URL out of
-     `docker logs tailscale-exit` (`To authenticate, visit: …`). The container has
-     no host networking, but its login URL still reaches the log, so this is a
-     perfectly usable path — just remember nothing re-auths automatically if the
-     state volume is ever lost.
+     `docker logs tailscale-exit` (`To authenticate, visit: …`). Workable, but
+     **an auth key is strongly preferred**, and the reason is a trap worth
+     knowing: every container restart makes `tailscale up` mint a *fresh
+     nodekey*, which invalidates any login URL already issued. Hit this live —
+     the node restarted 9 times while a login URL was outstanding, so a login
+     that genuinely succeeded attached to a key the container no longer held,
+     leaving the console showing a logged-in device that the container reported
+     as logged out. The healthcheck now reports healthy (rather than failing
+     into a deunhealth restart) whenever the node is logged out *and*
+     `TS_EXIT_AUTHKEY` is empty, specifically so an interactive login has a
+     stable URL to complete against. With a key set it still restarts on
+     failure, because there a restart genuinely re-authenticates.
 3. **Add to the NAS's `.env`**: `VPN_EXIT_WIREGUARD_PRIVATE_KEY`,
    `VPN_EXIT_WIREGUARD_ADDRESSES`, `VPN_EXIT_COUNTRIES`, `TS_EXIT_AUTHKEY`,
    and optionally `TS_EXIT_HOSTNAME`.
