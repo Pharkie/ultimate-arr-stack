@@ -136,7 +136,20 @@ services:
       # Pi-hole blocklists would then apply to all remote browsing (surprising
       # false positives away from home) and Pi-hole downtime would kill the
       # exit node's DNS entirely. Gluetun's built-in DoT default is used.
-      - FIREWALL_OUTBOUND_SUBNETS=${LAN_SUBNET},172.20.0.0/24
+      #
+      # 100.64.0.0/10 (tailnet CGNAT) is REQUIRED, not optional. tailscale-exit
+      # runs --accept-dns=true, which rewrites /etc/resolv.conf in this SHARED
+      # netns to tailscaled's own resolver at 100.100.100.100. Without this
+      # entry gluetun's own kill switch blocks its own nameserver and every
+      # lookup in the netns dies with "Operation not permitted" — observed live.
+      # This is NOT a kill-switch hole: 100.64.0.0/10 is reachable only over
+      # tailscale0 (WireGuard to tailnet peers), never the public internet.
+      - FIREWALL_OUTBOUND_SUBNETS=${LAN_SUBNET},172.20.0.0/24,100.64.0.0/10
+      # Health must NOT depend on DNS. The default target is a HOSTNAME, so with
+      # accept-dns on, a tailscaled hiccup would fail gluetun's healthcheck ->
+      # deunhealth restarts gluetun -> the netns dies -> tailscale-exit becomes a
+      # zombie. An IP literal breaks that circular dependency at the root.
+      - HEALTH_TARGET_ADDRESS=1.1.1.1:443
       # NOT enabling VPN_PORT_FORWARDING: NAT-PMP hands out a DYNAMIC port
       # re-leased ~every 60s, while `tailscaled --port` is static — and even
       # reconciled it wouldn't help, since Tailscale advertises whatever STUN
@@ -193,7 +206,22 @@ services:
     environment:
       - TS_STATE_DIR=/var/lib/tailscale
       - TS_USERSPACE=false
-      - TS_ACCEPT_DNS=false
+      # MUST be true here, unlike the host-network node (which sets it false so
+      # it never hijacks the NAS's own resolver). An exit node resolves DNS on
+      # its CLIENTS' behalf via peerapi: select this exit node on a phone and
+      # every lookup that phone makes is answered here, not there.
+      #   accept-dns=false => tailscaled forwards those to the netns system
+      #     resolver, which is gluetun's DoT -> Cloudflare. Cloudflare answers
+      #     *.lan with rcode 5 REFUSED (it is not a public domain), so the phone
+      #     gets DNS_PROBE_POSSIBLE for sonarr.lan while public names resolve.
+      #     Observed live 2026-08-22; the tell is `peerapi: handleDNS fwd error`
+      #     plus `response code indicating refusal: 5` in this container's logs.
+      #   accept-dns=true  => tailscaled uses the TAILNET DNS config, so it
+      #     honours split DNS: *.lan -> Pi-hole over eth0, everything else ->
+      #     1.1.1.1, which still egresses through the Proton tunnel.
+      # Requires 100.64.0.0/10 in gluetun-exit's FIREWALL_OUTBOUND_SUBNETS,
+      # because this rewrites resolv.conf for the whole shared netns.
+      - TS_ACCEPT_DNS=true
       # An auth key is effectively REQUIRED here (unlike the host-network node,
       # which can be authed interactively): this container has no host
       # networking, so reading a login URL out of its logs is the only other
