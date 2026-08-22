@@ -360,8 +360,15 @@ services:
             #    itself: it logs "ignoring subnet fd7a:115c:a1e0::/48 which has
             #    no default route matching its family" because the Proton
             #    tunnel here is IPv4-only, so the rule has to be added directly.
-            ip6tables -C OUTPUT -o tailscale0 -j ACCEPT 2>/dev/null || \
-              ip6tables -A OUTPUT -o tailscale0 -j ACCEPT 2>/dev/null || true
+            #    ip6tables-nft explicitly, NOT plain ip6tables: this image
+            #    symlinks ip6tables -> ip6tables-legacy, and gluetun's
+            #    "-P OUTPUT DROP" lives in the nft tables. Both backends are
+            #    evaluated at the same hooks, so an ACCEPT in legacy does not
+            #    override a DROP policy in nft -- the rule has to go where the
+            #    DROP is. Verified live: the legacy rule applied cleanly and
+            #    changed nothing.
+            ip6tables-nft -C OUTPUT -o tailscale0 -j ACCEPT 2>/dev/null || \
+              ip6tables-nft -A OUTPUT -o tailscale0 -j ACCEPT 2>/dev/null || true
           fi
           sleep 30
         done
