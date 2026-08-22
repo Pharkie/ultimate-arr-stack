@@ -366,7 +366,27 @@ services:
             #    itself: it logs "ignoring subnet fd7a:115c:a1e0::/48 which has
             #    no default route matching its family" because the Proton
             #    tunnel here is IPv4-only, so the rule has to be added directly.
-            #    IPv4 half of the same grant: gluetun's "-P OUTPUT DROP" would
+            # 4. Clamp TCP MSS to the tailscale0 path. WITHOUT THIS THE EXIT
+            #    NODE IS UNUSABLE FOR BULK TRANSFER: measured 0.17 Mbps down
+            #    with 41.4% packet loss from a phone, against 103 Mbps on the
+            #    same 4G with no VPN.
+            #    Nesting means two MTUs in a row -- tailscale0 is 1280, gluetun's
+            #    tun0 is 1320 -- and tailscale's ts-forward chain only marks and
+            #    ACCEPTs, it does not clamp. So a remote server advertises MSS
+            #    1460, its full-size replies reach tun0 fine, and then do not fit
+            #    into tailscale0. Path MTU discovery cannot recover it either:
+            #    the ICMP fragmentation-needed that would signal the sender is
+            #    dropped by gluetun's kill switch, so it black-holes silently.
+            #    Small responses fit and work perfectly, which is why DNS, .lan
+            #    pages and ifconfig.me all looked healthy while throughput was
+            #    ~600x below line rate. 1240 = tailscale0's 1280 - 40 bytes of
+            #    IPv4 + TCP header. Clamped on SYN in both directions.
+            iptables-nft -t mangle -C FORWARD -o tailscale0 -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --set-mss 1240 2>/dev/null || \
+              iptables-nft -t mangle -A FORWARD -o tailscale0 -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --set-mss 1240 2>/dev/null || true
+            iptables-nft -t mangle -C FORWARD -i tailscale0 -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --set-mss 1240 2>/dev/null || \
+              iptables-nft -t mangle -A FORWARD -i tailscale0 -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --set-mss 1240 2>/dev/null || true
+            # 5. Firewall grants for tailscaled's own resolvers.
+            #    IPv4 half: gluetun's "-P OUTPUT DROP" would
             #    otherwise block the netns from reaching tailscaled's own
             #    resolver at 100.100.100.100, and every lookup in the netns
             #    fails with "Operation not permitted". Not a kill-switch hole:
