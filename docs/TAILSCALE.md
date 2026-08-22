@@ -142,19 +142,56 @@ backend. Two consequences worth knowing:
 3. **Add to the NAS's `.env`**: `VPN_EXIT_WIREGUARD_PRIVATE_KEY`,
    `VPN_EXIT_WIREGUARD_ADDRESSES`, `VPN_EXIT_COUNTRIES`, `TS_EXIT_AUTHKEY`,
    and optionally `TS_EXIT_HOSTNAME`.
-4. **Check the ACL policy first.** The node advertises `tag:nas-router`, which
+4. **Configure tailnet DNS — the exit node is unusable without it.** This is not
+   optional polish, and it is the single most likely reason a correctly-built
+   exit node looks completely broken. Normally a phone resolves DNS via its
+   carrier or WiFi resolver. Select an exit node and *all* traffic routes through
+   it, so those resolvers — private addresses on a network the exit node has no
+   route to — become unreachable. If the tailnet has no nameserver of its own,
+   nothing takes over and **every** lookup fails: browsers show a DNS probe
+   error for internet and `.lan` names alike, while already-established
+   connections keep working, which makes it look like a routing bug rather than
+   a DNS one.
+
+   Set both, in the admin console under **DNS** (or via the API):
+
+   ```bash
+   # Global nameservers - used by exit-node clients for everything else
+   curl -u "$TSKEY:" -X POST -H 'Content-Type: application/json' \
+     --data '{"dns":["1.1.1.1","1.0.0.1"]}' \
+     https://api.tailscale.com/api/v2/tailnet/-/dns/nameservers
+
+   # Split DNS - send only the .lan domain to Pi-hole, reached over node 1's
+   # subnet route. NOTE: the endpoint is dns/split-dns; dns/splitdns 404s.
+   curl -u "$TSKEY:" -X PATCH -H 'Content-Type: application/json' \
+     --data '{"lan":["<NAS_LAN_IP>"]}' \
+     https://api.tailscale.com/api/v2/tailnet/-/dns/split-dns
+   ```
+
+   Splitting them this way keeps Pi-hole's blocklists off general remote
+   browsing and stops Pi-hole downtime from taking out internet DNS, while
+   `.lan` still resolves.
+
+   ⚠️ **The split-DNS entry pins the NAS's LAN IP, so any NAS IP change breaks
+   it** — and it lives in Tailscale's cloud config, so nothing on the NAS or in
+   this repo will reveal the mismatch. It broke exactly this way here: it still
+   read `192.168.8.246` long after the VLAN10 migration moved the NAS to
+   `192.168.110.246`, silently killing `.lan` for every remote client. It only
+   fails when away from home, so there was no obvious moment of breakage. Add it
+   to the checklist for any future addressing change.
+5. **Check the ACL policy first.** The node advertises `tag:nas-router`, which
    step 6's policy already lists in both `tagOwners` and `autoApprovers.exitNode`
    — so **no ACL edit is needed and the exit node self-approves**. But verify the
    live policy still matches before first boot: advertising a tag that isn't in
    `tagOwners` fails `tailscale up` entirely, it doesn't just warn.
-5. **Start it**, naming the services explicitly so the existing `tailscale`
+6. **Start it**, naming the services explicitly so the existing `tailscale`
    container isn't reconciled and briefly dropped:
    ```bash
    docker compose -f docker-compose.tailscale.yml up -d gluetun-exit
    # wait for healthy, then:
    docker compose -f docker-compose.tailscale.yml up -d tailscale-exit tailscale-exit-routing
    ```
-6. **On the phone**: Tailscale app → Exit Node → select `arr-stack-vpn-exit`.
+7. **On the phone**: Tailscale app → Exit Node → select `arr-stack-vpn-exit`.
 
 #### Verify
 
@@ -185,6 +222,19 @@ Then from the phone **with the exit node active**: `https://ifconfig.me/ip` must
 match `gluetun-exit`, and `http://sonarr.lan` must still load (proving subnet
 routes and split DNS survive alongside the exit node).
 
+**If both fail with a DNS error, it's step 4, not the tunnel.** Check tailnet
+DNS before touching anything on the NAS — the forwarding counters tell you
+instantly whether packets are even reaching the exit node:
+
+```bash
+docker exec gluetun-exit iptables -L FORWARD -v -n   # non-zero pkts on tailscale0 = traffic IS arriving
+curl -u "$TSKEY:" https://api.tailscale.com/api/v2/tailnet/-/dns/nameservers  # must NOT be {"dns":[]}
+curl -u "$TSKEY:" https://api.tailscale.com/api/v2/tailnet/-/dns/split-dns    # "lan" must be the CURRENT NAS IP
+```
+
+Traffic flowing while every hostname fails is the signature of missing tailnet
+DNS, not a broken tunnel.
+
 **Leak test** — `docker stop gluetun-exit` while the phone is on the exit node.
 The phone should lose internet **entirely**. If it silently falls back to
 working, the kill switch failed and traffic is leaving on your home IP.
@@ -201,6 +251,17 @@ The one thing worth measuring. Run `tailscale status` on the phone/laptop:
 
 `tailscale ping arr-stack-vpn-exit` reports DERP for the first packet or two then
 upgrades — run it several times and read the steady state, not the first line.
+
+The Android app doesn't surface this clearly. Read it from the exit node instead,
+which reports the connection type per peer:
+
+```bash
+docker exec tailscale-exit tailscale status
+# ... leonardos-s24-ultra   android   active; relay "lhr"
+```
+
+Measured here on first connection: **`relay "lhr"`** — a phone on cellular behind
+CGNAT, relaying via DERP London rather than hole-punching direct.
 
 If it relays, the mitigation is **peer relays** (Tailscale 1.86+): make the
 host-network node a relay with
