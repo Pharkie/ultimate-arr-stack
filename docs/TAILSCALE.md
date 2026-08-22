@@ -172,6 +172,35 @@ backend. Two consequences worth knowing:
    browsing and stops Pi-hole downtime from taking out internet DNS, while
    `.lan` still resolves.
 
+   ⚠️ **Configuring this in the console is necessary but not sufficient — the
+   exit node has to be able to act on it.** An exit node answers DNS *on its
+   clients' behalf* over `peerapi`: select it on a phone and every lookup that
+   phone makes is resolved on the NAS, not on the phone. So the client never
+   queries Pi-hole itself, and the split-DNS entry is only honoured if
+   `tailscale-exit` runs `--accept-dns=true`. With `false`, tailscaled forwards
+   those queries to whatever the netns system resolver is — here Gluetun's
+   DoT → Cloudflare — which answers `*.lan` with **rcode 5 REFUSED**, because it
+   isn't a public domain. The symptom is public sites loading normally while
+   every `.lan` name fails with `DNS_PROBE_POSSIBLE`, which reads like a Traefik
+   or Pi-hole fault and is neither.
+
+   Confirm which it is from the exit node, not from the client:
+
+   ```bash
+   docker exec tailscale-exit tailscale dns query sonarr.lan
+   # want: "Forwarding to resolver: <NAS_LAN_IP>" + RCodeSuccess
+   docker logs tailscale-exit 2>&1 | grep -E 'peerapi: handleDNS|refusal'
+   # "handleDNS fwd error" or "response code indicating refusal: 5"
+   #   => the exit node is forwarding to the wrong resolver
+   ```
+
+   A useful cross-check: if the phone were resolving `.lan` for itself, Pi-hole
+   would log a `100.x` tailnet client. Query its database directly —
+   `docker exec pihole pihole-FTL sqlite3 /etc/pihole/pihole-FTL.db "SELECT
+   client, domain FROM queries ORDER BY timestamp DESC LIMIT 40;"` — rather than
+   `/var/log/pihole/pihole.log`, which rotates at midnight and will read empty
+   for hours, looking exactly like "no queries arrived".
+
    ⚠️ **The split-DNS entry pins the NAS's LAN IP, so any NAS IP change breaks
    it** — and it lives in Tailscale's cloud config, so nothing on the NAS or in
    this repo will reveal the mismatch. It broke exactly this way here: it still
@@ -413,6 +442,33 @@ Split DNS isn't configured. Re-check step 3c. Verify on the client:
 scutil --dns | grep -A2 'domain.*lan'
 ```
 You should see a resolver with nameserver `10.10.0.10` scoped to domain `lan`.
+
+**`*.lan` fails only while the ProtonVPN exit node is selected** (public sites
+fine, `DNS_PROBE_POSSIBLE` on every `.lan` name). Different cause: the exit node
+resolves DNS for its clients, so it needs `TS_ACCEPT_DNS=true`. See the warning
+under setup step 4. Turning that on has three consequences worth knowing before
+changing it, because it rewrites `resolv.conf` for the whole **shared** netns:
+
+| Consequence | Handled by |
+|---|---|
+| Gluetun's `-P OUTPUT DROP` blocks tailscaled's own resolvers, so every lookup in the netns fails with `Operation not permitted` | `tailscale-exit-routing` adds `OUTPUT -o tailscale0 -j ACCEPT` for **both** address families |
+| musl (Alpine) queries every nameserver in `resolv.conf` rather than falling back, so the blocked IPv6 resolver alone fails the whole lookup even when the IPv4 one would answer | the IPv6 half of that same grant |
+| A DNS-dependent Gluetun healthcheck could fail → deunhealth restarts Gluetun → the netns dies → `tailscale-exit` is left a zombie | `HEALTH_TARGET_ADDRESSES` pinned to IP literals |
+
+Two traps when working on this, both of which cost a deploy cycle here:
+
+- **Don't** grant the tailnet by adding `100.64.0.0/10` to
+  `FIREWALL_OUTBOUND_SUBNETS`. It works, but Gluetun then installs its own
+  `to 100.64.0.0/10 lookup 199` rule at priority 99, routing tailnet traffic out
+  `eth0` and displacing the `lookup 52` rule the exit node's return path
+  depends on. Grant it in `OUTPUT` instead. Its IPv6 counterpart is ignored
+  outright — `ignoring subnet ... which has no default route matching its
+  family` — since the Proton tunnel is IPv4-only.
+- Rules must go to the **nft** backend (`iptables-nft` / `ip6tables-nft`). The
+  tailscale image symlinks the plain names to `-legacy`, and a legacy `ACCEPT`
+  does not override an nft `DROP` policy even though both are evaluated at the
+  same hooks. A legacy rule applies cleanly and changes nothing, so verify with
+  the same binary Gluetun uses, never just `iptables -S`.
 
 **Healthcheck failing in `docker ps`.**
 Normal until you complete the interactive auth in step 2. Once authenticated, the next healthcheck interval (30s) should flip to healthy.
