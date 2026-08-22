@@ -144,12 +144,20 @@ services:
       # lookup in the netns dies with "Operation not permitted" — observed live.
       # This is NOT a kill-switch hole: 100.64.0.0/10 is reachable only over
       # tailscale0 (WireGuard to tailnet peers), never the public internet.
-      - FIREWALL_OUTBOUND_SUBNETS=${LAN_SUBNET},172.20.0.0/24,100.64.0.0/10
-      # Health must NOT depend on DNS. The default target is a HOSTNAME, so with
-      # accept-dns on, a tailscaled hiccup would fail gluetun's healthcheck ->
-      # deunhealth restarts gluetun -> the netns dies -> tailscale-exit becomes a
-      # zombie. An IP literal breaks that circular dependency at the root.
-      - HEALTH_TARGET_ADDRESS=1.1.1.1:443
+      # fd7a:115c:a1e0::/48 is the tailnet's IPv6 ULA and is NOT optional
+      # either: tailscaled writes BOTH 100.100.100.100 and fd7a:115c:a1e0::53
+      # into resolv.conf, and musl's resolver (Alpine) queries every listed
+      # nameserver rather than falling back. One blocked write with EPERM makes
+      # the whole lookup fail even though the IPv4 resolver would have answered.
+      - FIREWALL_OUTBOUND_SUBNETS=${LAN_SUBNET},172.20.0.0/24,100.64.0.0/10,fd7a:115c:a1e0::/48
+      # Health must NOT depend on DNS. Note the plural: HEALTH_TARGET_ADDRESS
+      # (singular) is silently ignored by this image, which was easy to miss
+      # because the container stays healthy either way -- gluetun's healthcheck
+      # uses its own internal resolver, not resolv.conf. The risk being closed
+      # here is the cascade: a DNS-dependent healthcheck failing -> deunhealth
+      # restarts gluetun -> the shared netns dies -> tailscale-exit is left a
+      # zombie. IP literals break that circular dependency at the root.
+      - HEALTH_TARGET_ADDRESSES=1.1.1.1:443,1.0.0.1:443
       # NOT enabling VPN_PORT_FORWARDING: NAT-PMP hands out a DYNAMIC port
       # re-leased ~every 60s, while `tailscaled --port` is static — and even
       # reconciled it wouldn't help, since Tailscale advertises whatever STUN
