@@ -1,0 +1,105 @@
+#!/usr/bin/with-contenv bash
+# ---------------------------------------------------------------------------
+# Keep qBittorrent's BitTorrent traffic pinned to the VPN tunnel interface.
+#
+# NOTE: This script was generated with LLM assistance and human-reviewed.
+# Read and understand it before deploying it on your own stack.
+#
+# WHY THIS EXISTS
+#   qBittorrent shares gluetun's network namespace, which contains lo, eth0
+#   (172.20.0.0/24 bridge), eth1 (vpn-net) and tun0 (the WireGuard tunnel).
+#
+#   With no interface binding set, libtorrent announces from *every* address
+#   it can see. Gluetun's OUTPUT chain is `policy DROP` and only permits eth0
+#   traffic to local subnets, so announces sourced from eth0/eth1 are dropped
+#   with EPERM ("Operation not permitted"). Nothing leaks — the kill-switch is
+#   doing its job — but nothing works either: no announce escapes, no peers are
+#   found, and magnets sit in metaDL forever while the WebUI, the container
+#   healthcheck and usenet downloads all look perfectly healthy.
+#
+#   Binding to tun0 is also fail-closed: if the tunnel goes away, torrent
+#   traffic stops rather than falling back to the bridge.
+#
+# WHY A SERVICE AND NOT custom-cont-init.d
+#   qBittorrent rewrites qBittorrent.conf from its in-memory state at startup,
+#   so keys written to the file *before* the daemon starts are silently
+#   discarded (verified against throwaway volumes — a pre-start init script
+#   lost Session\InterfaceName every time). The WebUI API is the only reliable
+#   way to set this, which means applying it *after* qBittorrent is up.
+#
+#   On a configured stack no credentials are needed: WebUI\LocalHostAuth=false
+#   and 127.0.0.0/8 is in WebUI\AuthSubnetWhitelist, so localhost API calls
+#   bypass authentication. A *freshly rebuilt* volume has neither, so the API
+#   answers 403 -- see the 403 branch below. scripts/configure-apps.sh covers
+#   that case: it recovers the temp password from the container log, sets the
+#   auth bypasses, and applies this same binding.
+#
+# The loop re-asserts the binding periodically, so this also self-heals if the
+# setting is ever changed by hand or lost to a config-volume rebuild.
+#
+# See docs/TROUBLESHOOTING.md -> "Torrents Stall Forever at 0% / metaDL".
+# ---------------------------------------------------------------------------
+set -uo pipefail
+
+IFACE="${VPN_INTERFACE:-tun0}"
+API="http://127.0.0.1:${WEBUI_PORT:-8085}/api/v2"
+INTERVAL="${VPN_INTERFACE_CHECK_INTERVAL:-300}"
+log() { echo "[bind-vpn-interface] $*"; }
+
+# Poll the preferences endpoint itself -- not /app/version, which can answer 200
+# while preferences still returns 403 during startup. The status code from the
+# endpoint we actually need is the only reliable signal.
+prefs_code() { curl -s -o /tmp/.qbprefs -w '%{http_code}' --max-time 10 "${API}/app/preferences" 2>/dev/null || echo 000; }
+
+code=000
+for _ in $(seq 1 150); do
+    code="$(prefs_code)"
+    [[ "$code" == "200" || "$code" == "403" ]] && break
+    sleep 2
+done
+
+# 403 means the API is up but rejecting us. That is the expected state on a
+# freshly rebuilt config volume: LocalHostAuth defaults to true and the subnet
+# whitelist is empty, so unauthenticated localhost calls are refused. Say so
+# plainly rather than looping in silence -- scripts/configure-apps.sh recovers
+# the temporary password from the container log and sets this (and the auth
+# bypasses) properly, so that is the right thing to run after a rebuild.
+if [[ "$code" == "403" ]]; then
+    log "preferences API returns 403 (unauthenticated localhost calls refused)."
+    log "Normal on a rebuilt config volume. Run scripts/configure-apps.sh on the"
+    log "NAS to set credentials, the auth whitelist, and this binding."
+    exec sleep infinity
+fi
+
+if [[ "$code" != "200" ]]; then
+    log "preferences API never became reachable (last code: ${code})"
+    exec sleep infinity
+fi
+
+while true; do
+    code="$(prefs_code)"
+
+    if [[ "$code" != "200" ]]; then
+        log "preferences fetch failed (HTTP ${code}); retrying in ${INTERVAL}s"
+    else
+        # Note: an unset interface is reported as "" -- a legitimate value that
+        # must be corrected, not a read failure. Only a failed *fetch* counts as
+        # unreadable, which is why the status code is checked separately above.
+        current="$(grep -o '"current_network_interface":"[^"]*"' /tmp/.qbprefs | cut -d'"' -f4)"
+
+        if [[ "$current" != "$IFACE" ]]; then
+            if curl -sf -o /dev/null --max-time 10 -X POST "${API}/app/setPreferences" \
+                 --data-urlencode "json={\"current_network_interface\":\"${IFACE}\",\"current_interface_address\":\"\"}"; then
+                log "binding corrected: ${current:-<unset>} -> ${IFACE}"
+                # Stuck torrents would otherwise wait for their next scheduled
+                # announce, which can be 30+ minutes away.
+                curl -sf -o /dev/null --max-time 10 -X POST "${API}/torrents/reannounce" \
+                     --data "hashes=all" && log "forced reannounce on all torrents"
+            else
+                log "FAILED to set interface binding to ${IFACE}"
+            fi
+        fi
+    fi
+
+    sleep "$INTERVAL"
+done

@@ -143,6 +143,65 @@ docker exec prowlarr wget -qO- http://127.0.0.1:8191/    # flaresolverr -> "read
 docker restart qbittorrent sabnzbd prowlarr flaresolverr   # or whichever started before gluetun
 ```
 
+## Torrents Stall Forever at 0% / `metaDL` (qBittorrent Not Bound to the Tunnel)
+
+**Symptom:** Every *new* torrent sits at 0% indefinitely — days, not hours — with `seeds=0 peers=0`, while magnets never resolve metadata (`metaDL`). Sonarr's queue shows `qBittorrent is downloading metadata`. Everything else looks perfectly healthy: qBittorrent is `Up (healthy)`, the WebUI loads, gluetun is `healthy`, indexer searches return plenty of releases, and **usenet downloads keep working normally**. Checking the trackers on a stuck torrent shows every announce failing:
+
+```
+udp://tracker.openbittorrent.com:6969   Operation not permitted
+http://tracker.opentrackr.org:1337      timed out
+```
+
+**Cause:** qBittorrent shares gluetun's network namespace, which contains four interfaces — `lo`, `eth0` (172.20.0.0/24 bridge), `eth1` (vpn-net) and `tun0` (the WireGuard tunnel). If no interface binding is configured, libtorrent announces from *every* address it can see. Gluetun's OUTPUT chain is `policy DROP` and only permits `eth0` traffic to local subnets, so every announce sourced from `eth0`/`eth1` is dropped with `EPERM` — surfacing as `Operation not permitted`.
+
+**Nothing leaks** — this is the kill-switch working exactly as designed — but nothing works either. No announce escapes, no peers are found, and the swarm is unreachable.
+
+Two things make this hard to spot:
+- **Usenet is unaffected.** SABnzbd talks plain HTTPS over the tunnel and never needs a peer connection, so it keeps importing happily. Only titles that fall back to torrents expose the fault.
+- **Every healthcheck passes.** The WebUI answers on localhost and the container's own health probe succeeds, so nothing goes red and `deunhealth` never fires.
+
+**Diagnose:**
+```bash
+# 1. Confirm the binding is empty (the fault) rather than tun0 (correct)
+docker exec qbittorrent grep -i Interface /config/qBittorrent/qBittorrent.conf
+# Expect: Session\Interface=tun0 and Session\InterfaceName=tun0
+# Fault:  no output at all
+
+# 2. Confirm which addresses libtorrent is actually announcing from.
+#    Look at "endpoints[].name" — if tun0's address is absent, this is the bug.
+docker exec gluetun ip -o addr show | awk '{print $2, $4}'   # note tun0's IP
+
+# 3. Prove the network itself is fine: a raw announce that lets the kernel
+#    route normally should get clean tracker replies from inside the netns.
+docker run --rm --network container:gluetun curlimages/curl:latest \
+  -s --max-time 20 https://api.ipify.org        # should print the VPN exit IP
+```
+
+**Fix (persistent, applied automatically):** `qbittorrent/custom-services.d/bind-vpn-interface` is mounted into the container. It waits for the WebUI, asserts the binding through the API, and re-checks every 5 minutes — so a rebuilt `qbittorrent-config` volume, or someone changing the setting by hand, self-heals within minutes. When it corrects the binding it also forces a re-announce, so stuck torrents recover immediately instead of waiting up to 30 minutes for their next scheduled announce.
+
+```bash
+docker compose -f docker-compose.arr-stack.yml up -d qbittorrent
+docker logs qbittorrent 2>&1 | grep bind-vpn-interface   # confirms what it set
+```
+
+> **Do not "simplify" this into a `custom-cont-init.d` script that edits `qBittorrent.conf` directly.** That was tried and fails: qBittorrent rewrites the config from its in-memory state at startup, so keys written before the daemon starts are silently discarded. Verified against throwaway volumes — a pre-start script lost `Session\InterfaceName` every time, and on an existing config lost *both* keys. The WebUI API after startup is the only reliable path. (No credentials needed: `WebUI\LocalHostAuth=false` and `127.0.0.0/8` is in `WebUI\AuthSubnetWhitelist`.)
+
+**Fix (manual, one-off)** — same change through the API, if you'd rather not recreate the container:
+```bash
+# Uses the qBittorrent WebUI API; QBIT_USER/QBIT_PASSWORD come from .env
+curl -s -c /tmp/qb -d "username=$QBIT_USER&password=$QBIT_PASSWORD" \
+  http://172.20.0.3:8085/api/v2/auth/login
+curl -s -b /tmp/qb -X POST http://172.20.0.3:8085/api/v2/app/setPreferences \
+  --data-urlencode 'json={"current_network_interface":"tun0","current_interface_address":""}'
+```
+
+Then force a re-announce so stuck torrents pick up peers immediately instead of waiting for their next scheduled announce:
+```bash
+curl -s -b /tmp/qb -X POST http://172.20.0.3:8085/api/v2/torrents/reannounce --data "hashes=all"
+```
+
+> **Note — binding to `tun0` is deliberately fail-closed.** If gluetun ever renames or drops the tunnel interface, qBittorrent goes *silent* rather than falling back to the bridge and leaking. That is the safe behaviour, but it presents as this exact symptom. So if torrents stop dead again, check `docker exec gluetun ip -o addr show` for a `tun0` before assuming the binding is wrong.
+
 ## NEVER Use `--remove-orphans` (Multi-Compose-File Project)
 
 This stack splits its services across several compose files (`docker-compose.arr-stack.yml`, `docker-compose.utilities.yml`, `docker-compose.traefik.yml`, …) that share **one project directory and project name**. To compose, any running container of the project that is not defined in the file you passed with `-f` is an *orphan*. So:

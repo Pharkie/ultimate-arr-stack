@@ -284,17 +284,24 @@ if p.get('max_ratio_act', -1) != 0: sys.exit(1)
 if p.get('max_active_downloads', -1) != 5: sys.exit(1)
 if p.get('max_active_torrents', -1) != 10: sys.exit(1)
 if p.get('max_active_uploads', -1) != 5: sys.exit(1)
+if p.get('current_network_interface', '') != 'tun0': sys.exit(1)
 "; then
         skip "qBittorrent: preferences"
     else
-        local prefs='{"auto_tmm_enabled":true,"upnp":false,"limit_utp_rate":true,"limit_lan_peers":true,"encryption":1,"max_inactive_seeding_time_enabled":true,"max_inactive_seeding_time":30,"max_ratio_act":0,"max_active_downloads":5,"max_active_torrents":10,"max_active_uploads":5}'
+        # current_network_interface=tun0 pins BitTorrent traffic to gluetun's
+        # WireGuard tunnel. Without it libtorrent announces from every address in
+        # the shared netns; gluetun's firewall drops the non-tunnel ones with
+        # EPERM, so no announce escapes, no peers are found, and every torrent
+        # stalls at metaDL while the WebUI and usenet both look healthy.
+        # See docs/TROUBLESHOOTING.md -> "Torrents Stall Forever at 0% / metaDL".
+        local prefs='{"auto_tmm_enabled":true,"upnp":false,"limit_utp_rate":true,"limit_lan_peers":true,"encryption":1,"max_inactive_seeding_time_enabled":true,"max_inactive_seeding_time":30,"max_ratio_act":0,"max_active_downloads":5,"max_active_torrents":10,"max_active_uploads":5,"current_network_interface":"tun0","current_interface_address":""}'
         http_code=$(curl -s -o /dev/null -w '%{http_code}' \
             -b "$QBIT_COOKIE" \
             --data-urlencode "json=${prefs}" \
             "${QBIT_URL}/api/v2/app/setPreferences")
 
         if [[ "$http_code" == "200" ]]; then
-            ok "qBittorrent: set preferences (auto TMM, UPnP off, encryption, stall timeout, concurrent limits)"
+            ok "qBittorrent: set preferences (auto TMM, UPnP off, encryption, stall timeout, concurrent limits, VPN interface binding)"
         else
             fail "qBittorrent: set preferences (HTTP $http_code)"
         fi
