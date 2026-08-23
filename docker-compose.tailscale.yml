@@ -245,10 +245,31 @@ services:
       # and silently write rules nothing ever evaluates. If `iptables -S
       # FORWARD` shows no ts-forward jump, try nftables here instead.
       - TS_DEBUG_FIREWALL_MODE=iptables
-      # Exit node ONLY — no --advertise-routes (node 1 owns subnet routing),
-      # and deliberately NO --reset (node 1 needs it once; here it would wipe
-      # any `tailscale set` tweaks, e.g. peer-relay config, on every restart).
-      - TS_EXTRA_ARGS=--advertise-exit-node --advertise-tags=tag:nas-router
+      # Exit node ONLY — no subnet routes (node 1 owns subnet routing), and
+      # deliberately NO --reset (node 1 needs it once; here it would wipe any
+      # `tailscale set` tweaks, e.g. peer-relay config, on every restart).
+      #
+      # IPv4 ONLY, deliberately. `--advertise-exit-node` is exactly equivalent
+      # to `--advertise-routes=0.0.0.0/0,::/0`, and the ::/0 half is a lie here:
+      # the Proton tunnel behind this node is IPv4-only, so there is no v6
+      # default route in this netns and gluetun's ip6tables policy is
+      # `-P FORWARD DROP` / `-P OUTPUT DROP` on both backends. A client that
+      # takes us up on ::/0 gets a *silent* black hole — the kernel does emit an
+      # ICMPv6 unreachable for the unroutable packet, and the OUTPUT DROP then
+      # eats it on the way back, so the client sees nothing to fail fast on and
+      # burns a full connect timeout instead. Measured 2026-08-23: `curl -6`
+      # through this node stalls the entire 25s timeout with no response, while
+      # `curl -4` returns in 0.05s.
+      #
+      # Advertising only 0.0.0.0/0 is the documented way to be an IPv4-only exit
+      # node, but upstream warns it "creates an asymmetric setup that may not be
+      # recognized as a traditional exit node" — so VERIFY after any change here
+      # that the node still shows `offers exit node` in `tailscale status` and
+      # is still selectable as one. If it ever stops registering, revert to
+      # --advertise-exit-node and instead un-silence the black hole with
+      # `ip6tables-nft -I OUTPUT -o tailscale0 -p icmpv6 -j ACCEPT` in the
+      # routing sidecar, which at least converts the stall into a fast failure.
+      - TS_EXTRA_ARGS=--advertise-routes=0.0.0.0/0 --advertise-tags=tag:nas-router
     labels:
       # This label + the network-touching healthcheck below are what cover the
       # "running zombie on a dead netns" failure mode that gluetun-recover
@@ -357,15 +378,6 @@ services:
             #    is the piece most likely to land in a table gluetun ignores.
             iptables -t nat -C POSTROUTING -o "$$VPN_IF" -j MASQUERADE 2>/dev/null || \
               iptables -t nat -A POSTROUTING -o "$$VPN_IF" -j MASQUERADE
-            # 4. Let the netns reach tailscaled's IPv6 resolver.
-            #    tailscale-exit runs --accept-dns=true, which puts BOTH
-            #    100.100.100.100 and fd7a:115c:a1e0::53 in resolv.conf. musl
-            #    (Alpine) queries every listed nameserver instead of falling
-            #    back, so one EPERM write fails the whole lookup even when the
-            #    IPv4 resolver would have answered. gluetun cannot allow this
-            #    itself: it logs "ignoring subnet fd7a:115c:a1e0::/48 which has
-            #    no default route matching its family" because the Proton
-            #    tunnel here is IPv4-only, so the rule has to be added directly.
             # 4. Clamp TCP MSS to the tailscale0 path. WITHOUT THIS THE EXIT
             #    NODE IS UNUSABLE FOR BULK TRANSFER: measured 0.17 Mbps down
             #    with 41.4% packet loss from a phone, against 103 Mbps on the
@@ -394,6 +406,18 @@ services:
             #    internet egress.
             iptables-nft -C OUTPUT -o tailscale0 -j ACCEPT 2>/dev/null || \
               iptables-nft -A OUTPUT -o tailscale0 -j ACCEPT 2>/dev/null || true
+            #    IPv6 half: tailscale-exit runs --accept-dns=true, which puts
+            #    BOTH 100.100.100.100 and fd7a:115c:a1e0::53 in resolv.conf.
+            #    musl (Alpine) queries every listed nameserver instead of
+            #    falling back, so one EPERM write fails the whole lookup even
+            #    when the IPv4 resolver would have answered. gluetun cannot
+            #    allow this itself: it logs "ignoring subnet
+            #    fd7a:115c:a1e0::/48 which has no default route matching its
+            #    family" because the Proton tunnel here is IPv4-only, so the
+            #    rule has to be added directly. NOTE this is about THIS netns
+            #    reaching tailscaled's resolver over the tailnet — it is
+            #    unrelated to, and unaffected by, this node no longer
+            #    advertising ::/0 to clients.
             #    ip6tables-nft explicitly, NOT plain ip6tables: this image
             #    symlinks ip6tables -> ip6tables-legacy, and gluetun's
             #    "-P OUTPUT DROP" lives in the nft tables. Both backends are
