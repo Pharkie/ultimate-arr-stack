@@ -56,9 +56,31 @@ services:
       - TS_AUTHKEY=${TS_AUTHKEY:-}
       # Advertises your LAN subnet (LAN_SUBNET from .env) so tailnet peers can
       # reach the whole network. Add extra subnets with TS_EXTRA_ROUTES if needed.
-      # --advertise-exit-node lets tailnet devices route ALL their internet
-      # traffic through the NAS's connection (approve in the admin console,
-      # or the enabledRoutes API, same as subnet routes).
+      # NOTE: --advertise-exit-node is DELIBERATELY ABSENT. Node 1 must never
+      # offer itself as an exit node, for two independent reasons:
+      #   1. It does not work. Tailscale writes its exit-node rules to the
+      #      LEGACY iptables tables (ts-postrouting MASQUERADE on mark
+      #      0x40000, ts-forward ACCEPT) while Docker and UGOS use the NFT
+      #      backend, where filter carries -P FORWARD DROP and UG_FORWARD
+      #      accepts only -i lo plus conntrack RELATED,ESTABLISHED. Nothing
+      #      accepts new forwarded flows from tailscale0, so exit traffic is
+      #      dropped. Verified twice with a 20s settle: zero egress, DNS
+      #      fails, HTTP 000, 0 bytes on bulk download -- while `tailscale
+      #      ping` still reports 2ms. Subnet routing is unaffected and keeps
+      #      working, which is exactly what makes this so confusing.
+      #   2. Fixing it would be WORSE than leaving it broken. A working node-1
+      #      exit node egresses via the HOME IP -- precisely the fallback the
+      #      leak test (Go/No-Go check I) exists to catch. The whole point of
+      #      this stack is that internet egress leaves via ProtonVPN through
+      #      `tailscale-exit` below, never via the home connection.
+      # The user selected `arr-stack-nas` as their exit node by mistake and
+      # spent days debugging a phantom "barely connects" problem as a direct
+      # result. Leaving the option visible is the footgun; removing the flag
+      # removes it from `tailscale exit-node list` entirely.
+      # NOTE ALSO: the ACL's autoApprovers.exitNode grants tag:nas-router, so
+      # unapproving node 1 in the admin console is NOT durable -- it would be
+      # auto-re-approved the moment it advertised again. Not advertising in
+      # the first place is the only fix that holds.
       # --advertise-tags=tag:nas-router requires tag:nas-router to already
       # exist in the tailnet's ACL policy's tagOwners (see docs/TAILSCALE.md
       # step 6). Confirmed live 2026-08-17: requesting a tag not yet in
@@ -71,7 +93,12 @@ services:
       # --reset is needed once, to clear the stuck state from the earlier
       # failed attempt (see docs/TAILSCALE.md troubleshooting) — safe to
       # drop after this recreate is confirmed stable.
-      - TS_EXTRA_ARGS=--advertise-routes=${LAN_SUBNET}${TS_EXTRA_ROUTES:+,${TS_EXTRA_ROUTES}} --accept-routes --advertise-exit-node --advertise-tags=tag:nas-router --reset
+      # ORDERING CONSTRAINT: do not drop --reset until the exit-node removal
+      # above has been applied at least once. `tailscale up --reset` forces
+      # prefs to exactly these args; without it, a previously-stored
+      # AdvertiseRoutes containing 0.0.0.0/0 and ::/0 would simply persist in
+      # the state DB and node 1 would keep offering a dead exit node.
+      - TS_EXTRA_ARGS=--advertise-routes=${LAN_SUBNET}${TS_EXTRA_ROUTES:+,${TS_EXTRA_ROUTES}} --accept-routes --advertise-tags=tag:nas-router --reset
     healthcheck:
       test: ["CMD", "tailscale", "status", "--peers=false"]
       interval: 30s

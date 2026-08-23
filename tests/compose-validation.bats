@@ -148,3 +148,41 @@ get_service_block() {
         done < <(get_pulled_images "$f")
     done
 }
+
+@test "node 1 (tailscale) does NOT advertise itself as an exit node" {
+    # Node 1's exit node is non-functional AND fixing it would be worse than
+    # leaving it broken:
+    #   - Non-functional: Tailscale writes exit-node rules to the LEGACY
+    #     iptables tables while Docker/UGOS enforce the NFT backend, where
+    #     filter carries -P FORWARD DROP. Nothing accepts new forwarded flows
+    #     from tailscale0. Subnet routing still works, which is what makes it
+    #     look fine until you actually select it.
+    #   - Fixing it would leak: a WORKING node-1 exit node egresses via the
+    #     HOME IP, exactly the fallback the Go/No-Go leak test exists to catch.
+    # Internet egress must leave via ProtonVPN through tailscale-exit.
+    # The ACL's autoApprovers.exitNode grants tag:nas-router, so unapproving
+    # in the admin console does not hold -- not advertising is the only fix.
+    local block
+    block=$(get_service_block "tailscale" "$REPO_ROOT/docker-compose.tailscale.yml")
+    run grep -E '^[[:space:]]+- TS_EXTRA_ARGS=.*--advertise-exit-node' <<<"$block"
+    assert_failure
+}
+
+@test "tailscale-exit DOES advertise itself as an exit node" {
+    # The mirror of the guard above: the Proton-backed node is the one that is
+    # supposed to offer exit-node service. If this ever stops being true the
+    # stack has no exit node at all.
+    local block
+    block=$(get_service_block "tailscale-exit" "$REPO_ROOT/docker-compose.tailscale.yml")
+    run grep -E '^[[:space:]]+- TS_EXTRA_ARGS=.*--advertise-exit-node' <<<"$block"
+    assert_success
+}
+
+@test "node 1 still advertises its LAN subnet routes" {
+    # The reason node 1 exists. Also why the exit-node removal had to be
+    # surgical: SSH to the NAS and every .lan name ride this route.
+    local block
+    block=$(get_service_block "tailscale" "$REPO_ROOT/docker-compose.tailscale.yml")
+    run grep -E '^[[:space:]]+- TS_EXTRA_ARGS=.*--advertise-routes=' <<<"$block"
+    assert_success
+}

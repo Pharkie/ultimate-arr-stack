@@ -366,13 +366,49 @@ EOF
 
 #### Rollback
 
-The existing `tailscale` node is left completely untouched and still advertises
-its own exit node, which makes rollback trivial even from far away:
+The existing `tailscale` node (node 1) is left untouched as a **subnet router**,
+so `.lan` access and SSH to the NAS survive every step below:
 
-1. **From the phone, anywhere**: Exit Node → pick `arr-stack-nas` or **None**.
-   LAN access is unaffected either way.
+1. **From the phone, anywhere**: Exit Node → **None**. LAN access is unaffected.
 2. **Admin console**: Machines → `arr-stack-vpn-exit` → Disable/Remove.
 3. **On the NAS**: `docker compose -f docker-compose.tailscale.yml stop tailscale-exit tailscale-exit-routing gluetun-exit`
+
+> **Do not roll back onto `arr-stack-nas`.** It is no longer offered as an exit
+> node, deliberately — see the box below. Earlier revisions of this document
+> said "pick `arr-stack-nas` or None"; that advice was wrong and cost real
+> debugging time.
+
+> **Why node 1 is not an exit node.** Two independent reasons, and the second
+> is the important one:
+>
+> 1. **It never worked.** Tailscale writes its exit-node rules to the *legacy*
+>    iptables tables (`ts-postrouting` MASQUERADE on mark `0x40000`,
+>    `ts-forward` ACCEPT), while Docker and UGOS enforce the *nft* backend,
+>    where `filter` carries `-P FORWARD DROP` and `UG_FORWARD` accepts only
+>    `-i lo` plus conntrack `RELATED,ESTABLISHED`. Nothing accepts new
+>    forwarded flows from `tailscale0`, so exit traffic is silently dropped.
+>    Verified twice with a 20 s settle: zero egress, DNS fails, HTTP 000, 0
+>    bytes on bulk download — while `tailscale ping` still cheerfully reports
+>    2 ms. **Subnet routing is unaffected and keeps working**, which is exactly
+>    what makes this so confusing to diagnose.
+> 2. **Fixing it would be worse than leaving it broken.** A *working* node-1
+>    exit node egresses via the **home IP** — precisely the fallback that the
+>    Go/No-Go leak test (check I) exists to catch. The entire point of this
+>    stack is that internet egress leaves via ProtonVPN through
+>    `tailscale-exit`, never via the home connection.
+>
+> Selecting `arr-stack-nas` as an exit node by mistake produces a device that
+> "connects but barely works" — and it is indistinguishable from a genuine VPN
+> fault unless you already know node 1's exit node is dead. That mis-selection
+> sent this project chasing MTU, IPv6 and DERP theories for two days.
+>
+> **The fix is to not advertise it**, not to unapprove it. The tailnet ACL
+> contains `autoApprovers.exitNode: ["tag:nas-router"]`, and *both* nodes carry
+> `tag:nas-router` — so unapproving node 1 in the admin console is undone
+> automatically the moment it advertises again. `--advertise-exit-node` is
+> therefore absent from node 1's `TS_EXTRA_ARGS`, and
+> `tests/compose-validation.bats` guards both halves: node 1 must not advertise
+> an exit node, and `tailscale-exit` must.
 
 > **Alternative worth pricing first:** Tailscale sells **Mullvad exit nodes** as
 > a tailnet add-on, which achieves the same outcome (LAN access + a non-home exit
