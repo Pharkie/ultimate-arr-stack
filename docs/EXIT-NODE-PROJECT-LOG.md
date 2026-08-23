@@ -1,6 +1,7 @@
 # ProtonVPN Tailscale Exit Node — Project Log
 
-**Audit of the `feat/tailscale-protonvpn-exit-node` branch.** Written as a
+**Audit of the exit-node work, merged to `main` on 2026-08-23 (PR #38).**
+Written as a
 handoff record: what was attempted, what actually happened, where the plan was
 wrong, and what is still open. If you are picking this work up cold, read
 [§1](#1-status-at-a-glance), [§5](#5-live-only-state-that-is-not-in-this-repo)
@@ -19,11 +20,11 @@ moment it landed. If you find a bare number in §1, treat it as a bug.
 
 | | |
 |---|---|
-| Branch | `feat/tailscale-protonvpn-exit-node` |
-| HEAD / commits ahead | **Do not trust a number written here.** Re-check: `git rev-parse --short HEAD` and `git rev-list --count origin/main..HEAD`. Compare against `origin/main`, *never* a local `main` ref — see §8 trap 11 |
-| Deployed | NAS tracks this branch. Re-check on the NAS: `arrgit rev-parse --short HEAD`, compare to local |
-| Merged to `main` | **No.** Blocked on the MergeGate `adversarial-review` (task #76) |
-| Tests | Green at last run, 2026-08-23. Re-check: `npm run test:bats` — static, needs no NAS or Docker access |
+| Status | **Merged to `main`** in `5fc6776` (PR #38), 2026-08-23. Delivered from `feat/tailscale-protonvpn-exit-node` |
+| HEAD | **Do not trust a number written here.** Re-check: `git rev-parse --short HEAD`. When counting commits, compare against `origin/main`, *never* a local `main` ref — see §8 trap 11 |
+| Deployed | NAS tracks `main`. Re-check on the NAS: `arrgit rev-parse --short HEAD`, compare to local |
+| Merge gate | **Cleared.** MergeGate `adversarial-review` ran against the full branch diff and returned CONTESTED; both accepted findings were fixed in `57d11e8` before the merge. See §9 |
+| Tests | Green at merge: bats 44/44, and the e2e suite on the NAS at 51 passed / 3 skipped / 0 failed. Re-check: `npm run test:bats` — static, needs no NAS or Docker access |
 | Go/No-Go gate | **Satisfied**, including the leak test (check I) |
 | Works from the phone | **Yes** — 22.6 Mbps ↓ / 22.9 Mbps ↑ / 0.0 % loss, Proton NL egress, on cellular |
 
@@ -326,7 +327,6 @@ needed a manual Tailscale toggle — task #90, and the reason
 
 | Task | What | Next action |
 |---|---|---|
-| **#76** | `adversarial-review` on the full branch diff, then merge | **Blocks merge.** MergeGate rule, no exceptions. Reviewers must run as `haiku` subagents |
 | #86 | The ~6–9 Mbps per-flow ceiling | Controlled A/B (n≥5 each way, alternating, one server) to confirm the DERP-vs-relay direction, then test the netns-nesting hypothesis. **Biggest remaining lever** |
 | #90 | Android does not recover when `tailscale-exit` restarts | Needs the phone. Drive `tailscale-exit` restart frequency toward zero — that is the lever we control |
 | #77 | Drop `--reset` from node 1 | **Now unblocked** — `a87400c` has been applied through a `--reset` recreate, so dropping it can no longer resurrect a stale `AdvertiseRoutes` |
@@ -409,3 +409,48 @@ rather than picking one.
 - Every containerized-git invocation on the NAS needs `-c safe.directory=/repo`.
 - `scp` fails opaquely against this NAS's BusyBox `sftp-server`; pipe through
   `ssh ... 'tee dest'` instead.
+
+---
+
+## 9. What the merge review changed
+
+The MergeGate `adversarial-review` ran against the full branch diff (11 files,
+1565 insertions) with three reviewers. Verdict **CONTESTED** — no two reviewers
+agreed on any high-severity finding, and the Minimalist returned none at all.
+Recorded here because the *rejections* are the part that would otherwise be
+re-litigated by the next reviewer.
+
+**Accepted and fixed in `57d11e8`:**
+
+1. **The killswitch had no regression test.** The property this whole feature
+   exists to provide — tunnel dies, traffic stops rather than falling back to
+   the home IP — had been verified by hand exactly once (§6, gate check I),
+   while the equivalent chaos test for the *main* gluetun sat forty lines away
+   in the same file. `tests/e2e/vpn-security.spec.ts` now carries the mirror of
+   it, opt-in behind `ALLOW_DISRUPTIVE_TESTS` like its counterpart, and its
+   cleanup restarts the netns dependents rather than leaving them on a dead
+   namespace for deunhealth to find ~2 minutes later. It states its own limit:
+   it cannot drive a real tailnet client, so the client-side half of check I
+   stays a manual test.
+2. **§4.4 told readers to go fix an already-fixed comment** — see the box there
+   for what happened and the lesson.
+
+**Rejected, with reasons, so they do not come back:**
+
+- **`set -e` on the routing sidecar.** The finding claimed a failed rule is
+  never retried. It is a reconciler on a 30 s loop, so the next cycle retries
+  it; `set -e` would instead kill the container on a single transient failure.
+  What survives is weaker and still unfixed: a *persistently* failing rule
+  install produces no log line and no unhealthy signal.
+- **Redesigning away from `network_mode: service:gluetun-exit`.** Sharing the
+  netns is precisely what makes traffic fail closed when the tunnel dies —
+  proven by check I. The proposed alternative (exit node outside the namespace,
+  explicit routing rules) trades away the property the feature exists for. Its
+  real cost is already known and tracked: restarts strand Android clients
+  (#90), which is why the rotator drives the control-server API instead of
+  restarting anything.
+- **Deleting the compose file's section headers and the "never restart
+  gluetun-exit" comment as duplication.** That comment sits exactly where
+  someone would type `docker restart gluetun-exit`. `CLAUDE.md` is skimmed at
+  session start; a compose comment is read at the edit site at 2am. Redundancy
+  across two different read-triggers is protective, not wasteful.
