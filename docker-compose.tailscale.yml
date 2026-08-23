@@ -25,7 +25,7 @@ name: tailscale
 
 services:
   tailscale:
-    image: tailscale/tailscale:v1.102.2
+    image: tailscale/tailscale:v1.102.3
     container_name: tailscale
     hostname: ${TS_HOSTNAME:-arr-stack-nas}
     # network_mode: host is required for subnet routing — the daemon needs
