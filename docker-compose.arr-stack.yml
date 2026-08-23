@@ -176,6 +176,10 @@ services:
     volumes:
       - qbittorrent-config:/config
       - ${MEDIA_ROOT}:/data
+      # Re-pins BitTorrent traffic to gluetun's tun0 and keeps it pinned. Without
+      # it, a rebuilt config volume loses the binding and every torrent silently
+      # stalls at metaDL. See docs/TROUBLESHOOTING.md.
+      - ./qbittorrent/custom-services.d:/custom-services.d:ro
     labels:
       - deunhealth.restart.on.unhealthy=true
       - gluetun.dependent=true  # gluetun-recover restarts this if SIGKILLed by a gluetun restart
