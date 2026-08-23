@@ -145,6 +145,91 @@ test.describe('VPN killswitch — chaos test', () => {
   });
 });
 
+test.describe('Exit-node killswitch — chaos test', () => {
+  test('stopping gluetun-exit blocks exit-node egress rather than leaking via the home connection', async () => {
+    test.skip(!DOCKER_AVAILABLE, 'docker CLI not available — run on the NAS directly');
+    test.skip(
+      process.env.ALLOW_DISRUPTIVE_TESTS !== '1',
+      'set ALLOW_DISRUPTIVE_TESTS=1 to run this test — it stops the live gluetun-exit container, cutting internet for any device currently using the exit node',
+    );
+    test.setTimeout(180_000);
+
+    const { execFileSync } = await import('node:child_process');
+
+    const running = (name: string): boolean => {
+      try {
+        return execFileSync('docker', ['inspect', '--format', '{{.State.Running}}', name], {
+          encoding: 'utf8',
+          stdio: ['ignore', 'pipe', 'ignore'],
+        }).trim() === 'true';
+      } catch {
+        return false;
+      }
+    };
+    test.skip(!running('gluetun-exit'), 'gluetun-exit not deployed — the ProtonVPN exit-node stack is opt-in');
+
+    // This is the property the whole exit-node feature exists to guarantee:
+    // if the Proton tunnel dies, traffic must stop dead rather than fall back
+    // to the home connection. A fallback would hand out exactly the IP the
+    // user is paying to hide, and it would look completely normal from the
+    // phone. It was verified by hand once (Go/No-Go check I, 2026-08-23);
+    // this is the regression guard so it stays verified.
+    //
+    // What this does and does NOT prove: it asserts the NAS side never
+    // egresses via the host route while the tunnel is down. It cannot drive a
+    // real tailnet client, so the client-side half of check I — a phone
+    // holding the exit node and losing internet entirely — remains a manual
+    // test. Fail-closed on this side is the necessary condition for it.
+    const hostIp = egressIp('sonarr'); // bridge-only — gives host WAN egress
+    expect(hostIp).toBeTruthy();
+
+    try {
+      execFileSync('docker', ['stop', 'gluetun-exit'], { timeout: 30_000 });
+
+      // tailscale-exit rides gluetun-exit's netns, so with the tunnel down it
+      // must have no egress at all. Returning hostIp here is the failure this
+      // test exists to catch: the exit node leaking the home IP.
+      const leakCheckIp = egressIp('tailscale-exit');
+      expect(leakCheckIp).not.toBe(hostIp);
+      expect(leakCheckIp).toBeNull();
+    } finally {
+      execFileSync('docker', ['start', 'gluetun-exit'], { timeout: 30_000 });
+
+      // Wait for the tunnel before touching its dependents — restarting them
+      // against a half-built netns just re-orphans them.
+      const deadline = Date.now() + 120_000;
+      let healthy = false;
+      while (Date.now() < deadline) {
+        try {
+          const status = execFileSync(
+            'docker', ['inspect', '--format', '{{.State.Health.Status}}', 'gluetun-exit'], { encoding: 'utf8' },
+          ).trim();
+          if (status === 'healthy') { healthy = true; break; }
+        } catch {
+          // keep polling
+        }
+        await new Promise((r) => setTimeout(r, 2_000));
+      }
+
+      // A stop/start hands gluetun-exit a BRAND NEW network namespace, and
+      // containers using `network_mode: service:gluetun-exit` are not moved
+      // into it — they are left running against the dead one. deunhealth does
+      // eventually notice and restart them, but it took ~2 minutes when this
+      // was measured live, so restart them here rather than leaving the exit
+      // node broken for the next test in the run.
+      for (const dependent of ['tailscale-exit', 'tailscale-exit-routing']) {
+        try {
+          execFileSync('docker', ['restart', dependent], { timeout: 60_000 });
+        } catch {
+          // Not deployed, or already being restarted by deunhealth.
+        }
+      }
+
+      expect(healthy).toBeTruthy();
+    }
+  });
+});
+
 test.describe('VPN port forwarding', () => {
   test('Gluetun forwarded port matches qBittorrent listening port', () => {
     // VPN_PORT_FORWARDING is not enabled in this stack's compose config

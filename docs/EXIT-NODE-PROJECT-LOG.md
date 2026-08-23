@@ -177,20 +177,22 @@ comparing against the baseline.
 > Both say "IPv6" and both touch `ip6tables`; they are unrelated. Seeing the
 > shipped ULA commits is *not* evidence that thread 2 was acted on.
 
-> **⚠️ A contradicting comment is still live in the repo.**
-> `docker-compose.tailscale.yml:284-289` still states that a client taking up
-> `::/0` "sees nothing to fail fast on and burns a full connect timeout
-> instead", citing the same 25 s `curl -6` measurement this section calls
-> worthless. That comment was introduced by `6677e0d` — the failed IPv4-only
-> experiment (§4.5) — and `71a7a47` reverted the *flag* while keeping the
-> *rationale*. The comment's own premise is refuted by
-> `docker-compose.tailscale.yml:454`, which installs a blanket
-> `ip6tables-nft -A OUTPUT -o tailscale0 -j ACCEPT` — ICMPv6 included — so the
-> unreachable errors do reach the client and IPv6 fails fast.
+> **A contradicting comment used to live in `docker-compose.tailscale.yml`.
+> It is fixed — do not go looking for it.**
+> The comment stated that a client taking up `::/0` "sees nothing to fail fast
+> on and burns a full connect timeout instead", citing the same 25 s `curl -6`
+> measurement this section calls worthless. It came in with `6677e0d` — the
+> failed IPv4-only experiment (§4.5) — and `71a7a47` reverted the *flag* while
+> keeping the *rationale*. Its premise is refuted by the routing sidecar's
+> rule 5, a blanket `ip6tables-nft -A OUTPUT -o tailscale0 -j ACCEPT` (ICMPv6
+> included), so the unreachable errors do reach the client and IPv6 fails fast.
+> Corrected in `66ecac1`; the comment now says so and points back here.
 >
-> **This document is right and that comment is wrong**, but the comment is what
-> a reader hits first when editing the service. If it is still there when you
-> read this, fix it rather than re-opening the investigation.
+> An adversarial reviewer read *this box* on the next pass, took "still live"
+> at face value, and re-raised the contradiction as a finding against an
+> already-fixed file. **A note telling a future reader to go fix something is
+> a claim with a shelf life.** Close it when you close the work, or it
+> manufactures the very re-investigation it was written to prevent.
 
 ### 4.5 "Just advertise IPv4-only" — refuted by the client itself
 **Believed:** replacing `--advertise-exit-node` with `--advertise-routes=0.0.0.0/0`
