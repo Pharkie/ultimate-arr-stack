@@ -430,6 +430,144 @@ services:
           sleep 30
         done
 
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # GLUETUN-EXIT-ROTATOR - Keeps gluetun-exit off slow ProtonVPN servers.
+  #
+  # WHY THIS EXISTS. ProtonVPN's Netherlands pool is not uniform. Measured on
+  # this NAS 2026-08-23, back to back, same 20MB payload:
+  #   103.69.224.76   0.5-3 Mbps, and 100MB flows never completed at all
+  #   185.107.44.149  78/92/98 Mbps
+  #   main gluetun    144 Mbps  (control, different server, same box)
+  # A bad draw is therefore a ~30x regression that presents to the user as
+  # "connects, works a few seconds, then dies" -- exactly the symptom that sent
+  # this project chasing MTU, IPv6 and DERP for two days. gluetun's own
+  # healthcheck cannot catch it: a TCP/TLS probe to 1.1.1.1:443 passes fine on a
+  # server delivering 0.5 Mbps. Health is not speed.
+  #
+  # WHY NOT `docker restart` (the gluetun-rotator pattern next door).
+  # gluetun-exit's netns is shared by tailscale-exit via
+  # network_mode: service:gluetun-exit. Restarting the container gives it a NEW
+  # netns, orphaning tailscale-exit until deunhealth notices ~2 min later -- and
+  # Android clients do NOT re-establish on their own when that happens, they sit
+  # stranded until the user manually toggles Tailscale. Measured during the
+  # 2026-08-23 leak test. So this rotator drives gluetun's control-server API
+  # instead, which swaps the WireGuard peer IN PLACE. Verified: after an API
+  # rotation tailscale-exit was still "Up 56 minutes (healthy)" on an unchanged
+  # netns.
+  #
+  # NEVER change this to restart, stop, or recreate a container.
+  # ═══════════════════════════════════════════════════════════════════════════
+  gluetun-exit-rotator:
+    # Reuses the image gluetun-exit itself runs -- nothing new to pin, and it is
+    # guaranteed to have the busybox wget/nc this script needs.
+    image: qmcgaw/gluetun:v3.41
+    container_name: gluetun-exit-rotator
+    # Must be INSIDE the netns: the control server binds :8000 there and is
+    # deliberately not opened on eth0 (FIREWALL_INPUT_PORTS is empty), because
+    # it is unauthenticated and arr-core is a shared network. Being in the netns
+    # also means the throughput probe measures the real tunnel.
+    network_mode: "service:gluetun-exit"
+    depends_on:
+      gluetun-exit:
+        condition: service_healthy
+        restart: true
+    security_opt:
+      - no-new-privileges:true
+    labels:
+      - gluetun-exit.dependent=true
+    environment:
+      - TZ=${TZ}
+      - GLUETUN_EXIT_ROTATE_INTERVAL_SECONDS=${GLUETUN_EXIT_ROTATE_INTERVAL_SECONDS:-21600}
+      - GLUETUN_EXIT_MIN_MBPS=${GLUETUN_EXIT_MIN_MBPS:-20}
+      - GLUETUN_EXIT_MAX_ATTEMPTS=${GLUETUN_EXIT_MAX_ATTEMPTS:-5}
+    restart: always
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        set -u
+        PROBE_BYTES=10000000
+
+        # No curl in this image, and busybox wget cannot set an HTTP method, so
+        # the PUT is hand-rolled over nc. Content-Length must be exact or the
+        # control server rejects the body -- getting this wrong fails with
+        # "invalid character 's' looking for beginning of object key string".
+        vpn() {
+          body="{\"status\":\"$$1\"}"
+          printf 'PUT /v1/vpn/status HTTP/1.1\r\nHost: 127.0.0.1\r\nContent-Type: application/json\r\nContent-Length: %s\r\nConnection: close\r\n\r\n%s' \
+            "$${#body}" "$$body" | nc 127.0.0.1 8000 >/dev/null 2>&1
+        }
+
+        pubip() {
+          wget -q -T 10 -O - http://127.0.0.1:8000/v1/publicip/ip 2>/dev/null \
+            | sed -n 's/.*"public_ip":"\([^"]*\)".*/\1/p'
+        }
+
+        # IP literal on purpose: a DNS-dependent liveness check would make this
+        # rotator rotate whenever DNS hiccupped, the same circular dependency
+        # HEALTH_TARGET_ADDRESSES already avoids on gluetun-exit itself.
+        tunnel_up() { nc -w 5 -z 1.1.1.1 443 >/dev/null 2>&1; }
+
+        # Mbps, whole numbers. busybox `date` has no %N, so this is
+        # second-granularity -- fine, because the decision threshold is ~20 Mbps
+        # where a 10MB probe takes ~4s. Returns 0 if the payload did not arrive
+        # in full, which is itself the signature of a bad server.
+        measure() {
+          start=$$(date +%s)
+          bytes=$$(wget -q -T 60 -O - "https://speed.cloudflare.com/__down?bytes=$$PROBE_BYTES" 2>/dev/null | wc -c)
+          end=$$(date +%s)
+          secs=$$((end - start))
+          [ "$$secs" -lt 1 ] && secs=1
+          if [ "$$bytes" -lt "$$PROBE_BYTES" ]; then echo 0; else echo $$((bytes * 8 / secs / 1000000)); fi
+        }
+
+        ensure_fast() {
+          if ! tunnel_up; then
+            echo "gluetun-exit-rotator: tunnel is DOWN (1.1.1.1:443 unreachable) - not rotating, gluetun's own healthcheck owns this case"
+            return 0
+          fi
+          i=1
+          while [ "$$i" -le "$$GLUETUN_EXIT_MAX_ATTEMPTS" ]; do
+            mbps=$$(measure)
+            ip=$$(pubip)
+            if [ "$$mbps" -ge "$$GLUETUN_EXIT_MIN_MBPS" ]; then
+              echo "gluetun-exit-rotator: OK - $$ip at $${mbps} Mbps (min $${GLUETUN_EXIT_MIN_MBPS})"
+              return 0
+            fi
+            echo "gluetun-exit-rotator: SLOW - $$ip at $${mbps} Mbps (min $${GLUETUN_EXIT_MIN_MBPS}), rotating server (attempt $$i/$$GLUETUN_EXIT_MAX_ATTEMPTS)"
+            vpn stopped
+            sleep 5
+            vpn running
+            # Wait for a public IP to reappear before judging the new server.
+            j=1
+            while [ "$$j" -le 12 ]; do
+              sleep 10
+              [ -n "$$(pubip)" ] && break
+              j=$$((j + 1))
+            done
+            i=$$((i + 1))
+          done
+          echo "gluetun-exit-rotator: WARNING - gave up after $$GLUETUN_EXIT_MAX_ATTEMPTS rotations, still under $${GLUETUN_EXIT_MIN_MBPS} Mbps. The whole pool may be degraded, or SERVER_COUNTRIES may be too narrow."
+          return 1
+        }
+
+        # Settle first. gluetun's startup check thrashes through several servers
+        # in the seconds after a tunnel comes up (measured: 4 servers in 2s), and
+        # probing mid-thrash would measure the churn rather than the server.
+        echo "gluetun-exit-rotator: waiting 90s for the tunnel to settle before first probe"
+        sleep 90
+        ensure_fast
+        while true; do
+          sleep "$$GLUETUN_EXIT_ROTATE_INTERVAL_SECONDS"
+          echo "gluetun-exit-rotator: scheduled check (interval $${GLUETUN_EXIT_ROTATE_INTERVAL_SECONDS}s)"
+          ensure_fast
+        done
 volumes:
   tailscale-state:
   tailscale-exit-state:

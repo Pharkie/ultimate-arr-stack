@@ -49,7 +49,7 @@ done
 #
 # Unlike gluetun, a missing gluetun-exit is NOT an error: the exit-node stack
 # is opt-in, so most deployments won't have it running.
-EXIT_DEPENDENTS=(tailscale-exit tailscale-exit-routing)
+EXIT_DEPENDENTS=(tailscale-exit tailscale-exit-routing gluetun-exit-rotator)
 
 if GLUETUN_EXIT_ID=$(docker inspect --format '{{.Id}}' gluetun-exit 2>/dev/null); then
     for c in "${EXIT_DEPENDENTS[@]}"; do

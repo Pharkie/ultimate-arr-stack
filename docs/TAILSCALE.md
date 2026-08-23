@@ -304,6 +304,66 @@ from that node's `TS_EXTRA_ARGS` first, or the setting is wiped on every restart
 > Tailscale advertises whatever STUN discovers rather than an endpoint you pick.
 > `VPN_PORT_FORWARDING` is deliberately left off.
 
+
+#### Performance: which ProtonVPN server you drew
+
+Measure this **before** blaming Tailscale. ProtonVPN's per-country pool is not
+uniform, and a bad draw is by far the largest performance effect in this stack —
+larger than DERP-vs-direct, larger than MTU. Measured on the NAS 2026-08-23,
+back to back, same 20 MB payload:
+
+| Path | Throughput |
+|---|---|
+| NAS host, no VPN | 579–698 Mbps |
+| `gluetun` (main stack, a different Proton server) | 105–144 Mbps |
+| `gluetun-exit` on Proton `103.69.224.76` | **0.5–3 Mbps**, 100 MB flows never completed |
+| `gluetun-exit` after rotating to `185.107.44.149` | **78–98 Mbps** |
+
+A bad server presents as *"connects, works for a few seconds, then dies"* —
+small requests succeed while bulk transfer decays to failure. That looks exactly
+like an MTU black hole, and it cost this project two days of chasing MSS, IPv6
+and DERP before the three-way split above isolated it.
+
+**Gluetun's own healthcheck cannot catch this.** It probes TCP/TLS to
+`1.1.1.1:443`, which succeeds fine on a server delivering 0.5 Mbps. Health is
+not speed. That is why `gluetun-exit-rotator` exists: it measures real
+throughput every 6 h and rotates the server until it clears
+`GLUETUN_EXIT_MIN_MBPS`.
+
+> **Do not measure this path with `ping`.** Proton rate-limits ICMP, so loss
+> figures are meaningless here — a reading of 60% "packet loss" was recorded in
+> the same minute as 98 Mbps of real throughput. Judge on completed bytes and
+> elapsed time only. An earlier "53% packet loss" finding in this project was
+> purely this artifact.
+
+To check or rotate by hand (the control-server API, from inside the netns):
+
+```bash
+# which server am I on?
+docker exec gluetun-exit wget -qO- http://127.0.0.1:8000/v1/publicip/ip
+
+# rotate WITHOUT restarting the container (see the warning below)
+docker exec -i gluetun-exit nc 127.0.0.1 8000 <<'EOF'
+PUT /v1/vpn/status HTTP/1.1
+Host: 127.0.0.1
+Content-Length: 20
+Connection: close
+
+{"status":"stopped"}
+EOF
+# ...then the same with {"status":"running"}
+```
+
+> **Never rotate `gluetun-exit` with `docker restart`.** A restart gives it a new
+> network namespace, orphaning `tailscale-exit` until deunhealth notices ~2 min
+> later — and **Android clients do not re-establish on their own** when that
+> happens; they sit stranded until Tailscale is manually toggled. The
+> control-server API swaps the WireGuard peer in place, leaving the namespace
+> intact. Verified: after an API rotation `tailscale-exit` was still
+> `Up 56 minutes (healthy)` on an unchanged netns. This is why
+> `gluetun-exit-rotator` is API-driven while the main `gluetun-rotator` next
+> door can safely use `docker restart`.
+
 #### Rollback
 
 The existing `tailscale` node is left completely untouched and still advertises
