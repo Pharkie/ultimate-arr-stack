@@ -166,6 +166,22 @@ def api_post_json(port, path, key, data):
     )
     return result.returncode == 0
 
+# How long a download may sit stalled before the sweep removes it. Long enough
+# that a torrent briefly losing its peers is left alone, short enough that a
+# dead one does not survive to the next weekly run.
+STALL_GRACE_HOURS = 24
+
+def item_age_hours(record):
+    """Hours since the item was added, or None if it carries no timestamp."""
+    added_str = record.get("added", "")
+    if not added_str:
+        return None
+    try:
+        added = datetime.fromisoformat(added_str.replace("Z", "+00:00"))
+        return (datetime.now(timezone.utc) - added).total_seconds() / 3600
+    except (ValueError, TypeError):
+        return None
+
 def is_stuck(record):
     """Determine if a queue record is stuck and should be removed."""
     status = record.get("status", "")
@@ -176,11 +192,25 @@ def is_stuck(record):
     sizeleft = record.get("sizeleft", 0)
 
     # Error-based: stalled, unavailable, missing, etc.
-    if tracked_status == "warning":
-        error_keywords = ["stall", "not available", "no files found",
-                          "import failed", "missing"]
+    #
+    # Sonarr surfaces a stalled torrent as status="warning" with
+    # trackedDownloadStatus="ok" -- gating this on tracked_status alone meant the
+    # keyword test never ran for the single most common stall. Check both fields.
+    # "not on your server" covers usenet grabs whose articles are past retention;
+    # those arrive as status="failed" and carry no `added` timestamp, so no
+    # age-based rule below can ever reach them.
+    if tracked_status == "warning" or status in ("warning", "failed"):
+        error_keywords = ["stall", "no connections", "not available",
+                          "no files found", "import failed", "missing",
+                          "not on your server"]
         if any(kw in error_msg for kw in error_keywords):
-            return "error", error_msg.strip()
+            age = item_age_hours(record)
+            # A torrent can stall briefly and recover. Only cull one that has
+            # been stalled long enough to be genuinely dead -- except usenet
+            # failures, which are terminal immediately and have no timestamp.
+            if status == "failed" or age is None or age > STALL_GRACE_HOURS:
+                suffix = f" for {age:.0f}h" if age is not None else ""
+                return "error", f"{error_msg.strip()}{suffix}"
 
     # Stuck imports (completed download but can't import)
     if tracked_state == "importing" and tracked_status == "warning":
@@ -200,7 +230,13 @@ def is_stuck(record):
         for sm in record.get("statusMessages", []):
             msgs.extend(sm.get("messages", []))
         all_msgs = " ".join(msgs).lower()
-        if "executable" in all_msgs or "not an upgrade" in all_msgs:
+        # "potentially dangerous" covers .scr/.lnk padding, which Sonarr words
+        # differently from the ".exe" case ("Found potentially dangerous file
+        # with extension: .scr"). Without it those releases download to 100%,
+        # refuse to import, and sit in the queue forever -- several had been
+        # stuck for over a month.
+        if ("executable" in all_msgs or "not an upgrade" in all_msgs
+                or "potentially dangerous" in all_msgs):
             reason = "; ".join(msgs[:2]) if msgs else "import pending with warnings"
             return "import_warning", reason
 
@@ -230,6 +266,17 @@ def is_stuck(record):
                     return "stale", f"no size info for {age_hours:.0f}h"
             except (ValueError, TypeError):
                 pass
+
+    # Partially-downloaded stalls. The age rules above only fire at exactly 0%
+    # (sizeleft == size) or with no size at all, so anything that grabbed a few
+    # percent and then lost every peer matched no branch and survived every
+    # weekly sweep indefinitely -- one title sat at 32% for 45 days this way.
+    if 0 < sizeleft < size:
+        age = item_age_hours(record)
+        if age is not None and age > STALL_GRACE_HOURS:
+            pct = (1 - sizeleft / size) * 100
+            if record.get("status") == "warning" or "stall" in error_msg:
+                return "stalled", f"stalled at {pct:.0f}% for {age:.0f}h"
 
     return None, None
 
