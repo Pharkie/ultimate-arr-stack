@@ -7,7 +7,11 @@ wrong, and what is still open. If you are picking this work up cold, read
 and [§8](#8-traps) first — those three carry the knowledge that is expensive to
 rediscover.
 
-Last updated: **2026-08-23**.
+Last updated: **2026-08-23**. Sections 2, 5, 6 and 8 are historical and stay
+true; **§1 and §7 decay.** Every claim in §1 now carries the command to re-check
+it rather than a copied value, because the first version of this document
+embedded a commit SHA and a commit count that its own commit invalidated the
+moment it landed. If you find a bare number in §1, treat it as a bug.
 
 ---
 
@@ -15,11 +19,11 @@ Last updated: **2026-08-23**.
 
 | | |
 |---|---|
-| Branch | `feat/tailscale-protonvpn-exit-node`, 16 commits ahead of `main` |
-| HEAD | `a87400c` |
-| Deployed | Yes — NAS is at `a87400c`, same as the branch |
+| Branch | `feat/tailscale-protonvpn-exit-node` |
+| HEAD / commits ahead | **Do not trust a number written here.** Re-check: `git rev-parse --short HEAD` and `git rev-list --count origin/main..HEAD`. Compare against `origin/main`, *never* a local `main` ref — see §8 trap 11 |
+| Deployed | NAS tracks this branch. Re-check on the NAS: `arrgit rev-parse --short HEAD`, compare to local |
 | Merged to `main` | **No.** Blocked on the MergeGate `adversarial-review` (task #76) |
-| Tests | 44/44 bats green |
+| Tests | Green at last run, 2026-08-23. Re-check: `npm run test:bats` — static, needs no NAS or Docker access |
 | Go/No-Go gate | **Satisfied**, including the leak test (check I) |
 | Works from the phone | **Yes** — 22.6 Mbps ↓ / 22.9 Mbps ↑ / 0.0 % loss, Proton NL egress, on cellular |
 
@@ -157,6 +161,37 @@ demonstrated:
 comparing against the baseline.
 **Closed with no action** (task #88).
 
+> **Two different IPv6 threads live in this branch. Do not merge them.**
+> An adversarial reviewer conflated them within minutes of reading this section,
+> so the distinction is written out here:
+>
+> 1. **The tailnet IPv6 ULA (`fd7a:115c:a1e0::/48`) — real, fixed, shipped.**
+>    Commits `c314de4`, `ac776a7`, `26cfb13`, `2f6343f`. `tailscaled` writes
+>    *both* `100.100.100.100` and `fd7a:115c:a1e0::53` as resolvers, so
+>    gluetun's kill switch must permit the ULA or the exit node cannot resolve
+>    for its own clients. This is about the node's **own control/DNS traffic**.
+> 2. **The `::/0` exit-egress black hole — investigated, no action (this
+>    section).** About **client internet traffic** the node advertises a route
+>    for and cannot carry.
+>
+> Both say "IPv6" and both touch `ip6tables`; they are unrelated. Seeing the
+> shipped ULA commits is *not* evidence that thread 2 was acted on.
+
+> **⚠️ A contradicting comment is still live in the repo.**
+> `docker-compose.tailscale.yml:284-289` still states that a client taking up
+> `::/0` "sees nothing to fail fast on and burns a full connect timeout
+> instead", citing the same 25 s `curl -6` measurement this section calls
+> worthless. That comment was introduced by `6677e0d` — the failed IPv4-only
+> experiment (§4.5) — and `71a7a47` reverted the *flag* while keeping the
+> *rationale*. The comment's own premise is refuted by
+> `docker-compose.tailscale.yml:454`, which installs a blanket
+> `ip6tables-nft -A OUTPUT -o tailscale0 -j ACCEPT` — ICMPv6 included — so the
+> unreachable errors do reach the client and IPv6 fails fast.
+>
+> **This document is right and that comment is wrong**, but the comment is what
+> a reader hits first when editing the service. If it is still there when you
+> read this, fix it rather than re-opening the investigation.
+
 ### 4.5 "Just advertise IPv4-only" — refuted by the client itself
 **Believed:** replacing `--advertise-exit-node` with `--advertise-routes=0.0.0.0/0`
 would stop advertising IPv6 the node cannot serve.
@@ -169,6 +204,11 @@ The container never came up and the exit node went down until the revert.
 ("may not be recognised as a traditional exit node") badly understates it.
 **Caught by:** deploying it. Reverted in `71a7a47`; the constraint is now
 documented inline in `docker-compose.tailscale.yml` so nobody retries it.
+**Watch the revert's blast radius:** `6677e0d` added both the flag *and* a long
+rationale comment. `71a7a47` reverted the flag and left the comment, so a
+refuted claim survived as an authoritative-looking comment (see the box in
+§4.4). A revert that only undoes the executable half of a commit leaves the
+prose half lying — check both.
 
 ### 4.6 "Unapprove node 1 in the admin console — zero-risk, no recreate"
 **Believed:** the cheapest way to remove the node-1 footgun.
@@ -207,14 +247,14 @@ git. Several are load-bearing.
 
 | # | What | Where it lives | Notes / what destroys it |
 |---|---|---|---|
-| 1 | **`tailscale set --relay-server-port=41641`** on node 1 | node 1's prefs | ⚠️ **Wiped by `--reset` on EVERY node-1 restart.** Re-apply: `ssh arr-stack-nas 'docker exec tailscale tailscale set --relay-server-port=41641'`. This is what task #77 exists to fix |
+| 1 | **`tailscale set --relay-server-port=41641`** on node 1 | node 1's prefs | ⚠️ **Wiped by `--reset` on EVERY node-1 restart**, and **nothing detects the loss** — no bats test, no healthcheck, no log line. This document is the only guard. Check: `ssh arr-stack-nas 'docker exec tailscale tailscale debug prefs'` → `RelayServerPort`. Re-apply: `ssh arr-stack-nas 'docker exec tailscale tailscale set --relay-server-port=41641'`. Task #77 removes `--reset`; task #79 adds the guard. Until both land, assume it is gone after any node-1 restart |
 | 2 | Tailnet **ACL policy** — `tagOwners`, grants, `autoApprovers` | Tailscale admin console | Includes `autoApprovers.exitNode: ["tag:nas-router"]` (see §4.6) and the relay grant, still at `autogroup:member` rather than the narrower `tag:personal-device` the plan wanted |
 | 3 | Split DNS for `*.lan` | Tailscale admin console | Prerequisite for `.lan` names through the tunnel |
-| 4 | **macvlan shim** on the NAS | `ip link add macvlan-shim link eth0 type macvlan mode bridge`, `192.168.8.251/32` + host route to `192.168.8.250/32`; persisted via a `@reboot` crontab entry | A Linux host can never reach its own macvlan containers by kernel design. Without this, Traefik `.lan` e2e tests fail `EHOSTUNREACH` |
+| 4 | **macvlan shim** on the NAS | Root's crontab on the NAS (`@reboot`), idempotent — it checks the link exists before recreating. Inspect the live entry with `ssh arr-stack-nas 'crontab -l'` **before** rebuilding from memory; the shape is `ip link add macvlan-shim link eth0 type macvlan mode bridge` + `192.168.8.251/32` on the shim + a host route to Traefik's `192.168.8.250/32` via it | A Linux host can never reach its own macvlan containers by kernel design. Without this, Traefik `.lan` e2e tests fail `EHOSTUNREACH`. Verify with `ip route get 192.168.8.250` on the NAS |
 | 5 | UGOS firewall: allow inbound Tailscale → SSH/Docker ports | UGOS admin UI | Blocked the CI deploy workflow until fixed |
 | 6 | UGOS firewall: the port-22 DROP rule, removed | UGOS admin UI | Task #82. Symptom was `:22` timing out while `:2375`/`:2222` returned RST |
-| 7 | `cloudflared` restart crash-loop, fixed | NAS-side config | Was consuming NAS resources during health-check waits |
-| 8 | Prowlarr's current API key written into 4 indexer entries | Radarr ids 2,3 / Sonarr ids 2,3 | Prowlarr pushes its key at setup and never re-pushes if it later changes. Applied via `PUT /api/v3/indexer/{id}` |
+| 7 | `cloudflared` restart crash-loop, fixed | NAS-side config | Was consuming NAS resources during health-check waits. **The fix was not recorded** — if it recurs, start from `docker logs cloudflared` rather than looking for a documented remedy here |
+| 8 | Prowlarr's current API key written into 4 indexer entries | Radarr ids 2,3 / Sonarr ids 2,3 | Prowlarr pushes its key at setup and never re-pushes if it later changes, so the entries hold a stale key and every indexer 401s. Get the current key from Prowlarr's `/config/general` (or its `config.xml`), then `PUT /api/v3/indexer/{id}` on each. **Diagnose with `/api/v3/indexer/testall`, not `/api/v3/health`** — health is cached and reports stale success |
 | 9 | **No router port-forward exists** | — | UDP 41641 was *never* opened. This is a decision (§3), not an omission |
 
 ---
@@ -296,7 +336,12 @@ needed a manual Tailscale toggle — task #90, and the reason
 
 ## 8. Traps
 
-Methodology lessons. Each one cost real time here.
+Methodology lessons. Each one cost real time. Traps **2, 6, 8 and 11** are
+specific to this exit-node work; **1, 3, 4, 5, 7, 9 and 10** were paid for by
+the NAS CI/deploy effort and are recorded at more length in `CLAUDE.md`'s
+*Deploying to the NAS* section. They are repeated here because they are
+methodology, not history, and the failure modes recur — but `CLAUDE.md` owns
+the detail.
 
 1. **Never judge a Proton path with `ping`.** ICMP is rate-limited. A 60 %
    "packet loss" reading coexisted with 98 Mbps of real throughput. Judge on
@@ -330,7 +375,21 @@ Methodology lessons. Each one cost real time here.
     response looked like a Traefik or Sonarr fault until raw `dns.lookup()`
     output made it obvious.
 
+11. **A commit count is only as good as the ref you diffed against.** An
+    adversarial reviewer auditing this document reported the branch as "32
+    commits ahead of `main`" and called §1 wrong. It had diffed against the
+    *local* `main`, which was 15 commits stale; `origin/main..HEAD` was the
+    real answer. Always name the remote ref explicitly. This is trap 4 in a
+    new costume — a fact verified against a proxy — and it was produced *by a
+    review of this very document*, which is how much this class of error likes
+    to recur.
+
 ### Operational hard rules
+
+The first four are repeated from `CLAUDE.md` on purpose: that file is skimmed
+at session start, this one is opened when you are about to touch the thing.
+**`CLAUDE.md` is authoritative if they ever disagree** — fix the divergence
+rather than picking one.
 
 - **NEVER pass `--remove-orphans`** to any `docker compose` command on this NAS.
   Services are split across multiple compose files sharing one project name, so

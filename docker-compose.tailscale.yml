@@ -276,25 +276,32 @@ services:
       # deliberately NO --reset (node 1 needs it once; here it would wipe any
       # `tailscale set` tweaks, e.g. peer-relay config, on every restart).
       #
-      # IPv4 ONLY, deliberately. `--advertise-exit-node` is exactly equivalent
-      # to `--advertise-routes=0.0.0.0/0,::/0`, and the ::/0 half is a lie here:
-      # the Proton tunnel behind this node is IPv4-only, so there is no v6
-      # default route in this netns and gluetun's ip6tables policy is
-      # `-P FORWARD DROP` / `-P OUTPUT DROP` on both backends. A client that
-      # takes us up on ::/0 gets a *silent* black hole — the kernel does emit an
-      # ICMPv6 unreachable for the unroutable packet, and the OUTPUT DROP then
-      # eats it on the way back, so the client sees nothing to fail fast on and
-      # burns a full connect timeout instead. Measured 2026-08-23: `curl -6`
-      # through this node stalls the entire 25s timeout with no response, while
-      # `curl -4` returns in 0.05s.
+      # The ::/0 half of this advertisement is unbacked, and that is ACCEPTED --
+      # do not spend time on it. `--advertise-exit-node` is exactly equivalent
+      # to `--advertise-routes=0.0.0.0/0,::/0`. The Proton tunnel behind this
+      # node is IPv4-only, so there is no v6 default route in this netns and
+      # gluetun's ip6tables policy is `-P FORWARD DROP` / `-P OUTPUT DROP` on
+      # both backends.
       #
-      # DO NOT try to fix this by advertising 0.0.0.0/0 alone. That was tried
-      # on 2026-08-23 and `tailscale up` rejects it outright — "0.0.0.0/0
-      # advertised without its IPv6 counterpart, please also advertise ::/0",
-      # exit status 1, container never comes up. There is no supported way to
-      # be an IPv4-only exit node; the ::/0 advertisement is mandatory. The
-      # black hole therefore has to be handled downstream of the advertisement,
-      # in the routing sidecar, not here.
+      # It is NOT a silent black hole. An earlier version of this comment said
+      # it was, on the strength of a `curl -6` that stalled a full 25s timeout.
+      # That reading was worthless: the baseline with no exit node selected
+      # stalled for the same 25s, so it never distinguished the two cases.
+      # Measured cleanly on 2026-08-23, dual-stack through this node carries
+      # ZERO penalty -- 0.045s connect, identical to forced `-4`. The reason is
+      # rule 5 in the routing sidecar below: `ip6tables-nft -A OUTPUT -o
+      # tailscale0 -j ACCEPT` is protocol-blind, so it already lets the
+      # kernel's ICMPv6 unreachable back out to the client, and IPv6 fails fast
+      # instead of hanging. There is nothing to fix downstream either.
+      # Full record: docs/EXIT-NODE-PROJECT-LOG.md section 4.4 (task #88,
+      # closed with no action).
+      #
+      # DO NOT try to "fix" this by advertising 0.0.0.0/0 alone. That was tried
+      # on 2026-08-23 (commit 6677e0d) and `tailscale up` rejects it outright --
+      # "0.0.0.0/0 advertised without its IPv6 counterpart, please also
+      # advertise ::/0", exit status 1, container never comes up, exit node down
+      # until the revert. There is no supported way to be an IPv4-only Tailscale
+      # exit node; the ::/0 advertisement is mandatory.
       - TS_EXTRA_ARGS=--advertise-exit-node --advertise-tags=tag:nas-router
     labels:
       # This label + the network-touching healthcheck below are what cover the
