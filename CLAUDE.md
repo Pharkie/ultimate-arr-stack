@@ -11,6 +11,27 @@ Docker media stack for Ugreen NAS. Edit NAS files (like `pihole/dnsmasq.d/02-loc
 - **Local dev repo**: `/Users/adamknowles/dev/ultimate-arr-stack/`
 - **NAS deploy path**: `/volume1/docker/arr-stack/`
 
+## Tailscale ProtonVPN Exit Node
+
+Branch `feat/tailscale-protonvpn-exit-node` adds a second ProtonVPN tunnel
+(`gluetun-exit`) that serves as internet egress for a second Tailscale node
+(`tailscale-exit`), so a phone gets Proton's IP *and* `.lan` access over one
+tunnel. It works and is deployed; it is not yet merged to `main`.
+
+**Read `docs/EXIT-NODE-PROJECT-LOG.md` before touching any of it.** That file is
+the audited record: what shipped, where the plan was wrong and why, the
+measurements that settle recurring arguments, live-only state that is NOT in
+this repo, and the open items. Three things there are expensive to rediscover:
+
+- **`gluetun-exit` must never be restarted to rotate servers.** Its netns is
+  shared by `tailscale-exit`, and a restart strands Android clients until
+  Tailscale is manually toggled. Use gluetun's control-server API.
+- **Recreating Tailscale node 1 severs every path to the NAS at once** — SSH
+  and the UGOS admin UI both ride its own subnet route. Do it detached, with a
+  state-volume backup and an auto-rollback.
+- **Never judge a ProtonVPN path with `ping`.** Proton rate-limits ICMP; a 60%
+  "packet loss" reading coexisted with 98 Mbps of real throughput.
+
 ## Cross-Stack: Therapy Stack
 
 **Unverified / likely stale on this NAS as of 2026-08-15.** This section describes a `therapy-stack`/Baserow coupling that was checked directly on the live NAS before the arr-core network rename (Phase 2 of the segmentation plan) and found not to exist: no `baserow` container, no `172.20.0.20` binding on the network, no `/volume1/docker/therapy-stack/` directory, and no `traefik/dynamic/therapy.local.yml` file. This may describe a different deployment (the local dev repo path below is also for a different user/machine) rather than this one. Re-verify on the live NAS before relying on any of the following if this setup ever does need to interoperate with a therapy-stack deployment:
