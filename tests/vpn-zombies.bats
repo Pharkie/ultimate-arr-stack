@@ -76,6 +76,14 @@ EOF
     # service name is actually present in the script's hardcoded DEPENDENTS
     # array — so a future service added the same way doesn't silently go
     # undetected the way vpn-socks5 did.
+    #
+    # The regex also matches the "-exit" gateway (gluetun-exit, the ProtonVPN
+    # tunnel behind the Tailscale exit node). Without the optional group the
+    # trailing quote anchored the match to gluetun exactly, so services on
+    # "service:gluetun-exit" silently escaped this guard — the same class of
+    # gap as the original vpn-socks5 one. Those land in the script's
+    # EXIT_DEPENDENTS array, which the grep below also picks up (it matches on
+    # the DEPENDENTS=( substring, so the EXIT_ prefix is included).
     local dependents
     dependents=$(grep -oE 'DEPENDENTS=\([^)]*\)' "$REPO_ROOT/scripts/detect-vpn-zombies.sh")
 
@@ -83,7 +91,7 @@ EOF
     tunneled=$(for f in $(get_compose_files); do
         awk '
             /^  [a-zA-Z0-9_.-]+:[[:space:]]*$/ { svc=$0; sub(/:[[:space:]]*$/, "", svc); sub(/^  /, "", svc) }
-            /^[[:space:]]*network_mode:[[:space:]]*"(service|container):gluetun"/ { print svc }
+            /^[[:space:]]*network_mode:[[:space:]]*"(service|container):gluetun(-exit)?"/ { print svc }
         ' "$f"
     done)
 

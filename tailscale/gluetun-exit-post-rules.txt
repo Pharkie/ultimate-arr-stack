@@ -1,0 +1,41 @@
+# Custom iptables rules for gluetun-exit, run by Gluetun at container start
+# after its own firewall rules. Mounted read-only at /iptables/post-rules.txt
+# by docker-compose.tailscale.yml.
+#
+# WHY THIS FILE EXISTS
+# Gluetun sets `-P FORWARD DROP`. A Tailscale exit node is, by definition, a
+# forwarder: packets arrive on tailscale0 and must leave via the VPN tunnel.
+# Without these rules they are silently dropped and the exit node black-holes.
+#
+# The workaround published in most write-ups of this setup is FIREWALL=off.
+# That is deliberately NOT used here: it would leave gluetun-exit with no kill
+# switch, so a dropped ProtonVPN tunnel would fall back to the home WAN and
+# leak the home IP to every site the phone visits. Opening only the FORWARD
+# chain keeps the kill switch intact.
+#
+# Referencing tailscale0 before it exists is fine — iptables accepts rules for
+# an interface that has not been created yet, and tailscale-exit starts later.
+#
+# WHY THESE ACCEPT UNCONDITIONALLY RATHER THAN JUMPING TO ts-forward
+# Gluetun's iptables is nf_tables; the Tailscale image symlinks iptables ->
+# iptables-legacy, so tailscaled's ts-forward/ts-postrouting chains (and the
+# sidecar's rules) land in the LEGACY tables, not these. The kernel evaluates
+# both backends at the same hooks, so the layers compose — but a `-j ts-forward`
+# jump written here would target a chain that does not exist in this backend.
+# Verified live on the NAS: `iptables -S FORWARD` here shows no ts-forward and
+# that is correct; `iptables-legacy -S FORWARD` is where it lives.
+#
+# NOTE: tailscale-exit-routing re-adds the equivalent rules every 30s. That is
+# not redundancy for its own sake — Gluetun rebuilds its firewall on every
+# tunnel reconnect, and it is documented as running this file only at CONTAINER
+# start. This file covers the cold-start path; the sidecar covers reconnects.
+
+# Re-assert the restrictive default, so this file is safe to read standalone.
+iptables --policy FORWARD DROP
+
+# Exit-node traffic in: anything arriving on the Tailscale interface may be
+# forwarded (it can only leave via the tunnel — that's the only route out).
+iptables --append FORWARD --in-interface tailscale0 --jump ACCEPT
+
+# Return traffic: only for connections that were established from the tailnet.
+iptables --append FORWARD --out-interface tailscale0 --match conntrack --ctstate ESTABLISHED,RELATED --jump ACCEPT
