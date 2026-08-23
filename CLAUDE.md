@@ -13,10 +13,10 @@ Docker media stack for Ugreen NAS. Edit NAS files (like `pihole/dnsmasq.d/02-loc
 
 ## Tailscale ProtonVPN Exit Node
 
-Branch `feat/tailscale-protonvpn-exit-node` adds a second ProtonVPN tunnel
-(`gluetun-exit`) that serves as internet egress for a second Tailscale node
-(`tailscale-exit`), so a phone gets Proton's IP *and* `.lan` access over one
-tunnel. It works and is deployed; it is not yet merged to `main`.
+A second ProtonVPN tunnel (`gluetun-exit`) serves as internet egress for a
+second Tailscale node (`tailscale-exit`), so a phone gets Proton's IP *and*
+`.lan` access over one tunnel. **Merged to `main`** in `5fc6776` (PR #38),
+2026-08-23, from `feat/tailscale-protonvpn-exit-node`; deployed and working.
 
 **Read `docs/EXIT-NODE-PROJECT-LOG.md` before touching any of it.** That file is
 the audited record: what shipped, where the plan was wrong and why, the
