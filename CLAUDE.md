@@ -41,4 +41,8 @@ Back up a service's config volume before any version bump with a DB migration (`
 
 ## E2E Tests
 
-Run `npm run test:e2e` after any change to Docker Compose files, service config, networks, or ports. All 14 tests must pass. They screenshot every service UI and verify API responses.
+Run `npm run test:e2e` after any change to Docker Compose files, service config, networks, or ports. **Every test must pass** — don't hardcode a count here, the suite grows. It screenshots every service UI, verifies API responses, and compares per-service VPN egress.
+
+Two things that will bite you:
+- The suite needs the untracked **`.env.e2e`** to find the NAS. A git worktree won't have it — copy it from the main checkout. Without it the suite **fails rather than skips**, deliberately: a VPN leak check that didn't run is an unverified result, and exiting 0 would report it as a pass.
+- One killswitch test is skipped unless `ALLOW_DISRUPTIVE_TESTS=1`, because it stops the live gluetun container and interrupts real downloads. A run reporting one skip is normal.
