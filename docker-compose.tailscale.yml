@@ -261,15 +261,14 @@ services:
       # through this node stalls the entire 25s timeout with no response, while
       # `curl -4` returns in 0.05s.
       #
-      # Advertising only 0.0.0.0/0 is the documented way to be an IPv4-only exit
-      # node, but upstream warns it "creates an asymmetric setup that may not be
-      # recognized as a traditional exit node" — so VERIFY after any change here
-      # that the node still shows `offers exit node` in `tailscale status` and
-      # is still selectable as one. If it ever stops registering, revert to
-      # --advertise-exit-node and instead un-silence the black hole with
-      # `ip6tables-nft -I OUTPUT -o tailscale0 -p icmpv6 -j ACCEPT` in the
-      # routing sidecar, which at least converts the stall into a fast failure.
-      - TS_EXTRA_ARGS=--advertise-routes=0.0.0.0/0 --advertise-tags=tag:nas-router
+      # DO NOT try to fix this by advertising 0.0.0.0/0 alone. That was tried
+      # on 2026-08-23 and `tailscale up` rejects it outright — "0.0.0.0/0
+      # advertised without its IPv6 counterpart, please also advertise ::/0",
+      # exit status 1, container never comes up. There is no supported way to
+      # be an IPv4-only exit node; the ::/0 advertisement is mandatory. The
+      # black hole therefore has to be handled downstream of the advertisement,
+      # in the routing sidecar, not here.
+      - TS_EXTRA_ARGS=--advertise-exit-node --advertise-tags=tag:nas-router
     labels:
       # This label + the network-touching healthcheck below are what cover the
       # "running zombie on a dead netns" failure mode that gluetun-recover
