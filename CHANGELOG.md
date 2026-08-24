@@ -4,8 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.9.0] - 2026-08-24
 
 Five fixes, and the theme from 1.8.0 continues: **most of them were checks that ran, reported success or failure confidently, and were structurally incapable of being right.**
+
 > The two download-path fixes below compounded each other: the sweep was doing its job, but every replacement it grabbed then stalled again on the unbound client. It was bailing out a boat with a hole in it.
 
 ### Added
