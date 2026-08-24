@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.9.1] - 2026-08-24
+
+The licence question is settled, and one more keyword the sweep was guessing at.
+
+### Changed
+- **The four files held back under CC BY-NC 4.0 are gone, reimplemented rather than relicensed.** They were adapted from [leonardoazeredo/ultimate-arr-stack](https://github.com/leonardoazeredo/ultimate-arr-stack), so moving them was never ours to do; the request sat in issue #20 from 2026-08-15 with the author tagged and went unanswered. Silence is not agreement and was not treated as agreement. Instead the dependency was removed: `tests/e2e/helpers.ts`, `tests/e2e/vpn-security.spec.ts`, `tests/e2e/networking.spec.ts` and `scripts/detect-vpn-zombies.sh` were rewritten from their behaviour, contain none of that work, and now sit under `LICENSE-code` with everything else. **The whole repository is on PolyForm Noncommercial for code and CC BY-NC 4.0 for prose, with no carve-outs.** Nothing is withdrawn from anyone — every copy already distributed under CC BY-NC 4.0, including that fork, keeps those terms permanently, and the original stays credited in this repository's history. Stated precisely, because the distinction matters to anyone relying on it: this was a *behavioural* reimplementation, not a formal clean-room one — the author had read the originals while debugging earlier the same night, so the expression is independent but the provenance is not blind. The public API of `helpers.ts` is unchanged, since the names the specs import are an interface rather than expression.
+- **`scripts/detect-vpn-zombies.sh` now separates two failures it previously reported identically** — a container joined to a namespace that has been destroyed, versus one joined to a live container that is not the Gluetun in service. Both are broken and both need the same fix, but they describe very different events, and the distinction is worth having at 2am. Absent or stopped containers are now listed as unchecked rather than passing silently.
+
+### Fixed
+- **The queue sweep tested for a phrase Sonarr does not use.** It matched `not an upgrade`, while Sonarr actually says `Not a quality revision upgrade for existing episode file(s)`, so the check never fired — the same guessed-keyword mistake as the `.scr` case fixed in 1.9.0, and missed for the same reason: the wording was assumed rather than read off a live record. A completed 2160p House of the Dragon grab had been sitting in the queue for **49 days** because of it, holding its full size in `/data/usenet/complete` for a file Sonarr already had at equal or better quality. Now matches `upgrade for existing`, which covers both that phrasing and the shorter variant.
+
 ## [1.9.0] - 2026-08-24
 
 Five fixes, and the theme from 1.8.0 continues: **most of them were checks that ran, reported success or failure confidently, and were structurally incapable of being right.**
