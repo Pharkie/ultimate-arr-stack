@@ -235,7 +235,13 @@ def is_stuck(record):
         # with extension: .scr"). Without it those releases download to 100%,
         # refuse to import, and sit in the queue forever -- several had been
         # stuck for over a month.
-        if ("executable" in all_msgs or "not an upgrade" in all_msgs
+        # "upgrade for existing" rather than "not an upgrade": Sonarr's actual
+        # wording is "Not a quality revision upgrade for existing episode
+        # file(s)", which the narrower phrase never matched -- one completed
+        # 2160p grab sat in the queue for 49 days because of it, holding disk
+        # in /data/usenet/complete for a file Sonarr already had as good.
+        if ("executable" in all_msgs or "upgrade for existing" in all_msgs
+                or "not an upgrade" in all_msgs
                 or "potentially dangerous" in all_msgs):
             reason = "; ".join(msgs[:2]) if msgs else "import pending with warnings"
             return "import_warning", reason
