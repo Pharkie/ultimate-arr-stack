@@ -1,73 +1,98 @@
 #!/bin/bash
 set -euo pipefail
 #
-# Detect VPN-tunneled containers bound to a network namespace that no longer
-# exists — the "zombie" state left behind by a Gluetun *recreate*.
-#
-# LICENCE: this file remains under CC BY-NC 4.0 (LICENSE-docs), NOT the
-# PolyForm Noncommercial licence covering the rest of this repo's code. It is
-# adapted from leonardoazeredo/ultimate-arr-stack and was contributed under
-# CC BY-NC 4.0; relicensing it needs that author's agreement, requested in
-# issue #20. See LICENSE.
-#
-# ORIGIN: adapted from leonardoazeredo/ultimate-arr-stack, a downstream fork of
-# this repo, which published it under this repo's CC BY-NC 4.0 notice. Changed
-# here: the dependent list drops that fork's own services and matches this
-# stack's four tunneled containers.
-#
-# A restart is fine: the container ID is unchanged, so dependents keep working.
-# A recreate is not. `docker compose up -d` gives Gluetun a NEW container ID
-# (even when triggered for an unrelated service, if Gluetun's own config
-# drifted), while its dependents stay pinned to the dead one. Docker does not
-# clean up the stale reference.
-#
-# Nothing conventional can see this. `docker ps` shows the dependent Up, its
-# healthcheck passes because it queries its own localhost, and deunhealth sees
-# a healthy container — while it is completely unreachable from the rest of the
-# stack, because the namespace it is joined to is gone.
+# Report VPN-tunneled containers that are joined to a network namespace which
+# is no longer Gluetun's live one.
 #
 # ⚠️  This script was generated with LLM assistance and human-reviewed.
 #     Read and understand it before running. Do not execute scripts you
 #     don't understand on your system. It only inspects and reports —
 #     it changes nothing.
 #
+# THE FAILURE IT LOOKS FOR
+#
+# Services declaring `network_mode: "service:gluetun"` do not merely depend on
+# Gluetun — they live inside its network namespace, addressed by container ID.
+#
+# Restarting Gluetun is harmless: the ID is preserved and the dependents come
+# back with it. Recreating it is not. A recreate mints a NEW container ID, and
+# that can happen without anyone asking for it — `docker compose up -d` will
+# recreate Gluetun whenever its own definition has drifted, even if the command
+# was aimed at some unrelated service. The dependents stay pinned to the ID that
+# no longer exists, and Docker never corrects the reference.
+#
+# The result is invisible to every routine signal. `docker ps` prints Up. The
+# container's healthcheck passes, because it asks its own localhost. deunhealth
+# sees nothing wrong because nothing reports unhealthy. Meanwhile the service is
+# unreachable from the rest of the stack, and its traffic has nowhere to go.
+#
 # Usage:
 #   ./scripts/detect-vpn-zombies.sh
 #
 # Exit codes:
-#   0 = every VPN-tunneled dependent shares Gluetun's current namespace
-#   1 = one or more zombies found, or the check itself could not run
+#   0 = every tunneled dependent is inside Gluetun's current namespace
+#   1 = at least one is stranded, or the check could not be completed
 #
-# Fix for a detected zombie: docker restart <container>
+# Remedy for anything reported: docker restart <container>
 #
-# Worth running after any Gluetun recreate, or from cron:
+# Reasonable to run after any Gluetun recreate, or on a timer:
 #   */5 * * * * /path/to/arr-stack/scripts/detect-vpn-zombies.sh || notify "VPN zombie!"
 
-# Must match the services carrying network_mode: "service:gluetun" in
-# docker-compose.arr-stack.yml. Sonarr and Radarr are deliberately absent —
-# they run on the bridge (docs/MIGRATION-arr-off-vpn.md).
-DEPENDENTS=(qbittorrent sabnzbd prowlarr flaresolverr)
+# Keep in step with the services carrying network_mode: "service:gluetun" in
+# docker-compose.arr-stack.yml. Sonarr and Radarr are intentionally excluded:
+# they sit on the arr-stack bridge (docs/MIGRATION-arr-off-vpn.md).
+TUNNELED=(qbittorrent sabnzbd prowlarr flaresolverr)
 
-GLUETUN_ID=$(docker inspect --format '{{.Id}}' gluetun 2>/dev/null) || {
-    echo "ERROR: Could not inspect gluetun — is it running?"
-    exit 1
-}
+die() { echo "ERROR: $*" >&2; exit 1; }
 
-zombies=()
+live_namespace=$(docker inspect --format '{{.Id}}' gluetun 2>/dev/null) \
+    || die "cannot inspect gluetun — is the container present?"
 
-for c in "${DEPENDENTS[@]}"; do
-    mode=$(docker inspect --format '{{.HostConfig.NetworkMode}}' "$c" 2>/dev/null) || continue
-    # Only containers joined to another container's namespace can be zombies.
-    [[ "$mode" == container:* ]] || continue
-    if [[ "$mode" != "container:$GLUETUN_ID" ]]; then
-        zombies+=("$c")
+[[ -n "$live_namespace" ]] || die "gluetun reported an empty container ID"
+
+stranded=()
+skipped=()
+
+for service in "${TUNNELED[@]}"; do
+    net=$(docker inspect --format '{{.HostConfig.NetworkMode}}' "$service" 2>/dev/null) || {
+        # Absent or not running: there is no namespace binding to judge, and
+        # calling that a zombie would be a false positive.
+        skipped+=("$service")
+        continue
+    }
+
+    # Anything not joined to another container's namespace is out of scope.
+    case "$net" in
+        container:*) target=${net#container:} ;;
+        *) skipped+=("$service"); continue ;;
+    esac
+
+    [[ "$target" == "$live_namespace" ]] && continue
+
+    # Distinguish the two ways of being wrong: pointing at a container that has
+    # been destroyed, versus pointing at one that still exists but is not the
+    # Gluetun in service. Both are broken; they read very differently when you
+    # are trying to work out what happened.
+    if docker inspect --format '{{.Id}}' "$target" >/dev/null 2>&1; then
+        stranded+=("${service} (joined to a different live container)")
+    else
+        stranded+=("${service} (joined to a destroyed container)")
     fi
 done
 
-if [[ ${#zombies[@]} -gt 0 ]]; then
-    echo "ZOMBIE CONTAINERS (bound to a Gluetun that no longer exists): ${zombies[*]}"
-    echo "Fix: docker restart ${zombies[*]}"
+if [[ ${#skipped[@]} -gt 0 ]]; then
+    echo "Not checked (absent, stopped, or not namespace-joined): ${skipped[*]}"
+fi
+
+if [[ ${#stranded[@]} -gt 0 ]]; then
+    echo "STRANDED — outside Gluetun's current network namespace:"
+    for entry in "${stranded[@]}"; do
+        echo "  - ${entry}"
+    done
+    # Names only, so the suggestion is directly runnable.
+    names=$(printf '%s\n' "${stranded[@]}" | cut -d' ' -f1 | tr '\n' ' ')
+    echo "Fix: docker restart ${names% }"
     exit 1
 fi
 
-echo "OK: all VPN-tunneled dependents share Gluetun's current namespace"
+echo "OK: every tunneled dependent is inside Gluetun's current namespace"

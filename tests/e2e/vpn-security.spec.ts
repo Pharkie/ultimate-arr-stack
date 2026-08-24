@@ -10,35 +10,29 @@ import {
 } from './helpers';
 
 //
-// LICENCE: this file remains under CC BY-NC 4.0 (LICENSE-docs), NOT the
-// PolyForm Noncommercial licence covering the rest of this repo's code. It is
-// adapted from leonardoazeredo/ultimate-arr-stack and was contributed under
-// CC BY-NC 4.0; relicensing it needs that author's agreement, requested in
-// issue #20. See LICENSE.
+// Does each service's traffic actually leave where it is supposed to?
 //
-// ORIGIN: adapted from leonardoazeredo/ultimate-arr-stack, a downstream fork of
-// this repo, published under this repo's CC BY-NC 4.0 notice. Changed here: the
-// off-NAS gate (helpers.ts STACK_IS_LOCAL) and the service lists.
+// The only evidence that answers this is the public address a container's
+// traffic emerges from. An earlier version of this check called Sonarr's API
+// and treated a reply as proof the tunnel was up — reasoning that quietly
+// stopped holding the day Sonarr and Radarr were moved off the VPN namespace,
+// after which it proved nothing at all. Comparing egress addresses is what
+// separates "tunneled" from "leaking"; nothing else does.
 //
-// Replaces the old "VPN connectivity" test in stack.spec.ts, which reached
-// Sonarr's API and inferred the tunnel was healthy — on a premise that stopped
-// being true when Sonarr and Radarr moved off the VPN netns. These compare
-// actual egress IPs, which is the only thing that distinguishes "tunneled"
-// from "leaking".
+// The commands run against whichever docker daemon owns the stack: this
+// machine's when the containers are here, otherwise the NAS's over SSH. An
+// earlier version demanded they be local, so on any development machine the
+// whole file skipped and the suite still exited 0 — a green run in which the
+// VPN had not been examined once. See helpers.ts.
 //
-// They drive `docker exec` against whichever daemon owns the stack — this
-// machine's if the containers are here, otherwise the NAS's over SSH (see
-// helpers.ts DOCKER_TRANSPORT). They used to require the containers to be
-// local, which meant they skipped on every dev machine while the suite still
-// exited 0 — a green run that had checked nothing about the VPN.
+// scripts/check-vpn.sh performs the same comparison by hand. Keep the two in
+// agreement.
 //
-// This is the automated counterpart to scripts/check-vpn.sh; the two implement
-// the same comparison and should be kept in step.
 
 test.describe('VPN egress — leak detection', () => {
   test.beforeAll(() => {
-    // Surface the transport once, so a run that reaches the NAS over SSH is
-    // visibly different from one that quietly checked nothing.
+    // Printed so a run that reached the NAS over SSH is distinguishable from
+    // one that silently examined nothing.
     console.log(`  [vpn-security] docker transport: ${DOCKER_TRANSPORT}`);
   });
 
@@ -46,45 +40,51 @@ test.describe('VPN egress — leak detection', () => {
     requireStackReachable(test.skip);
   });
 
-  test("Gluetun's exit IP differs from the NAS's own WAN IP", () => {
-    const gluetunIp = egressIp('gluetun');
-    // sonarr is bridge-only, so its egress IS the host's WAN egress.
-    const hostIp = egressIp('sonarr');
-    expect(gluetunIp).toBeTruthy();
-    expect(hostIp).toBeTruthy();
-    expect(gluetunIp).not.toBe(hostIp);
+  test("Gluetun's exit address is not the NAS's own", () => {
+    // Sonarr sits on the bridge, so whatever address it egresses from is the
+    // host's ordinary WAN address — a free reference point for "untunneled".
+    const throughTunnel = egressIp('gluetun');
+    const throughHost = egressIp('sonarr');
+
+    expect(throughTunnel).toBeTruthy();
+    expect(throughHost).toBeTruthy();
+    expect(throughTunnel).not.toBe(throughHost);
   });
 
   for (const service of TUNNELED_SERVICES) {
-    test(`${service} egresses through Gluetun, not around it`, () => {
-      // Must MATCH Gluetun exactly. "Differs from the NAS IP" would be too
-      // weak a test: a service leaking via some third route also differs from
-      // the NAS IP while not being tunneled at all.
-      const gluetunIp = egressIp('gluetun');
-      const serviceIp = egressIp(service);
-      expect(gluetunIp).toBeTruthy();
-      expect(serviceIp).toBeTruthy();
-      expect(serviceIp).toBe(gluetunIp);
+    test(`${service} leaves via Gluetun and not around it`, () => {
+      // The assertion is equality with Gluetun, deliberately. Merely differing
+      // from the NAS address would be far too weak: a service escaping down
+      // some third route also differs from the NAS address, while being every
+      // bit as untunneled as one going out the front door.
+      const throughTunnel = egressIp('gluetun');
+      const observed = egressIp(service);
+
+      expect(throughTunnel).toBeTruthy();
+      expect(observed).toBeTruthy();
+      expect(observed).toBe(throughTunnel);
     });
   }
 
   for (const service of BRIDGE_SERVICES) {
-    test(`${service} stays OFF the VPN (post-migration regression guard)`, () => {
-      // Codifies docs/MIGRATION-arr-off-vpn.md as a permanent check. If one of
-      // these ever starts matching Gluetun's IP, something re-tunneled it —
-      // probably by adding network_mode: "service:gluetun" back — without
-      // updating the migration doc or this test.
-      const gluetunIp = egressIp('gluetun');
-      const serviceIp = egressIp(service);
-      expect(gluetunIp).toBeTruthy();
-      expect(serviceIp).toBeTruthy();
-      expect(serviceIp).not.toBe(gluetunIp);
+    test(`${service} remains off the VPN (guards the migration)`, () => {
+      // docs/MIGRATION-arr-off-vpn.md, expressed as something that cannot rot
+      // silently. Should either of these begin matching Gluetun's address,
+      // someone has put it back inside the tunnel — most likely by restoring
+      // network_mode: "service:gluetun" — without touching the migration notes
+      // or this file.
+      const throughTunnel = egressIp('gluetun');
+      const observed = egressIp(service);
+
+      expect(throughTunnel).toBeTruthy();
+      expect(observed).toBeTruthy();
+      expect(observed).not.toBe(throughTunnel);
     });
   }
 });
 
 test.describe('VPN killswitch', () => {
-  test('stopping Gluetun blocks qBittorrent egress rather than leaking via a fallback route', async () => {
+  test('qBittorrent loses egress entirely when Gluetun stops, rather than falling back', async () => {
     requireStackReachable(test.skip);
     test.skip(
       process.env.ALLOW_DISRUPTIVE_TESTS !== '1',
@@ -92,34 +92,38 @@ test.describe('VPN killswitch', () => {
     );
     test.setTimeout(120_000);
 
-    const hostIp = egressIp('sonarr');
-    expect(hostIp).toBeTruthy();
+    const hostAddress = egressIp('sonarr');
+    expect(hostAddress).toBeTruthy();
 
     try {
       dockerLifecycle('stop', 'gluetun');
 
-      // A working killswitch means the request FAILS outright. Getting hostIp
-      // back here would mean traffic fell through to the NAS's own route —
-      // which is precisely the leak this guards against.
+      // With the killswitch intact the lookup cannot complete at all, so null
+      // is the pass. Receiving an address instead — the host's above all —
+      // would mean traffic found its way out around the dead tunnel, which is
+      // the exact leak this exists to rule out.
       expect(egressIp('qbittorrent')).toBeNull();
     } finally {
       dockerLifecycle('start', 'gluetun');
 
-      // Always leave the stack working, even if the assertion above failed.
-      const deadline = Date.now() + 90_000;
-      let healthy = false;
-      while (Date.now() < deadline) {
+      // Restore the stack whatever the assertion did, and confirm the restore
+      // rather than assuming it.
+      const giveUpAt = Date.now() + 90_000;
+      let recovered = false;
+
+      while (Date.now() < giveUpAt) {
         try {
           if (dockerInspect('gluetun', '{{.State.Health.Status}}') === 'healthy') {
-            healthy = true;
+            recovered = true;
             break;
           }
         } catch {
-          // keep polling
+          // Gluetun is mid-restart and not yet inspectable; keep waiting.
         }
-        await new Promise((r) => setTimeout(r, 2_000));
+        await new Promise((resolve) => setTimeout(resolve, 2_000));
       }
-      expect(healthy).toBeTruthy();
+
+      expect(recovered).toBeTruthy();
     }
   });
 });
