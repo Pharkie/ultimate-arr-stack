@@ -21,23 +21,6 @@ Full text: [LICENSE-docs](LICENSE-docs)
 Prose, guides, diagrams, README and everything under `docs/`. Creative Commons
 is the right instrument for writing.
 
-## Four files → CC BY-NC 4.0, pending permission
-
-- `tests/e2e/networking.spec.ts`
-- `tests/e2e/vpn-security.spec.ts`
-- `tests/e2e/helpers.ts`
-- `scripts/detect-vpn-zombies.sh`
-
-These are adapted from [leonardoazeredo/ultimate-arr-stack](https://github.com/leonardoazeredo/ultimate-arr-stack),
-a downstream fork, and were contributed to this project under CC BY-NC 4.0.
-**They remain under CC BY-NC 4.0 until their author agrees to the change** —
-relicensing someone else's copyright without asking is not ours to do. The
-request is [issue #20](https://github.com/Pharkie/ultimate-arr-stack/issues/20).
-
-`tests/e2e/helpers.ts` is a mixed file: only its docker-exec helpers derive
-from that work. The whole file is offered under CC BY-NC 4.0 anyway, because
-splitting a 106-line file by authorship would be worse for everyone reading it.
-
 ## Notes
 
 **This change is forward-only.** Copies already distributed under CC BY-NC 4.0
@@ -48,6 +31,16 @@ withdrawn from anyone.
 on 2026-08-15 (issue #20). [@eren-kemer](https://github.com/eren-kemer)'s
 contribution has no surviving lines, confirmed by `git blame`, so no agreement
 was needed.
+
+Four files were previously held back under CC BY-NC 4.0 because they were
+adapted from [leonardoazeredo/ultimate-arr-stack](https://github.com/leonardoazeredo/ultimate-arr-stack)
+and relicensing another author's work is not ours to do. Rather than assume
+consent from silence, those files — `tests/e2e/networking.spec.ts`,
+`tests/e2e/vpn-security.spec.ts`, `tests/e2e/helpers.ts` and
+`scripts/detect-vpn-zombies.sh` — were **reimplemented from their behaviour**
+and now carry no lines from that work. They are covered by `LICENSE-code` with
+everything else. The original remains credited in this repository's history,
+and the request in issue #20 is withdrawn rather than left hanging.
 
 **GitHub will report this repository as unlicensed.** Its detector recognises
 thirteen licences and includes neither PolyForm nor any NonCommercial CC
