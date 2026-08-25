@@ -13,11 +13,17 @@
 # requiring basicauth (`admin-auth@docker`, see docker-compose.traefik.yml)
 # and serving the mkcert-issued internal cert (see docs/HTTPS-LOCAL.md). The
 # `web` (:80) router just 301s to https via the `https-redirect` middleware
-# instead of serving the app directly. This now includes Media Services
-# (Jellyfin/Seerr) on .lan even though they have their own app-level login -
-# the extra basicauth layer is intentional here (see docs/HTTPS-LOCAL.md for
-# the caveat about non-browser clients: Kodi, mobile apps, Chromecast/smart
-# TVs may not handle an HTTP Basic Auth challenge). Their separate
+# instead of serving the app directly. This now includes Seerr on .lan even
+# though it has its own app-level login - the extra basicauth layer is
+# intentional there (see docs/HTTPS-LOCAL.md for the caveat about
+# non-browser clients: Kodi, mobile apps, Chromecast/smart TVs may not
+# handle an HTTP Basic Auth challenge). Jellyfin (below) deliberately has NO
+# admin-auth on its -secure router: its web client fires many concurrent
+# requests (websocket, HLS video segments, thumbnails) and not all of them
+# reliably carry the browser's cached Basic Auth header, so the same gate
+# that works fine for a simple admin UI produced repeated/looping native
+# auth prompts here instead. Jellyfin's own app-level login is the real gate
+# for it; security-headers + TLS still apply. Their separate
 # Cloudflare-facing public routers are untouched - Cloudflare already
 # terminates TLS and those keep using app-level auth only, not admin-auth.
 
@@ -33,7 +39,8 @@ http:
       rule: "Host(`jellyfin.lan`)"
       entryPoints: [websecure]
       tls: {}
-      middlewares: [admin-auth@docker, security-headers]
+      # No admin-auth here (deliberately) - see the file header comment.
+      middlewares: [security-headers]
       service: jellyfin-lan
 
     seerr-lan:
