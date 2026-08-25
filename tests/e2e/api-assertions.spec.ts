@@ -250,10 +250,28 @@ test.describe('API assertions', () => {
     expect(seerrKey.length).toBeGreaterThan(0);
 
     for (const svc of ['radarr', 'sonarr'] as const) {
-      const res = await request.get(url('seerr', `/api/v1/service/${svc}/0`), {
+      // Ask which servers are configured rather than assuming an id. Seerr
+      // numbers Sonarr and Radarr servers from a single sequence, so the ids
+      // depend on the order they were added — here Radarr is 0 and Sonarr is
+      // 1. Probing a hardcoded /0 therefore tested Radarr twice on one NAS and
+      // 404'd on another, reporting a healthy Sonarr as a stale key.
+      const settings = await request.get(url('seerr', `/api/v1/settings/${svc}`), {
         headers: { 'X-Api-Key': seerrKey },
       });
-      expect(res.ok(), `Seerr's ${svc} probe failed — stale API key or path override`).toBeTruthy();
+      expect(settings.ok(), `could not list Seerr's ${svc} servers`).toBeTruthy();
+      const servers: Array<{ id: number; name: string }> = await settings.json();
+      expect(servers.length, `Seerr has no ${svc} server configured`).toBeGreaterThan(0);
+
+      for (const server of servers) {
+        const res = await request.get(url('seerr', `/api/v1/service/${svc}/${server.id}`), {
+          headers: { 'X-Api-Key': seerrKey },
+        });
+        expect(
+          res.ok(),
+          `Seerr's probe of ${svc} server "${server.name}" (id ${server.id}) failed ` +
+            `with HTTP ${res.status()} — stale API key or path override`,
+        ).toBeTruthy();
+      }
     }
   });
 
