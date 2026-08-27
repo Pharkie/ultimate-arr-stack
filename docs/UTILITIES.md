@@ -40,6 +40,53 @@ docker exec uptime-kuma sqlite3 /app/data/kuma.db "UPDATE monitor SET name='NewN
 docker restart uptime-kuma
 ```
 
+### The VPN check, and why it is a push monitor
+
+`scripts/check-vpn.sh` runs from cron every 5 minutes and pings a Kuma **push**
+monitor named `VPN Check` on success only. Kuma raises the alarm when the pings
+stop.
+
+That inversion is the point. An HTTP monitor asks "is the service answering?",
+which a leaking or unmeasurable VPN answers perfectly well. A push monitor asks
+"did the check run and pass?", so it also catches the case an HTTP monitor never
+can: the check itself not running. A dead cron and a healthy VPN look identical
+to everything else on this page.
+
+```bash
+# Create the push monitor (token is yours; generate a fresh 32-char one)
+TOKEN=$(head -c 24 /dev/urandom | md5sum | cut -c1-32)
+docker exec uptime-kuma sqlite3 /app/data/kuma.db \
+  "INSERT INTO monitor (name, active, type, interval, retry_interval, maxretries, \
+   push_token, user_id, upside_down, accepted_statuscodes_json, method) \
+   VALUES ('VPN Check', 1, 'push', 600, 60, 1, '$TOKEN', 1, 0, '[\"200-299\"]', 'GET');"
+
+# Attach your notification so it can actually reach you (id 1 = your default)
+MID=$(docker exec uptime-kuma sqlite3 /app/data/kuma.db "SELECT id FROM monitor WHERE name='VPN Check';")
+docker exec uptime-kuma sqlite3 /app/data/kuma.db \
+  "INSERT INTO monitor_notification (monitor_id, notification_id) VALUES ($MID, 1);"
+
+docker restart uptime-kuma
+echo "push URL: http://localhost:3001/api/push/$TOKEN"
+```
+
+The cron entry pushes only when the script exits 0, and logs the output when it
+does not:
+
+```cron
+*/5 * * * * /path/to/arr-stack/scripts/check-vpn.sh > /tmp/check-vpn.last 2>&1 && curl -fsS -m 10 "http://localhost:3001/api/push/YOUR_TOKEN?status=up&msg=OK" > /dev/null || { echo "--- $(date) ---"; cat /tmp/check-vpn.last; } >> /path/to/arr-stack/logs/check-vpn.log
+```
+
+The monitor interval is 600s against a 300s cron, so one slow or missed run does
+not page you; two consecutive failures do.
+
+> **Installing the crontab needs root on UGOS.** `crontab <file>` writes its temp
+> file into `/var/spool/cron/`, which the admin user cannot write, so it fails
+> with `mkstemp: Permission denied`. Writing
+> `/var/spool/cron/crontabs/<user>` directly *appears* to work — the file is
+> owned by the user — but cron never reloads it, and the entry silently never
+> runs. Verify with a `* * * * * date >> /tmp/canary.log` entry before trusting
+> it. Use `sudo crontab -u <user> <file>`.
+
 **Recommended monitors** (matching what the pre-commit check expects):
 
 | Monitor | Type | URL | Notes |
