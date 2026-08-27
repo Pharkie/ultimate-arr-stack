@@ -67,23 +67,6 @@ if [[ -z "$HOST_IP" ]]; then
     exit 1
 fi
 
-echo "Checking Gluetun's exit IP..."
-VPN_IP=$(egress_ip gluetun) || VPN_IP=""
-if [[ -z "$VPN_IP" ]]; then
-    echo "ERROR: Could not reach an IP-check service through Gluetun"
-    echo "       Gluetun may be down or the VPN disconnected"
-    exit 1
-fi
-
-if [[ "$VPN_IP" == "$HOST_IP" ]]; then
-    echo "LEAK DETECTED: Gluetun's egress ($VPN_IP) matches the host's ($HOST_IP)"
-    echo "               Gluetun is NOT routing through the VPN."
-    exit 1
-fi
-
-echo "OK: Gluetun is tunneling"
-echo "  host egress: $HOST_IP"
-echo "  VPN egress:  $VPN_IP"
 # DNS is checked explicitly, and before egress, because gluetun's own health
 # check no longer looks at it. HEALTH_TARGET_ADDRESSES pins that check to bare
 # IPs on purpose (see docker-compose.arr-stack.yml): resolving names there made
@@ -91,6 +74,13 @@ echo "  VPN egress:  $VPN_IP"
 # rebuilding the tunnel in a loop that took every VPN-side container down with
 # it. Decoupling that is only safe if something else still watches DNS, and
 # this is that something.
+#
+# It runs ahead of the Gluetun exit-IP check too, not just the per-service
+# ones. That check resolves ifconfig.me and exits the script on failure, so
+# with DNS down the whole run ended on "Gluetun may be down or the VPN
+# disconnected" — true only in the sense that nothing worked, and pointing
+# at the tunnel when the tunnel was fine. Found by staging the outage rather
+# than reasoning about it.
 #
 # One probe covers all four services: they share gluetun's network namespace,
 # so they share its resolver. Checked ahead of egress because every egress
@@ -110,6 +100,24 @@ else
     exit 1
 fi
 
+echo ""
+echo "Checking Gluetun's exit IP..."
+VPN_IP=$(egress_ip gluetun) || VPN_IP=""
+if [[ -z "$VPN_IP" ]]; then
+    echo "ERROR: Could not reach an IP-check service through Gluetun"
+    echo "       Gluetun may be down or the VPN disconnected"
+    exit 1
+fi
+
+if [[ "$VPN_IP" == "$HOST_IP" ]]; then
+    echo "LEAK DETECTED: Gluetun's egress ($VPN_IP) matches the host's ($HOST_IP)"
+    echo "               Gluetun is NOT routing through the VPN."
+    exit 1
+fi
+
+echo "OK: Gluetun is tunneling"
+echo "  host egress: $HOST_IP"
+echo "  VPN egress:  $VPN_IP"
 echo ""
 echo "Checking tunneled services..."
 
