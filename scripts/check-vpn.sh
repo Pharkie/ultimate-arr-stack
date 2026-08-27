@@ -25,6 +25,12 @@ set -euo pipefail
 # the host: a service escaping down some third route would also differ from the
 # host while not being tunneled at all.
 #
+# WHAT CHANGED AND WHY (2026-08-27): a service whose egress could not be
+# measured printed WARN, was skipped, and did not affect the exit code. So the
+# run in which all four tunneled services had lost their network still ended on
+# "OK: every tunneled service egresses through Gluetun", exit 0. Unmeasurable
+# is now a failure. An unverified service is not a passing one.
+#
 # This is the shell counterpart to tests/e2e/vpn-security.spec.ts. Both
 # implement the same comparison; keep them in step.
 #
@@ -85,7 +91,23 @@ leaked=0
 for svc in "${TUNNELED_SERVICES[@]}"; do
     svc_ip=$(egress_ip "$svc") || svc_ip=""
     if [[ -z "$svc_ip" ]]; then
-        echo "  WARN: $svc — could not determine egress (container down or unreachable)"
+        # Not a warning to be scrolled past. A service whose egress cannot be
+        # measured has not been shown to be tunneled, and calling that success
+        # is the same mistake as the pre-2026-08-15 comparison this script was
+        # rewritten to fix — it is just spelled `continue` instead of `==`.
+        #
+        # This is not hypothetical. On 2026-08-27, recreating Gluetun left all
+        # four tunneled services attached to a namespace that no longer existed:
+        # running, reported healthy, no network at all. Every egress probe here
+        # returned empty, and this script ended on "OK: every tunneled service
+        # egresses through Gluetun" and exit 0 — the one outcome that guarantees
+        # nobody looks further. In cron, that silence is the whole product.
+        #
+        # scripts/detect-vpn-zombies.sh diagnoses this specific cause and is
+        # worth running next; the job here is only to refuse to call it OK.
+        echo "  FAIL: $svc — could not determine egress (container down, or attached to"
+        echo "        a namespace that no longer exists — try scripts/detect-vpn-zombies.sh)"
+        leaked=1
         continue
     fi
     if [[ "$svc_ip" == "$VPN_IP" ]]; then
