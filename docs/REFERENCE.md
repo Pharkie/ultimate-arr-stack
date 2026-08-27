@@ -101,6 +101,25 @@
 
 > **Reaching VPN-side services from the bridge:** use the `gluetun` hostname (or `172.20.0.3`) — qBittorrent/SABnzbd/Prowlarr listen inside gluetun's namespace, so they have no Docker DNS name of their own. Gluetun's `FIREWALL_OUTBOUND_SUBNETS` includes `172.20.0.0/24`, so Prowlarr (in the VPN namespace) can reach Sonarr/Radarr on the bridge.
 
+> **Never point a container at a `.lan` name.** Those names all resolve to Traefik's
+> **macvlan** address (`192.168.1.11` in these docs). A macvlan interface is deliberately
+> unreachable from the container bridge on the same host, so *every* `.lan` URL fails from
+> inside a container — with IPv4 forced, and regardless of which `.lan` name it is. The
+> names are for browsers on your LAN, not for service-to-service configuration.
+>
+> This bites hardest in webhook and notification fields, where nothing validates the URL and
+> the only symptom is a health check going red days later:
+>
+> ```
+> # from inside Sonarr
+> curl http://homeassistant.lan:8123/api/webhook/...  → http=000   (Traefik's macvlan, and
+>                                                                   Traefik isn't on 8123)
+> curl http://192.168.1.20:8123/api/webhook/...       → http=200   (the device itself)
+> ```
+>
+> Address external devices by IP and their real port. Address other stack services by the
+> table above.
+
 ## Common Commands
 
 ```bash

@@ -118,6 +118,26 @@ services:
         condition: service_healthy  # Wait for Pi-hole DNS before VPN connects
     cap_add:
       - NET_ADMIN
+      # gluetun runs as uid 0, but `cap_drop: ALL` above also takes away two
+      # caps the default Docker set would have handed it. It needs both back:
+      #
+      #   CHOWN        - gluetun chowns /etc/openvpn/target.ovpn. Only the
+      #                  OpenVPN path touches it, so VPN_TYPE=wireguard never
+      #                  notices, but VPN_TYPE=openvpn fails 100% of the time
+      #                  with "chown /etc/openvpn/target.ovpn: operation not
+      #                  permitted" and retries forever.
+      #   DAC_OVERRIDE - without it, root is subject to normal file permissions.
+      #                  OpenVPN then can't read back the file it just chowned
+      #                  away from itself ("--auth-user-pass fails with
+      #                  '/etc/openvpn/auth.conf': Permission denied"), and on
+      #                  EVERY VPN type gluetun can't write /tmp/gluetun/ip, so
+      #                  /v1/publicip/ip silently returns "" and the log fills
+      #                  with "clearing public IP data: permission denied".
+      #
+      # Adding NET_ADMIN alone looks right because every gluetun guide says
+      # that's all you need - true only because they don't drop the default caps.
+      - CHOWN
+      - DAC_OVERRIDE
     devices:
       - /dev/net/tun:/dev/net/tun
     volumes:
