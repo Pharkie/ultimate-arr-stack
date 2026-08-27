@@ -20,6 +20,12 @@ check_uptime_monitors() {
         "Radarr"
         "Sonarr"
         "Traefik"
+        # Push monitor, not an HTTP one: scripts/check-vpn.sh pings it from cron
+        # every 5 minutes and Kuma alerts when the pings STOP. Listed here so
+        # that deleting it in the UI shows up as a warning — a monitor whose
+        # whole job is to notice silence fails silently when it is the thing
+        # that goes missing.
+        "VPN Check"
     )
 
     # Skip if NAS config not available

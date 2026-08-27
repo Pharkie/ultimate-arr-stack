@@ -151,6 +151,29 @@ services:
       - SERVER_COUNTRIES=${VPN_COUNTRIES}
       - TZ=${TZ}
       - DNS_ADDRESS=172.20.0.5
+      # Health check targets, deliberately IP:port and not hostnames.
+      #
+      # DNS_ADDRESS above disables gluetun's own resolver (it says so at every
+      # startup), making Pi-hole a hard dependency for all DNS. gluetun's
+      # default health targets are `github.com:443,cloudflare.com:443` — NAMES.
+      # So the check that decides whether the VPN is alive was being answered
+      # by Pi-hole, and a Pi-hole wobble was indistinguishable from a dead
+      # tunnel. gluetun's response is to rebuild the tunnel, which cannot fix
+      # DNS, so it loops — taking every VPN-side container's network with it on
+      # each pass, and never recovering on its own.
+      #
+      # On 2026-08-05 that produced 323 VPN rebuilds and 10 container restarts
+      # between 19:32 and 21:18. Pi-hole's own query log for the window shows
+      # it flapping rather than dead — multi-minute gaps, and 17 minutes at
+      # 2 queries/min against a 20–150/min baseline — and gluetun's restart
+      # clusters line up with the gaps. It stopped only when the container was
+      # restarted by hand.
+      #
+      # These addresses take DNS out of the decision entirely: the check now
+      # tests the tunnel and nothing else. DNS is still checked, but by
+      # scripts/check-vpn.sh, where failing means being told about it rather
+      # than having the VPN torn down in response.
+      - HEALTH_TARGET_ADDRESSES=1.1.1.1:443,8.8.8.8:443
       - FIREWALL_OUTBOUND_SUBNETS=${LAN_SUBNET},172.20.0.0/24,10.8.1.0/24
     ports:
       # Ports for services using network_mode: "service:gluetun"
