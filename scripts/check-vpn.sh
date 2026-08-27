@@ -84,6 +84,32 @@ fi
 echo "OK: Gluetun is tunneling"
 echo "  host egress: $HOST_IP"
 echo "  VPN egress:  $VPN_IP"
+# DNS is checked explicitly, and before egress, because gluetun's own health
+# check no longer looks at it. HEALTH_TARGET_ADDRESSES pins that check to bare
+# IPs on purpose (see docker-compose.arr-stack.yml): resolving names there made
+# a Pi-hole wobble indistinguishable from a dead tunnel, and gluetun answered by
+# rebuilding the tunnel in a loop that took every VPN-side container down with
+# it. Decoupling that is only safe if something else still watches DNS, and
+# this is that something.
+#
+# One probe covers all four services: they share gluetun's network namespace,
+# so they share its resolver. Checked ahead of egress because every egress
+# probe below resolves a hostname — with DNS down they all fail at once, and
+# without this the report would blame egress for a name-resolution fault.
+echo ""
+echo "Checking DNS inside the tunnel..."
+dns_server=$(docker exec gluetun sh -c "nslookup github.com 2>/dev/null | awk '/^Address:/{print \$2; exit}'" 2>/dev/null) || dns_server=""
+if docker exec gluetun sh -c 'nslookup github.com >/dev/null 2>&1' 2>/dev/null; then
+    echo "  OK:   names resolve inside gluetun's namespace (resolver ${dns_server:-unknown})"
+else
+    echo "  FAIL: DNS is not resolving inside gluetun's namespace."
+    echo "        Every tunneled service shares this resolver, so all of them are"
+    echo "        affected. DNS_ADDRESS points gluetun at Pi-hole (172.20.0.5) and"
+    echo "        disables its internal resolver, so start with Pi-hole:"
+    echo "        docker exec pihole dig @127.0.0.1 github.com +short"
+    exit 1
+fi
+
 echo ""
 echo "Checking tunneled services..."
 
