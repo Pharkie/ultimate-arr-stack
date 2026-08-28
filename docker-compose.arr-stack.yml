@@ -118,8 +118,8 @@ services:
         condition: service_healthy  # Wait for Pi-hole DNS before VPN connects
     cap_add:
       - NET_ADMIN
-      # gluetun runs as uid 0, but `cap_drop: ALL` above also takes away two
-      # caps the default Docker set would have handed it. It needs both back:
+      # gluetun runs as uid 0, but `cap_drop: ALL` above also takes away caps
+      # the default Docker set would have handed it. It needs these back:
       #
       #   CHOWN        - gluetun chowns /etc/openvpn/target.ovpn. Only the
       #                  OpenVPN path touches it, so VPN_TYPE=wireguard never
@@ -138,6 +138,18 @@ services:
       # that's all you need - true only because they don't drop the default caps.
       - CHOWN
       - DAC_OVERRIDE
+      #   SETUID       - OpenVPN drops privileges to `nonrootuser` once the
+      #                  tunnel is up. gluetun writes `user nonrootuser` into
+      #                  target.ovpn unconditionally -- including when its own
+      #                  settings summary says "Run OpenVPN as: root", and even
+      #                  with OPENVPN_PROCESS_USER=root set -- so the setuid is
+      #                  not avoidable by configuration. Without this cap:
+      #                  "setuid('nonrootuser') failed: Operation not permitted
+      #                  (errno=1)" AFTER the tunnel establishes, so the peer
+      #                  connects and the link comes up before it dies.
+      #                  SETGID is deliberately NOT here: gluetun writes no
+      #                  `group` directive, and the tunnel completes without it.
+      - SETUID
     devices:
       - /dev/net/tun:/dev/net/tun
     volumes:

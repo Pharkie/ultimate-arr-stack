@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.10.1] - 2026-08-28
+
+1.10.0's OpenVPN fix was incomplete, and the way it was verified is why.
+
+### Fixed
+- **Gluetun also needs SETUID on the OpenVPN path.** Once the tunnel establishes, OpenVPN drops privileges and died on `setuid('nonrootuser') failed: Operation not permitted (errno=1)` — one step further than the chown error 1.10.0 fixed, and reported by the same person. gluetun writes `user nonrootuser` into `target.ovpn` unconditionally: its own settings summary prints "Run OpenVPN as: root" while writing that line, and `OPENVPN_PROCESS_USER=root` does not remove it either, so the setuid cannot be configured away. SETGID is deliberately not granted — there is no `group` directive and the tunnel completes without it.
+
+### Added
+- **`tests/openvpn-caps.bats` exercises the OpenVPN path against a real tunnel.** 1.10.0 was verified with dummy credentials, where OpenVPN exits at AUTH_FAILED — and setuid happens *after* authentication, so the check could not have observed the failure it claimed to rule out. Provider credentials were never the obstacle: a second container running OpenVPN in static-key mode is a real peer, with no PKI and no secrets in the repo. The test reads the capability list from `docker-compose.arr-stack.yml` rather than restating it, so it fails when that file changes, and it carries its own negative case — deleting the SETUID line fails it with the exact setuid error.
+
+
 ## [1.10.0] - 2026-08-27
 
 A reader's Gluetun wouldn't start on a UGREEN NAS. The capability that was missing turned out to break a second thing on every VPN type, and three more checks nearby turned out to be incapable of failing.
