@@ -355,6 +355,7 @@ needed a manual Tailscale toggle — task #90, and the reason
 | Task | What | Next action |
 |---|---|---|
 | #86 | The ~6–9 Mbps per-flow ceiling | ✅ **Closed (2026-09-05)** — resolved by decommissioning the NAS-based path entirely rather than fixing its ceiling. Kernel-6.2 UDP-GSO wall + driver-level `generic-segmentation-offload: off [requested on]` confirmed dead end empirically (§6); the router-based replacement (`arr-stack-router`, native `kmod-wireguard` + `tailscale`) measured 68.6 ↓ / 47.6 ↑ Mbps under adverse conditions, 8–10x the old ceiling. See §10 |
+| — | `autoApprovers.exitNode: ["tag:nas-router"]` is vestigial post-decommission | **Open (2026-09-05).** The offline `tailscale-exit` node (`arr-stack-vpn-exit`) has been deleted from the admin console, and the phone confirms `arr-stack-router` works as exit node right now regardless — so this isn't blocking anything functional. What's unresolved is whether `arr-stack-router`'s Tailscale node should be tagged (`tag:nas-router` or a new tag) and added to `tagOwners`/`autoApprovers.exitNode` so its exit-node approval survives a re-auth the way node 1's does, or whether it's fine relying on manual approval. Next action: check `arr-stack-router`'s current tag status in the admin console and decide |
 | — | No leak/kill-switch test exists for the router-based exit-node path | **Open, new (2026-09-05).** §6 Gate check I proved the NAS-based path (`gluetun-exit`) failed closed rather than leaking on VPN drop; that test (`tests/e2e/vpn-security.spec.ts`'s exit-node chaos test) was deleted along with the container it exercised, and no equivalent exists for `arr-stack-router`. The decommission plan explicitly did not close this gap — it inherited it, on the user's explicit choice to proceed on the throughput margin alone (see §10). Next action: devise a way to test router-side kill-switch behavior (e.g. drop the router's WireGuard interface while a Tailscale client is using it as exit node, confirm traffic fails closed rather than falling back to the router's raw WAN route) |
 | #90 | Android does not recover when `tailscale-exit` restarts | ✅ **Moot (2026-09-05)** — `tailscale-exit` no longer exists; see §10. If the router-based exit node ever needs to restart, this class of bug (Android not re-establishing the tunnel afterward) may resurface and would need re-verifying fresh, not assumed fixed by this closure |
 | #77 | Drop `--reset` from node 1 | ✅ **Done** — dropped from `docker-compose.tailscale.yml`'s `TS_EXTRA_ARGS`, verified live on the NAS |
@@ -574,16 +575,15 @@ replaced it. This is tracked as a new open item in §7, not silently dropped.
 - Doc references in `CLAUDE.md`, `docs/TAILSCALE.md`, `docs/REFERENCE.md`,
   `TODO-home.md`.
 
-**What is deliberately not touched by this repo change**, because it is
-live-only state per §5's pattern: the `tailscale-exit` node's entry in the
-Tailscale admin console (goes offline once its container stops existing;
-delete/expire it there), whether `arr-stack-router`'s Tailscale node needs
-adding to `tagOwners`/`autoApprovers.exitNode` in the ACL policy (§6's
-`docs/TAILSCALE.md` example ACL used `tag:nas-router`, which was written for
-`tailscale-exit` and is now vestigial — see the warning added there), and the
-NAS-side `tailscale-exit-state`/`gluetun-exit-config` Docker volumes (back up,
-then remove, on the NAS directly). None of these can be done from a session
-without live NAS/Tailscale-admin access — this section exists partly to make
-that limitation explicit rather than have it discovered later as a silent gap
-between "the repo says decommissioned" and "the live tailnet still lists the
-old node."
+**What was live-only state, per §5's pattern, and its current status:**
+the NAS-side `tailscale-exit-state`/`gluetun-exit-config` Docker volumes were
+backed up then removed directly on the NAS; the offline `tailscale-exit`
+node (listed in the tailnet as `arr-stack-vpn-exit`) was deleted from the
+Tailscale admin console by the user on 2026-09-05, confirmed gone from the
+device list. The one item still open: whether `arr-stack-router`'s Tailscale
+node needs adding to `tagOwners`/`autoApprovers.exitNode` in the ACL policy
+(§6's `docs/TAILSCALE.md` example ACL used `tag:nas-router`, which was
+written for `tailscale-exit` and is now vestigial — see the warning added
+there). The phone-side check — confirming `arr-stack-router` is selectable
+and actively working as the exit node post-cutover — is also confirmed done
+(2026-09-05, connected with LAN access on).
