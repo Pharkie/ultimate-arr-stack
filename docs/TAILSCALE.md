@@ -201,15 +201,15 @@ revert to the previous version. No NAS-side action needed; the compose change (a
 `tag:nas-router`) is harmless even without a matching ACL policy, it just has no effect until
 `tagOwners` grants it.
 
-> ⚠️ **`autoApprovers.exitNode: ["tag:nas-router"]` above is now vestigial for
+> ⚠️ **`autoApprovers.exitNode: ["tag:nas-router"]` above no longer describes
 > the NAS.** No NAS-side device advertises as an exit node any more (see
-> "Exit node: don't use the NAS, use the router" above) — it's dead
-> configuration, not a bug, and safe to leave in place. Whether
-> `arr-stack-router`'s own tailnet tag needs adding here (either reusing
-> `tag:nas-router` or a new tag) for its exit-node advertisement to
-> auto-approve is open — check live (`tailscale status` on the router) rather
-> than assuming, since its Tailscale config lives on the device, not in this
-> repo.
+> "Exit node: don't use the NAS, use the router" above). It's not dead
+> configuration though — confirmed live (2026-09-05) that `arr-stack-router`
+> carries this same `tag:nas-router` tag, so its exit-node advertisement
+> already auto-approves through this entry with no ACL edit needed. Its
+> Tailscale config lives on the device, not in this repo, but the tag
+> assignment is what matters here and that's confirmed via the admin
+> console's Machines list.
 
 ## Troubleshooting
 
