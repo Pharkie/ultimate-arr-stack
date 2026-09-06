@@ -580,10 +580,10 @@ the NAS-side `tailscale-exit-state`/`gluetun-exit-config` Docker volumes were
 backed up then removed directly on the NAS; the offline `tailscale-exit`
 node (listed in the tailnet as `arr-stack-vpn-exit`) was deleted from the
 Tailscale admin console by the user on 2026-09-05, confirmed gone from the
-device list. The one item still open: whether `arr-stack-router`'s Tailscale
-node needs adding to `tagOwners`/`autoApprovers.exitNode` in the ACL policy
-(§6's `docs/TAILSCALE.md` example ACL used `tag:nas-router`, which was
-written for `tailscale-exit` and is now vestigial — see the warning added
-there). The phone-side check — confirming `arr-stack-router` is selectable
-and actively working as the exit node post-cutover — is also confirmed done
-(2026-09-05, connected with LAN access on).
+device list. The `tagOwners`/`autoApprovers.exitNode` question is also
+closed — confirmed via the admin console that `arr-stack-router` already
+carries `tag:nas-router`, the same tag `autoApprovers.exitNode` already
+grants (see §7's table for the closure record). The phone-side check —
+confirming `arr-stack-router` is selectable and actively working as the
+exit node post-cutover — is also confirmed done (2026-09-05, connected with
+LAN access on).

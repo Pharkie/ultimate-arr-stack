@@ -33,8 +33,12 @@ The backup script (`scripts/arr-backup.sh`) backs up **state a service cannot re
 | radarr-config *(cache excluded)* | ~7MB of 190MB | Movie DB, quality profiles, custom formats, API key |
 | jellyfin-config *(cache excluded)* | ~9MB of 506MB | Users, watch history, plugin config |
 | pihole-etc-pihole *(cache excluded)* | ~5MB of 50MB | `pihole.toml`, gravity DB, custom allow/deny lists |
+| decypharr-config *(cache excluded)* | ~3MB | `auth.json`/`config.json` — debrid credentials |
+| beszel-data | ~400KB | `data.db` plus `id_ed25519`, the monitoring agent's own private key |
+| dnscrypt-config | ~500KB | Hand-edited `dnscrypt-proxy.toml` — resolver and forwarding rules |
 
-Sizes measured on the live NAS 2026-08-30.
+Sizes measured on the live NAS 2026-08-30/31. The last three were assessed and added on
+2026-08-31 — none is regenerable, and together they're under 4MB.
 
 **The four *(cache excluded)* volumes were previously skipped entirely** on the grounds that they were large and "re-scan to rebuild". That was only ever true of the caches inside them. A re-scan does not rebuild quality profiles, custom formats, release profiles, indexer assignments, Jellyfin users, or watch history. Excluding just the caches buys full protection for those services for roughly 35MB — `sonarr-config`'s 862MB `logs.db` was the bulk of what made the volume look too expensive to back up.
 
@@ -48,9 +52,6 @@ Volumes holding nothing a service cannot rebuild unaided:
 | duc-index | ~20MB | Disk usage index, regenerates on restart |
 | configarr-repos | ~10MB | Git clones of upstream config repos, re-cloned on run |
 | magnetio-redis-data | 8KB | Ephemeral cache |
-| decypharr-config | ~3MB | Not yet assessed — candidate for inclusion |
-| beszel-data | ~400KB | Not yet assessed — candidate for inclusion |
-| dnscrypt-config | ~500KB | Not yet assessed — candidate for inclusion |
 
 Plus the cache subdirectories inside the four *(cache excluded)* volumes above: `logs.db`, `logs`, `MediaCover`, `Sentry` (*arr), `metadata`/`cache`/`log`/`transcodes` (Jellyfin), `pihole-FTL.db`/`gravity_old.db`/`listsCache` (Pi-hole).
 
