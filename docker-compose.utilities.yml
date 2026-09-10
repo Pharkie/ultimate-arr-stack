@@ -82,7 +82,7 @@ services:
   # needs /images/* reads, which CONTAINERS=1 does not cover.
   # ═══════════════════════════════════════════════════════════════════════════
   docker-socket-proxy:
-    image: tecnativa/docker-socket-proxy:v0.4.2
+    image: tecnativa/docker-socket-proxy:v0.5.0
     container_name: docker-socket-proxy
     <<: *default-security
     restart: always
@@ -375,7 +375,7 @@ services:
   # Access: https://beszel.lan only (no host port published — see the note on ports below)
   # ═══════════════════════════════════════════════════════════════════════════
   beszel:
-    image: henrygd/beszel:0.18
+    image: henrygd/beszel:0.19
     container_name: beszel
     <<: *default-security
     cap_add:
@@ -405,7 +405,7 @@ services:
       start_period: 30s
 
   beszel-agent:
-    image: henrygd/beszel-agent:0.18
+    image: henrygd/beszel-agent:0.19
     container_name: beszel-agent
     <<: *default-security
     restart: always
