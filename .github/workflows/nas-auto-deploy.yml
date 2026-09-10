@@ -65,6 +65,16 @@ jobs:
           ./setup-hooks.sh
           npm run test:bats
 
+      - name: Mutation-check the guards this change touches
+        # run-mutations.sh is this repo's proof that its guards can fail, and nothing
+        # ran it until now: a corpus entry whose pattern stopped matching reports ERROR,
+        # but only to whoever runs it. Scoped to the corpus files that guard the files
+        # this change touched -- the full corpus is 271 entries, each running its oracle
+        # twice. fetch-depth: 0 above is what makes origin/main resolvable here.
+        run: |
+          set -e
+          ./tests/mutation/check-changed-guards.sh origin/main
+
       - name: Connect to Tailscale
         uses: tailscale/github-action@v3
         with:

@@ -208,6 +208,13 @@ def test_the_dry_run_summary_says_it_is_a_dry_run():
     m.run(FakeApi([series(path="/tv/wrong")]), apply_changes=False, out=lines.append)
     assert any("dry run" in line for line in lines)
     assert not any("Renaming:" in line for line in lines)
+    # The blank separator run() prints between the configured-format header (line 0)
+    # and the per-series list. Positional on purpose: run() prints ANOTHER blank line
+    # before the summary, so a membership check (`"" in lines`) passes even with this
+    # one removed -- which is how `out("") ==> pass` survived the 2026-09-02 sweep
+    # untriaged. Same shape as queue_cleanup.py's nine out(...) survivors, closed the
+    # same way: one assertion, in the test that already captures the lines.
+    assert lines[1] == ""
 
 
 def test_series_are_processed_in_title_order():

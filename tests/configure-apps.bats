@@ -40,7 +40,15 @@ setup() {
     stub_docker '
         case "$1" in
             ps)      cat "$FIX/running" ;;
-            inspect) cat "$FIX/gluetun-health" ;;
+            inspect)
+                # configure-apps.sh:196 is the only inspect call in the script:
+                #   docker inspect -f '{{.State.Health.Status}}' gluetun
+                # Answering ANY inspect argv with canned content would let a broken
+                # format string pass here and fail on real docker with a template
+                # parse error -- the one thing this stub cannot check for itself.
+                [ "$*" = "inspect -f {{.State.Health.Status}} gluetun" ] \
+                    || { echo "unexpected docker inspect argv: $*" >&2; exit 125; }
+                cat "$FIX/gluetun-health" ;;
             logs)    cat "$FIX/qbit-logs" ;;
             exec)
                 case "$*" in

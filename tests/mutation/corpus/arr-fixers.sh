@@ -375,3 +375,12 @@ mutation queue-import-pending-ignores-state \
   --test "the extracted modules pass their pytest suite" \
   --why "the state and the status are two conditions and dropping the state one lets any warning-flagged record with an 'not an upgrade' message be treated as pending import - which deletes and blocklists releases that are still downloading (test_a_still_downloading_item_is_not_judged_by_the_import_pending_rule)" \
   --apply 'sed -i "s@^    if tracked_state == \"importPending\" and tracked_status == \"warning\":\$@    if True and tracked_status == \"warning\":@" "$F"'
+
+# --- fix_sonarr_folders.py: the blank separator line -----------------------
+
+mutation sonarr-blank-line-separator-removed \
+  --file scripts/lib/fix_sonarr_folders.py \
+  --bats tests/python-suite.bats \
+  --test "the extracted modules pass their pytest suite" \
+  --why "drops the blank line run() prints between the configured-format header and the per-series list. Only the FIRST occurrence is mutated: run() prints a second blank line before the summary, so a membership-style assertion would still pass with this one gone - which is why this survived the 2026-09-02 sweep untriaged. It changes stdout, so it is not an equivalent mutant (test_the_dry_run_summary_says_it_is_a_dry_run asserts lines[1] == \"\")" \
+  --apply 'sed -i "0,/^    out(\"\")/s/^    out(\"\")/    pass/" "$F"'

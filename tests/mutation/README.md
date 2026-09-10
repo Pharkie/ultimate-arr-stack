@@ -159,8 +159,15 @@ nobody can reach.
 | `scripts/fix-radarr-paths.sh` | 2026-09-02 | 15 | 15 | 0 | **15/15** |
 | `scripts/fix-sonarr-folders.sh` | 2026-09-02 | 11 | 10 | 1 (`equivalent`) | **10/10** |
 | `scripts/lib/fix_radarr_paths.py` | 2026-09-02 | 113 | 112 | 1 (`equivalent`) | **112/112** |
-| `scripts/lib/fix_sonarr_folders.py` | 2026-09-02 | 110 | 108 | 2 (both `equivalent`) | **108/108** |
+| `scripts/lib/fix_sonarr_folders.py` | 2026-09-02 | 110 | 108 | 2 (both `equivalent`) † | **108/108** |
 | `scripts/lib/queue_cleanup.py` | 2026-09-04 | 372 | 371 | 1 (`equivalent`) | **371/371** |
+
+† Point-in-time measurements from the date in `Swept`, not a live view. `survivors.tsv` is the
+ledger and the authoritative record, and it has since gained a third row for
+`fix_sonarr_folders.py` (`:125`, `out("") ==> pass`), triaged `real-gap` on 2026-09-10 and closed
+with an assertion in `tests/python/test_fix_sonarr_folders.py::test_the_dry_run_summary_says_it_is_a_dry_run`
+plus the `sonarr-blank-line-separator-removed` corpus entry. That is why the `Survived` column here
+and the row count there can disagree: re-sweep to refresh a ratio, never edit this table from memory.
 
 The four 2026-09-02 rows are the arr fixers, and they took two rounds to get
 there: the first sweep killed 36 of 61 (59%). Nine of the survivors were real
