@@ -132,6 +132,8 @@ docker compose -f docker-compose.utilities.yml up -d beszel-agent
 
 Configarr syncs [TRaSH Guides](https://trash-guides.info/) quality profiles and custom formats to Sonarr and Radarr. It runs once and exits — no persistent service, no web UI.
 
+> **Cadence: manual, and nothing schedules it.** No cron entry, no systemd timer, and the boot reconcile does not start it (`restart: "no"`, and a one-shot container is not something `up -d` revives). It runs when you run it. Check the last run with `docker inspect configarr --format '{{.State.ExitCode}} {{.State.FinishedAt}}'` — on this NAS: exit 0, last run 2026-08-15. Re-run it after editing `configarr/config.yml`, or periodically if you want newer TRaSH-guide revisions applied.
+
 **1. Copy the example config:**
 ```bash
 cp configarr/config.yml.example configarr/config.yml
