@@ -183,9 +183,25 @@ qbit_auth() {
 #
 # Usage:
 #   bazarr_settings_post "$BASE" "$AUTH" "settings-sonarr-ip=sonarr" "settings-sonarr-port=8989"
+#
+# Returns 0 on a 2xx, 2 if Bazarr gave no answer within BAZARR_POST_TIMEOUT
+# seconds (default 60), 1 on any other failure.
+#
+# The timeout is there because Bazarr can hold a settings POST open forever.
+# save_settings() in app/config.py writes config.yaml and then, still inside
+# the request, calls sonarr_signalr_client.restart() when use_sonarr or the
+# Sonarr ip/port/base_url/ssl/apikey changed (radarr_signalr_client likewise).
+# The client's start() is `while not started: try connection.start() except
+# ConnectionError: sleep(5)` with no attempt limit, so when Bazarr cannot reach
+# Sonarr or Radarr the handler never returns — and neither does curl. Seen on
+# the NAS 2026-09-10 against a throwaway bazarr:1.6.0 with no Sonarr on its
+# network: the "Sonarr/Radarr connections" step hung until killed. Because the
+# write happens before the restart, a timed-out POST has usually landed and the
+# next run compares the live settings and skips.
 bazarr_settings_post() {
     local BASE="$1" AUTH="$2"; shift 2
-    local args=(-s -w '\n%{http_code}' -o - -X POST -H "$AUTH")
+    local timeout="${BAZARR_POST_TIMEOUT:-60}"
+    local args=(-s --max-time "$timeout" -w '\n%{http_code}' -o - -X POST -H "$AUTH")
     local kv
     for kv in "$@"; do args+=(--data-urlencode "$kv"); done
 
@@ -193,8 +209,14 @@ bazarr_settings_post() {
     # POST, so a dry run that leaked one would also bounce the container.
     if [[ "${DRY_RUN:-false}" == "true" ]]; then return 0; fi
 
-    local response code body
-    response=$(curl "${args[@]}" "${BASE}/api/system/settings")
+    local response code body rc=0
+    response=$(curl "${args[@]}" "${BASE}/api/system/settings") || rc=$?
+    if [[ $rc -eq 28 ]]; then
+        if [[ "${VERBOSE:-false}" == "true" ]]; then
+            echo "  [verbose] POST ${BASE}/api/system/settings → no response after ${timeout}s (curl exit 28)" >&2
+        fi
+        return 2
+    fi
     code=$(echo "$response" | tail -1)
     body=$(echo "$response" | sed '$d')
 
