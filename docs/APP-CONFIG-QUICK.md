@@ -34,7 +34,7 @@ Create admin account when prompted.
 
 **Bazarr** — `http://NAS_IP:6767`
 Create admin account when prompted.
-Then Settings → Languages: tick **English** under *Languages Filter*, and under *Languages Profiles* add one profile — name it English, add English to it — and Save. The script sets that profile as the series/movie default and keeps its contents to English; it does not create it.
+The script creates an English language profile if Bazarr has none, sets it as the series/movie default and keeps its contents to English — nothing to do here. If you already have profiles but none is English, add one first: Settings → Languages, tick **English** under *Languages Filter*, add a profile named English containing English, and Save.
 
 ## Step 2: Run the script
 

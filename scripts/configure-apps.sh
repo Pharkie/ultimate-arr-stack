@@ -12,6 +12,11 @@
 #   --dry-run       Preview what would be configured without making changes
 #   --verbose, -v   Print curl response bodies on failure (for debugging)
 #
+# Environment overrides:
+#   BAZARR_CONTAINER, BAZARR_PORT   Point the Bazarr section at another
+#                   container/port (default: bazarr, 6767). Lets the section be
+#                   tested against a throwaway instance instead of the live one.
+#
 # Safe to re-run: The script is idempotent — it skips anything already
 # configured and only applies missing settings. You can run it as many
 # times as needed without side effects.
@@ -55,6 +60,8 @@ SONARR_API_KEY=""
 RADARR_API_KEY=""
 PROWLARR_API_KEY=""
 BAZARR_API_KEY=""
+BAZARR_CONTAINER="${BAZARR_CONTAINER:-bazarr}"
+BAZARR_PORT="${BAZARR_PORT:-6767}"
 SABNZBD_API_KEY=""
 QBIT_USERNAME="${QBIT_USERNAME:-}"
 QBIT_PASSWORD="${QBIT_PASSWORD:-}"
@@ -113,7 +120,7 @@ fi
 echo ""
 
 # Check key containers are running
-REQUIRED_CONTAINERS="gluetun qbittorrent sonarr radarr prowlarr bazarr"
+REQUIRED_CONTAINERS="gluetun qbittorrent sonarr radarr prowlarr ${BAZARR_CONTAINER}"
 MISSING=""
 for c in $REQUIRED_CONTAINERS; do
     if ! docker ps --format '{{.Names}}' | grep -q "^${c}$"; then
@@ -174,7 +181,7 @@ else
 fi
 
 # Bazarr — apikey is on same line as key: "  apikey: abc123"
-BAZARR_API_KEY=$(docker exec bazarr grep '^\s*apikey:' /config/config/config.yaml 2>/dev/null | head -1 | sed 's/.*apikey:\s*//' | tr -d ' ' || true)
+BAZARR_API_KEY=$(docker exec "$BAZARR_CONTAINER" grep '^\s*apikey:' /config/config/config.yaml 2>/dev/null | head -1 | sed 's/.*apikey:\s*//' | tr -d ' ' || true)
 if [[ -z "$BAZARR_API_KEY" ]]; then
     fail "Could not discover Bazarr API key"
 else
@@ -429,7 +436,7 @@ configure_bazarr() {
         return
     fi
 
-    local BASE="http://${NAS_IP}:6767"
+    local BASE="http://${NAS_IP}:${BAZARR_PORT}"
     local AUTH="X-API-KEY: ${BAZARR_API_KEY}"
 
     if ! wait_for_service "Bazarr" "${BASE}/api/system/status"; then return; fi
@@ -601,11 +608,43 @@ print(' '.join(missing) if missing else 'MATCH')")
         fi
     fi
 
+    # --- English language profile (create when none exist) ---
+    #
+    # The default-language step below points both defaults at profile 1 and
+    # assumed it existed. A fresh Bazarr ships with no profiles at all, so on
+    # a first run that step reported success while pointing the defaults at
+    # nothing, and the languages step further down only prunes profiles that
+    # already exist — nothing ever created one. Bazarr's handler
+    # (api/system/settings.py) takes the INSERT branch for a profileId it has
+    # not seen and DELETES any existing profileId missing from the list, so
+    # this only ever sends when the list is empty: there is nothing to drop.
+    # `languages-enabled` is sent alongside because a profile can only search
+    # languages that are ticked under Languages Filter.
+    local existing_profiles profile_count
+    existing_profiles=$(api_get "${BASE}/api/system/languages/profiles" "$AUTH") || true
+    profile_count=$(json_extract "$existing_profiles" "print(len(data))")
+
+    if [[ -z "$profile_count" ]]; then
+        fail "Bazarr: could not read language profiles"
+    elif [[ "$profile_count" != "0" ]]; then
+        skip "Bazarr: English language profile"
+    else
+        local english_profile
+        english_profile='[{"profileId":1,"name":"English","cutoff":null,"items":[{"id":1,"language":"en","audio_exclude":"False","audio_only_include":"False","hi":"False","forced":"False"}],"mustContain":[],"mustNotContain":[],"originalFormat":0,"tag":null}]'
+        if bazarr_settings_post "$BASE" "$AUTH" "languages-enabled=en" "languages-profiles=${english_profile}"; then
+            ok "Bazarr: create English language profile"
+            needs_restart=true
+        else
+            fail "Bazarr: create English language profile"
+        fi
+    fi
+
     # --- Default subtitle language (English) ---
     #
-    # Profile 1 is the English language profile. Checking only
-    # serie_default_enabled left the movie half, and both profile ids,
-    # unverified — all three could be wrong and still report "configured".
+    # Profile 1 is the English language profile, created above when missing.
+    # Checking only serie_default_enabled left the movie half, and both
+    # profile ids, unverified — all three could be wrong and still report
+    # "configured".
     local lang_state
     lang_state=$(json_extract "$settings" "
 want = {
@@ -692,7 +731,7 @@ print(json.dumps(profiles))
     # Restart if any changes were made (never in a dry run — nothing was written)
     if $needs_restart && ! $DRY_RUN; then
         info "Restarting Bazarr to apply changes..."
-        docker restart bazarr >/dev/null 2>&1
+        docker restart "$BAZARR_CONTAINER" >/dev/null 2>&1
     fi
 }
 
