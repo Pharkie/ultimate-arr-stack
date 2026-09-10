@@ -53,14 +53,14 @@ verbose() { [[ "${VERBOSE:-false}" == "true" ]] && echo "  [verbose] $1" >&2; re
 # Every request is bounded. API_TIMEOUT (default 60 s) caps the whole
 # transfer, --connect-timeout 5 caps the handshake, and a single call can
 # raise its own cap with API_MAX_TIME=<s> in front of it — the Bazarr
-# languages POST does, because Bazarr rescans the whole library inside that
-# request. Before this, one hung handler held the script open forever
-# (Bazarr's Sonarr/Radarr SignalR restart, 2026-09-10), and the same class
-# exists for every *arr write that runs a connection test before answering.
+# language-profile write does (BAZARR_SCAN_TIMEOUT, default 600 s), because
+# Bazarr rescans the whole library inside that request. Before this, one
+# hung handler held the script open forever (Bazarr's Sonarr/Radarr SignalR
+# restart, 2026-09-10), and the same class exists for every *arr write that
+# runs a connection test before answering.
 API_TIMEOUT="${API_TIMEOUT:-60}"
-BAZARR_POST_TIMEOUT="${BAZARR_POST_TIMEOUT:-60}"
 BAZARR_SCAN_TIMEOUT="${BAZARR_SCAN_TIMEOUT:-600}"
-for _t in API_TIMEOUT BAZARR_POST_TIMEOUT BAZARR_SCAN_TIMEOUT; do
+for _t in API_TIMEOUT BAZARR_SCAN_TIMEOUT; do
     if ! [[ "${!_t}" =~ ^[1-9][0-9]*$ ]]; then
         echo "ERROR: $_t must be a positive integer number of seconds, got '${!_t}'" >&2
         exit 1
@@ -81,6 +81,13 @@ _curl_capture() {
     local max_time="${API_MAX_TIME:-$API_TIMEOUT}"
     local response
     HTTP_RC=0; HTTP_CODE=""; HTTP_BODY=""
+    # API_MAX_TIME is read straight from the environment, so it gets the same
+    # check the knobs get at load: "0" would tell curl "no limit".
+    if ! [[ "$max_time" =~ ^[1-9][0-9]*$ ]]; then
+        echo "ERROR: API_MAX_TIME must be a positive integer number of seconds, got '${max_time}'" >&2
+        HTTP_RC=2
+        return 1
+    fi
     response=$(curl -s --connect-timeout 5 --max-time "$max_time" -w '\n%{http_code}' -o - "$@" "$url") || HTTP_RC=$?
     if [[ $HTTP_RC -ne 0 ]]; then
         if [[ $HTTP_RC -eq 28 ]]; then
@@ -90,18 +97,20 @@ _curl_capture() {
         fi
         return 1
     fi
-    HTTP_CODE=$(echo "$response" | tail -1)
-    HTTP_BODY=$(echo "$response" | sed '$d')
+    # The write-out is the last line; everything before it is the body.
+    HTTP_CODE=${response##*$'\n'}
+    HTTP_BODY=${response%$'\n'*}
     return 0
 }
 
 # Usage: body=$(api_get "url" "header1" "header2" ...)
 #        body=$(api_post "url" "application/json" '{"k":"v"}' "header1" ...)
 #
-# Returns 0 on a 2xx, 2 when the request timed out, 1 on anything else —
-# never the HTTP status itself. The previous version ended with
-# `return "$code"`, and bash reads "000" as 0: every write that failed at the
-# transport layer reported ✓ and counted as configured.
+# Returns 0 on a 2xx and 1 on anything else — never the HTTP status itself.
+# The previous version ended with `return "$code"`, and bash reads "000" as
+# 0: every write that failed at the transport layer reported ✓ and counted
+# as configured. A timeout is a failure like any other here; HTTP_RC says
+# which (28) for anyone who needs to know.
 _api_request() {
     local method="$1" url="$2"; shift 2
     local args=()
@@ -115,10 +124,7 @@ _api_request() {
     # Dry run: reads go through so state checks are real; writes are reported
     # as done without being sent.
     if [[ "${DRY_RUN:-false}" == "true" && "$method" != "GET" ]]; then return 0; fi
-    if ! _curl_capture "$url" "${args[@]}"; then
-        if [[ $HTTP_RC -eq 28 ]]; then return 2; fi
-        return 1
-    fi
+    if ! _curl_capture "$url" "${args[@]}"; then return 1; fi
     if [[ "$HTTP_CODE" =~ ^2 ]]; then
         echo "$HTTP_BODY"
         return 0
@@ -231,11 +237,11 @@ qbit_auth() {
 # Usage:
 #   bazarr_settings_post "$BASE" "$AUTH" "settings-sonarr-ip=sonarr" "settings-sonarr-port=8989"
 #
-# Returns 0 on a 2xx, 2 if Bazarr gave no answer within BAZARR_POST_TIMEOUT
-# seconds (default 60; API_MAX_TIME=<s> in front of one call overrides it),
-# 1 on any other failure. On a timeout it prints the diagnosis itself, so
-# callers keep the plain `if bazarr_settings_post …; then ok … else fail …`
-# shape and every call site gets the same explanation.
+# Returns 0 on a 2xx, 1 on any failure. On a timeout it prints the diagnosis
+# itself — naming the bound that applied — so callers keep the plain
+# `if bazarr_settings_post …; then ok … else fail …` shape and every call
+# site gets the same explanation. The bound is API_TIMEOUT, or API_MAX_TIME
+# when a call sets it (the language-profile write sets BAZARR_SCAN_TIMEOUT).
 #
 # The timeout is there because Bazarr can hold a settings POST open forever.
 # save_settings() in app/config.py applies each key in memory, writes
@@ -262,12 +268,15 @@ bazarr_settings_post() {
     # Dry run: never sent. A leaked POST would write config.yaml for real.
     if [[ "${DRY_RUN:-false}" == "true" ]]; then return 0; fi
 
-    local max_time="${API_MAX_TIME:-$BAZARR_POST_TIMEOUT}"
-    if ! API_MAX_TIME="$max_time" _curl_capture "${BASE}/api/system/settings" "${args[@]}"; then
+    local max_time="${API_MAX_TIME:-$API_TIMEOUT}"
+    if ! _curl_capture "${BASE}/api/system/settings" "${args[@]}"; then
         if [[ $HTTP_RC -eq 28 ]]; then
             info "  Bazarr gave no answer within ${max_time}s. The write may have landed — re-run to check."
-            info "  If Bazarr cannot reach Sonarr/Radarr its settings handler blocks forever restarting its SignalR client (BAZARR_POST_TIMEOUT to adjust)."
-            return 2
+            if [[ "${API_MAX_TIME:-}" == "$BAZARR_SCAN_TIMEOUT" && "$max_time" == "$BAZARR_SCAN_TIMEOUT" ]]; then
+                info "  This write makes Bazarr rescan the whole library before answering; BAZARR_SCAN_TIMEOUT raises the bound."
+            else
+                info "  If Bazarr cannot reach Sonarr/Radarr its handler blocks forever restarting its SignalR client; API_TIMEOUT raises the bound."
+            fi
         fi
         return 1
     fi

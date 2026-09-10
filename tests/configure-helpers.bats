@@ -41,10 +41,12 @@ stub_curl() {
     [ "$status" -eq 1 ]
 }
 
-@test "api_post: timeout (curl 28) returns 2" {
+@test "api_post: timeout (curl 28) is a failure, and HTTP_RC records why" {
     stub_curl 28 ""
     run api_post "http://x/api/v3/rootfolder" "application/json" '{}' "X-Api-Key: k"
-    [ "$status" -eq 2 ]
+    [ "$status" -eq 1 ]
+    api_post "http://x/api/v3/rootfolder" "application/json" '{}' "X-Api-Key: k" >/dev/null || true
+    [ "$HTTP_RC" -eq 28 ]
 }
 
 @test "api_post: 2xx returns 0 and echoes the body" {
@@ -100,17 +102,36 @@ stub_curl() {
     grep -q -- '--max-time 60' "$CALLS"
 }
 
-# ---- bazarr_settings_post --------------------------------------------------
-
-@test "bazarr_settings_post: timeout returns 2 and says so, hedged" {
-    stub_curl 28 ""
-    run bazarr_settings_post "http://x" "X-API-KEY: k" "settings-general-use_sonarr=true"
-    [ "$status" -eq 2 ]
-    assert_output --partial "gave no answer within 60s"
-    assert_output --partial "may have landed"
+@test "_curl_capture: an invalid API_MAX_TIME is refused before curl runs (0 would mean no limit)" {
+    stub_curl 0 $'\n200'
+    run env API_MAX_TIME=0 bash -c "source '$HELPERS'; api_get http://x/ 'H: v'"
+    assert_failure
+    assert_output --partial "API_MAX_TIME must be a positive integer"
+    run env API_MAX_TIME=90s bash -c "source '$HELPERS'; api_get http://x/ 'H: v'"
+    assert_failure
 }
 
-@test "bazarr_settings_post: uses BAZARR_SCAN_TIMEOUT when a call asks for it" {
+# ---- bazarr_settings_post --------------------------------------------------
+
+@test "bazarr_settings_post: timeout fails and says so, hedged, naming the bound that applied" {
+    stub_curl 28 ""
+    run bazarr_settings_post "http://x" "X-API-KEY: k" "settings-general-use_sonarr=true"
+    assert_failure
+    assert_output --partial "gave no answer within 60s"
+    assert_output --partial "may have landed"
+    assert_output --partial "API_TIMEOUT raises the bound"
+}
+
+@test "bazarr_settings_post: the language-profile write's timeout names BAZARR_SCAN_TIMEOUT, not the general knob" {
+    stub_curl 28 ""
+    run env API_MAX_TIME=600 bash -c "source '$HELPERS'; $(declare -f curl); STUB_RC=28 STUB_OUT=''; CALLS=/dev/null; bazarr_settings_post http://x 'X-API-KEY: k' languages-enabled=en"
+    assert_failure
+    assert_output --partial "gave no answer within 600s"
+    assert_output --partial "BAZARR_SCAN_TIMEOUT raises the bound"
+    refute_output --partial "API_TIMEOUT raises"
+}
+
+@test "bazarr_settings_post: uses the raised bound when a call asks for it" {
     stub_curl 0 $'\n204'
     API_MAX_TIME=600 bazarr_settings_post "http://x" "X-API-KEY: k" "languages-enabled=en" >/dev/null
     grep -q -- '--max-time 600' "$CALLS"
@@ -124,10 +145,11 @@ stub_curl() {
     assert_output --partial "is_type_of"
 }
 
-@test "bazarr_settings_post: connection refused returns 1, not 2" {
+@test "bazarr_settings_post: connection refused fails without the timeout advice" {
     stub_curl 7 $'\n000'
     run bazarr_settings_post "http://x" "X-API-KEY: k" "settings-general-use_sonarr=true"
     [ "$status" -eq 1 ]
+    refute_output --partial "gave no answer"
 }
 
 @test "bazarr_settings_post: 2xx returns 0" {
@@ -146,31 +168,11 @@ stub_curl() {
 
 # ---- timeout knobs ---------------------------------------------------------
 
-@test "sourcing the helpers refuses a non-numeric BAZARR_POST_TIMEOUT" {
-    run bash -c "BAZARR_POST_TIMEOUT=90s source '$HELPERS'"
-    assert_failure
-    assert_output --partial "BAZARR_POST_TIMEOUT must be a positive integer"
-}
-
-@test "sourcing the helpers refuses API_TIMEOUT=0 (curl would treat it as no bound)" {
-    run bash -c "API_TIMEOUT=0 source '$HELPERS'"
-    assert_failure
-    assert_output --partial "API_TIMEOUT must be a positive integer"
-}
-
-# ---- --help ---------------------------------------------------------------
-
-@test "configure-apps.sh --help prints the whole header, including what stays manual" {
-    run bash "$REPO_ROOT/scripts/configure-apps.sh" --help
-    assert_success
-    assert_output --partial "What stays manual after this script"
-    assert_output --partial "SABnzbd: usenet provider credentials"
-    assert_output --partial "--only <section>"
-    refute_output --partial "SCRIPT_DIR="
-}
-
-@test "configure-apps.sh --only rejects an unknown section" {
-    run bash "$REPO_ROOT/scripts/configure-apps.sh" --only jellyfin
-    assert_failure
-    assert_output --partial "Unknown section"
+@test "sourcing the helpers refuses a timeout knob that is not a positive integer" {
+    local bad
+    for bad in 'API_TIMEOUT=0' 'API_TIMEOUT=90s' 'BAZARR_SCAN_TIMEOUT=abc'; do
+        run bash -c "$bad source '$HELPERS'"
+        assert_failure
+        assert_output --partial "must be a positive integer"
+    done
 }

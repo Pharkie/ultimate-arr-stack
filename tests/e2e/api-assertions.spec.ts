@@ -353,8 +353,12 @@ test.describe('API assertions', () => {
     expect(profilesRes.ok()).toBeTruthy();
     const profiles: Array<{ profileId: number; name: string; items: Array<{ language: string }> }> =
       await profilesRes.json();
-    const english = profiles.find((p) => p.items.map((i) => i.language).sort().join(' ') === 'en');
-    expect(english, `no profile whose languages are exactly [en]; have: ${JSON.stringify(profiles.map((p) => [p.name, p.items.map((i) => i.language)]))}`).toBeDefined();
+    // Same rule as scripts/lib/bazarr-language-plan.py: the profile named
+    // English, else one whose language SET is exactly {en} (a profile may hold
+    // several rows for one language — normal, forced, hearing-impaired).
+    const langSet = (p: { items: Array<{ language: string }> }) => [...new Set(p.items.map((i) => i.language))].sort().join(' ');
+    const english = profiles.find((p) => p.name === 'English') ?? profiles.find((p) => langSet(p) === 'en');
+    expect(english, `no profile named English and none whose languages are exactly {en}; have: ${JSON.stringify(profiles.map((p) => [p.name, langSet(p)]))}`).toBeDefined();
 
     const settingsRes = await request.get(url('bazarr', '/api/system/settings'), { headers });
     expect(settingsRes.ok()).toBeTruthy();

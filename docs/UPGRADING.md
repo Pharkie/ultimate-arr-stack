@@ -82,7 +82,7 @@ docker logs -f jellyfin 2>&1 | grep -m1 "Startup complete"
 ./scripts/configure-apps.sh
 ```
 
-Two new steps: qBittorrent's executable exclusion list (`*.exe`, `*.scr`, … rejected at the metadata stage, before any bytes transfer), and Bazarr's subtitle languages — the script now enforces *what* the language profile contains, not just which profile is default. It restarts Bazarr only if it changed something.
+Two new steps: qBittorrent's executable exclusion list (`*.exe`, `*.scr`, … rejected at the metadata stage, before any bytes transfer), and Bazarr's subtitle languages — the script now manages one profile (named English, or adopted by contents), points both defaults at it and enforces what it contains. Bazarr applies each write immediately; nothing restarts.
 
 #### 5. Optional: indexer hygiene and a standing scan
 
