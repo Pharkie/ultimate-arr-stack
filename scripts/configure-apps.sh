@@ -256,7 +256,7 @@ configure_qbittorrent() {
     # works if the write is sent. 409 is still handled for the race case.
     local existing_cats
     existing_cats=$(curl -s -b "$QBIT_COOKIE" "${QBIT_URL}/api/v2/torrents/categories" 2>/dev/null)
-    for cat_name in tv movies; do
+    for cat_name in tv movies other; do
         local save_path="/data/torrents/${cat_name}"
         if json_extract "$existing_cats" "sys.exit(0 if '${cat_name}' in data else 1)"; then
             skip "qBittorrent: category '${cat_name}'"
@@ -342,6 +342,47 @@ if p.get('excluded_file_names', '') != '${excluded_names}': sys.exit(1)
 }
 
 # ============================================
+# 1b. SABnzbd
+# ============================================
+configure_sabnzbd() {
+    log "Configuring SABnzbd..."
+
+    if [[ -z "$SABNZBD_API_KEY" ]]; then
+        fail "SABnzbd: no API key, skipping"
+        return
+    fi
+
+    local SAB_URL="http://${NAS_IP}:8082"
+
+    # The `other` category is where anything grabbed from Prowlarr's own search
+    # page lands — audiobooks, ISOs, music, whatever is neither TV nor a movie
+    # and so has no Sonarr/Radarr path. With an empty folder field SABnzbd files
+    # it under <complete_dir>/other, next to the tv/ and movies/ folders Sonarr
+    # and Radarr already collect from. Nothing imports from it; it is a landing
+    # spot, not a pipeline.
+    local cats
+    cats=$(curl -s -m 15 "${SAB_URL}/api?mode=get_config&section=categories&output=json&apikey=${SABNZBD_API_KEY}" 2>/dev/null) || true
+    local has_other='sys.exit(0 if any(c.get("name") == "other" for c in data.get("config", {}).get("categories", [])) else 1)'
+    if [[ -z "$cats" ]]; then
+        fail "SABnzbd: could not read categories"
+    elif json_extract "$cats" "$has_other"; then
+        skip "SABnzbd: category 'other'"
+    elif $DRY_RUN; then
+        ok "SABnzbd: created category 'other' → /data/usenet/complete/other"
+    else
+        curl -s -m 15 -o /dev/null "${SAB_URL}/api?mode=set_config&section=categories&name=other&dir=&pp=&script=Default&priority=-100&output=json&apikey=${SABNZBD_API_KEY}" || true
+        # Read back rather than trust the write: set_config answers 200 with the
+        # config it holds, whether or not it accepted the change.
+        cats=$(curl -s -m 15 "${SAB_URL}/api?mode=get_config&section=categories&output=json&apikey=${SABNZBD_API_KEY}" 2>/dev/null) || true
+        if json_extract "$cats" "$has_other"; then
+            ok "SABnzbd: created category 'other' → /data/usenet/complete/other"
+        else
+            fail "SABnzbd: create category 'other' (not present after write)"
+        fi
+    fi
+}
+
+# ============================================
 # 2. Sonarr & Radarr (via shared configure_arr_service)
 # ============================================
 
@@ -394,18 +435,22 @@ configure_prowlarr() {
         fi
     fi
 
-    # Applications: Sonarr and Radarr
+    # Applications: Sonarr and Radarr. Both live on the bridge with static IPs
+    # (docker-compose.arr-stack.yml), and Prowlarr is inside gluetun's namespace
+    # where DNS is Pi-hole and cannot resolve container names — so the app URL
+    # is the IP, and the URL Sonarr/Radarr use to call back is gluetun's name.
+    # `localhost` on either side reaches nothing (docs/MIGRATION-arr-off-vpn.md).
     local apps
     apps=$(api_get "${BASE}/api/v1/applications" "$AUTH") || true
 
-    local arr_name arr_port arr_categories
+    local arr_name arr_port arr_ip arr_categories
     for arr_name in Sonarr Radarr; do
         local key_var="${arr_name^^}_API_KEY"
         local arr_key="${!key_var}"
         if [[ "$arr_name" == "Sonarr" ]]; then
-            arr_port=8989; arr_categories="[5000, 5010, 5020, 5030, 5040, 5045, 5050, 5060, 5070, 5080]"
+            arr_port=8989; arr_ip=172.20.0.10; arr_categories="[5000, 5010, 5020, 5030, 5040, 5045, 5050, 5060, 5070, 5080]"
         else
-            arr_port=7878; arr_categories="[2000, 2010, 2020, 2030, 2040, 2045, 2050, 2060, 2070, 2080]"
+            arr_port=7878; arr_ip=172.20.0.11; arr_categories="[2000, 2010, 2020, 2030, 2040, 2045, 2050, 2060, 2070, 2080]"
         fi
 
         local name_lower="${arr_name,,}"
@@ -414,7 +459,7 @@ configure_prowlarr() {
         elif [[ -z "$arr_key" ]]; then
             fail "Prowlarr: add ${arr_name} (no ${arr_name} API key)"
         else
-            local app_payload="{\"name\":\"${arr_name}\",\"syncLevel\":\"fullSync\",\"implementation\":\"${arr_name}\",\"configContract\":\"${arr_name}Settings\",\"fields\":[{\"name\":\"prowlarrUrl\",\"value\":\"http://localhost:9696\"},{\"name\":\"baseUrl\",\"value\":\"http://localhost:${arr_port}\"},{\"name\":\"apiKey\",\"value\":\"${arr_key}\"},{\"name\":\"syncCategories\",\"value\":${arr_categories}}],\"tags\":[]}"
+            local app_payload="{\"name\":\"${arr_name}\",\"syncLevel\":\"fullSync\",\"implementation\":\"${arr_name}\",\"configContract\":\"${arr_name}Settings\",\"fields\":[{\"name\":\"prowlarrUrl\",\"value\":\"http://gluetun:9696\"},{\"name\":\"baseUrl\",\"value\":\"http://${arr_ip}:${arr_port}\"},{\"name\":\"apiKey\",\"value\":\"${arr_key}\"},{\"name\":\"syncCategories\",\"value\":${arr_categories}}],\"tags\":[]}"
             if api_post "${BASE}/api/v1/applications" "application/json" "$app_payload" "$AUTH" >/dev/null 2>&1; then
                 ok "Prowlarr: added ${arr_name} application"
             else
@@ -422,6 +467,86 @@ configure_prowlarr() {
             fi
         fi
     done
+
+    # Download clients for Prowlarr's OWN search page. Sonarr and Radarr grab
+    # through their own clients; this pair serves only the manual search here,
+    # and lands everything in the `other` category — the one lane the stack has
+    # for something that is neither TV nor a movie. Without it the search page's
+    # download button silently does nothing: no grab event, no error, nothing in
+    # History (found the hard way, 2026-09-10). Prowlarr shares gluetun's
+    # namespace, so both clients are `localhost` — unlike Sonarr/Radarr, which
+    # sit on the bridge and must go via `gluetun:PORT`.
+    local dl_clients
+    dl_clients=$(api_get "${BASE}/api/v1/downloadclient" "$AUTH") || true
+
+    if json_extract "$dl_clients" "sys.exit(0 if any(c.get('name','').lower() == 'qbittorrent' for c in data) else 1)"; then
+        skip "Prowlarr: qBittorrent download client"
+    else
+        local pq_payload
+        pq_payload=$(cat <<PQ_JSON
+{
+    "enable": true,
+    "protocol": "torrent",
+    "priority": 1,
+    "name": "qBittorrent",
+    "implementation": "QBittorrent",
+    "configContract": "QBittorrentSettings",
+    "categories": [],
+    "tags": [],
+    "fields": [
+        {"name": "host", "value": "localhost"},
+        {"name": "port", "value": 8085},
+        {"name": "username", "value": "${QBIT_USERNAME}"},
+        {"name": "password", "value": "${QBIT_PASSWORD}"},
+        {"name": "category", "value": "other"},
+        {"name": "priority", "value": 0},
+        {"name": "initialState", "value": 0},
+        {"name": "sequentialOrder", "value": false},
+        {"name": "firstAndLast", "value": false},
+        {"name": "contentLayout", "value": 0}
+    ]
+}
+PQ_JSON
+)
+        if api_post "${BASE}/api/v1/downloadclient" "application/json" "$pq_payload" "$AUTH" >/dev/null 2>&1; then
+            ok "Prowlarr: added qBittorrent download client (search-page grabs → category 'other')"
+        else
+            fail "Prowlarr: add qBittorrent download client"
+        fi
+    fi
+
+    if $SABNZBD_RUNNING && [[ -n "$SABNZBD_API_KEY" ]]; then
+        if json_extract "$dl_clients" "sys.exit(0 if any(c.get('name','').lower() == 'sabnzbd' for c in data) else 1)"; then
+            skip "Prowlarr: SABnzbd download client"
+        else
+            local ps_payload
+            ps_payload=$(cat <<PS_JSON
+{
+    "enable": true,
+    "protocol": "usenet",
+    "priority": 1,
+    "name": "SABnzbd",
+    "implementation": "Sabnzbd",
+    "configContract": "SabnzbdSettings",
+    "categories": [],
+    "tags": [],
+    "fields": [
+        {"name": "host", "value": "localhost"},
+        {"name": "port", "value": 8080},
+        {"name": "apiKey", "value": "${SABNZBD_API_KEY}"},
+        {"name": "category", "value": "other"},
+        {"name": "priority", "value": -100}
+    ]
+}
+PS_JSON
+)
+            if api_post "${BASE}/api/v1/downloadclient" "application/json" "$ps_payload" "$AUTH" >/dev/null 2>&1; then
+                ok "Prowlarr: added SABnzbd download client (search-page grabs → category 'other')"
+            else
+                fail "Prowlarr: add SABnzbd download client"
+            fi
+        fi
+    fi
 }
 
 # ============================================
@@ -776,6 +901,7 @@ configure_pihole() {
 # ============================================
 
 configure_qbittorrent
+if $SABNZBD_RUNNING; then configure_sabnzbd; fi
 echo ""
 configure_arr_service "Sonarr" 8989 "$SONARR_API_KEY" "/data/media/tv" "tv" \
     "renameEpisodes" "$SONARR_METADATA_FIELDS" "$SONARR_NAMING_PAYLOAD"

@@ -2,7 +2,7 @@
 
 > Return to [Setup Guide](SETUP.md) · [Manual setup instead?](APP-CONFIG.md)
 
-The [configure-apps.sh](../scripts/configure-apps.sh) script automates ~30 configuration steps across qBittorrent, Sonarr, Radarr, Prowlarr, Bazarr and Pi-hole — root folders, download clients, naming schemes, NFO metadata, custom formats, delay profiles, subtitle sync and languages, qBittorrent's executable exclusion list, and more. `--dry-run` shows exactly what would change on your stack.
+The [configure-apps.sh](../scripts/configure-apps.sh) script automates ~30 configuration steps across qBittorrent, SABnzbd, Sonarr, Radarr, Prowlarr, Bazarr and Pi-hole — root folders, download clients, naming schemes, NFO metadata, custom formats, delay profiles, subtitle sync and languages, qBittorrent's executable exclusion list, and more. `--dry-run` shows exactly what would change on your stack.
 
 > **Note:** This script is LLM-generated and human-reviewed. Best not to blindly run scripts from the internet — review [configure-apps.sh](../scripts/configure-apps.sh) for security before running it.
 
@@ -61,10 +61,11 @@ Preview what it will do without making changes:
 
 | Service | Settings |
 |---------|----------|
-| qBittorrent | Categories (`tv`/`movies`), auto torrent management, encryption, UPnP off, stall timeout, concurrent limits |
+| qBittorrent | Categories (`tv`/`movies`/`other`), executable exclusions, auto torrent management, encryption, UPnP off, stall timeout, concurrent limits |
 | Sonarr | Root folder, qBittorrent + SABnzbd download clients, TRaSH naming, NFO metadata, custom formats (Reject ISO, Dolby Vision profile scoring), Usenet delay profile |
 | Radarr | Root folder, qBittorrent + SABnzbd download clients, TRaSH naming, NFO metadata, custom formats (Reject ISO, Dolby Vision profile scoring), Usenet delay profile |
-| Prowlarr | FlareSolverr proxy, Sonarr + Radarr app sync |
+| Prowlarr | FlareSolverr proxy, Sonarr + Radarr app sync, qBittorrent + SABnzbd as its *own* download clients so the search page can grab (→ category `other`) |
+| SABnzbd | `other` category for Prowlarr search-page grabs (`/data/usenet/complete/other`) |
 | Bazarr | Sonarr + Radarr connections, subtitle sync (ffsubsync), Sub-Zero content mods, default English language |
 
 ## Step 3: Configure the remaining services

@@ -369,6 +369,10 @@ configure_arr_service() {
     fi
 
     # --- Download client: qBittorrent ---
+    # Sonarr/Radarr sit on the bridge; the clients listen inside gluetun's
+    # namespace, so they are reached by gluetun's name, never `localhost`
+    # (docs/MIGRATION-arr-off-vpn.md). Prowlarr, which shares that namespace,
+    # is the one that uses localhost — see configure_prowlarr.
     local clients
     clients=$(api_get "${BASE}/api/v3/downloadclient" "$AUTH") || true
     if json_extract "$clients" "sys.exit(0 if any(c.get('name','').lower() == 'qbittorrent' for c in data) else 1)"; then
@@ -384,7 +388,7 @@ configure_arr_service() {
     "implementation": "QBittorrent",
     "configContract": "QBittorrentSettings",
     "fields": [
-        {"name": "host", "value": "localhost"},
+        {"name": "host", "value": "gluetun"},
         {"name": "port", "value": 8085},
         {"name": "username", "value": "${QBIT_USERNAME}"},
         {"name": "password", "value": "${QBIT_PASSWORD}"},
@@ -420,7 +424,7 @@ QBIT_JSON
     "implementation": "Sabnzbd",
     "configContract": "SabnzbdSettings",
     "fields": [
-        {"name": "host", "value": "localhost"},
+        {"name": "host", "value": "gluetun"},
         {"name": "port", "value": 8080},
         {"name": "apiKey", "value": "${SABNZBD_API_KEY}"},
         {"name": "${cat_field}", "value": "${category}"},
