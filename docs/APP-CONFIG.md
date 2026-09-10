@@ -308,8 +308,14 @@ Automatically downloads subtitles for your media.
 2. **Enable Authentication:** Settings → General → Security → Forms
 3. **Connect to Sonarr:** Settings → Sonarr → Address `sonarr`, Port `8989` (Sonarr is on the bridge)
 4. **Connect to Radarr:** Settings → Radarr → Address `radarr`, Port `7878` (Radarr is on the bridge)
-5. **Add Providers:** Settings → Providers (OpenSubtitles, etc.)
-6. **Enable Subtitle Sync:** Settings → Subtitles → Subtitle Synchronization:
+5. **Languages:** Settings → Languages:
+   - Under *Languages Filter*, tick **English**
+   - Under *Languages Profiles*, add a profile named **English** containing English
+   - Under *Default Settings*, set that profile as the default for both **Series** and **Movies**, then Save
+
+   > A fresh Bazarr has no profiles at all, and the defaults point at nothing until one exists. `configure-apps.sh` creates this profile if none exist and sets it as the default.
+6. **Add Providers:** Settings → Providers (OpenSubtitles, etc.)
+7. **Enable Subtitle Sync:** Settings → Subtitles → Subtitle Synchronization:
    - **Subtitle Synchronization:** On — enables `ffsubsync` to re-time subtitles against the audio track
    - **Series Score Threshold:** On (default 90) — auto-syncs series subs scoring below this
    - **Movies Score Threshold:** On (default 70) — auto-syncs movie subs scoring below this
