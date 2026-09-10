@@ -385,7 +385,7 @@ services:
   # Access: jellyfin.lan | jellyfin.yourdomain.com | NAS_IP:8096
   # ═══════════════════════════════════════════════════════════════════════════
   jellyfin:
-    image: jellyfin/jellyfin:10.11
+    image: jellyfin/jellyfin:12.0
     container_name: jellyfin
     <<: *default-security
     cap_add:

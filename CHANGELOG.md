@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+A public indexer served malware for a day, the stack's defences held, and the tool meant to preview changes turned out to be incapable of previewing anything.
+
+### Added
+- **qBittorrent rejects executables at the metadata stage** (`excluded_file_names`, set by `configure-apps.sh`). On 2026-09-10 LimeTorrents served five poisoned results against routine new-episode searches: three ~1 GB Windows executables named after real release groups (CAKES, ETHEL), and two "S06" season packs that actually contained S05. Sonarr refused every one on import ("Caution: Found executable file"), so nothing reached the library — but the refusal happens *after* the full download, and ~2.9 GB of malware then sat in `/data/torrents/tv` where nothing would ever have looked. Now a poisoned release arrives as a no-op.
+- **`scripts/scan-executables.sh`** reports executables already on disk, on demand or from cron; **`tests/e2e/media-hygiene.spec.ts`** asserts the steady state. Both were proven to fail on a planted decoy before being trusted.
+- **Bazarr enforces which subtitle languages it searches for.** The existing step only checked that profile 1 was the *default*, never what it contained, which is how Latvian sat inside it while reporting "already configured" — and Bazarr spent every nightly search hunting Latvian subtitles for the whole movie library. The POST semantics were read from Bazarr's own `api/system/settings.py`: `languages-profiles` is authoritative and deletes any profile you leave out, so the full list is always read and sent back.
+
+### Fixed
+- **`configure-apps.sh --dry-run` reports real deltas.** Every section opened with an early-return block that printed "Would:" for all 29 settings unconditionally and ended `0 configured, 0 skipped` — it could not distinguish already-set from missing, which is the one thing a dry run exists to do. State reads now run in both modes and only the writes are suppressed, at the choke points every write already passes through. Proven with a canary: a missing category is reported as `Would:` and not created.
+
+### Changed
+- **Image bumps** — `cloudflared` 2026.8.2 → 2026.9.0, `docker` cli 29.7 → 29.8 (gluetun-recover), `beszel` and `beszel-agent` 0.18 → 0.19, `sabnzbd` 5.1.2 → 5.1.3, `jellyfin` 10.11 → 12.0 (major; config volume backed up first, all 34 migrations verified in the logs, `Startup complete` in 3m41s). Two traps found on the way, both in `docs/UPGRADING.md`: 12.0 rejects the `<EncoderPreset xsi:nil="true" />` that 10.11 writes and silently resets hardware transcoding to defaults — acceleration `none`, tonemapping off — while playback carries on in software; and its healthcheck reports healthy about ten seconds in, while the migration is still running.
+- **Live Prowlarr changes, not in this repo:** LimeTorrents, The Pirate Bay and YTS disabled; EZTV and showRSS dropped to priority 50 with NZBgeek at 10. Every indexer had been sitting at the default 25, so usenet held no ranking advantage. The delay profile (usenet 0 min / torrent 30 min) was already correct and is not the control here — it sequences protocols, it does not vet content.
+
+
 ## [1.10.1] - 2026-08-28
 
 1.10.0's OpenVPN fix was incomplete, and the way it was verified is why.

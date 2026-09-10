@@ -40,6 +40,28 @@ docker compose -f docker-compose.arr-stack.yml up -d  # Restarts containers with
 
 When upgrading across versions, check below for any action required.
 
+### Jellyfin 10.11 → 12.0 (image bump)
+
+12.0 rewrites the database on first start and a backup is the only way back. Direct upgrade from 10.11.x is supported. Two things the release notes don't say, both hit on this stack on 2026-09-10:
+
+**1. Hardware transcoding settings are silently reset** if `encoding.xml` contains `<EncoderPreset xsi:nil="true" />` — which is what 10.11 writes when the preset was never touched. 12.0's parser rejects the empty value, logs a single `[ERR] Error loading configuration file: /config/config/encoding.xml`, and rewrites the file with defaults: acceleration `none`, VPP tonemapping off, HEVC encoding off, and hevc/vp9/vp8/mpeg2 dropped from hardware decoding. Playback keeps working — in software — so nothing alerts you. With Jellyfin stopped, fix the preset before pulling the new image:
+
+```bash
+docker stop jellyfin
+docker run --rm -v arr-stack_jellyfin-config:/src alpine \
+  sed -i 's|<EncoderPreset xsi:nil="true" />|<EncoderPreset>auto</EncoderPreset>|' /src/config/encoding.xml
+```
+
+If you have already upgraded, compare `/config/config/encoding.xml` against your backup's copy and put the values back (or re-enter them in Dashboard → Playback → Transcoding). Look for that `[ERR]` line in the first-boot log either way.
+
+**2. The healthcheck goes green before the migration finishes.** `/health` answered 200 about ten seconds in; `Startup complete` arrived 3m41s later. `docker ps` reporting healthy is not the signal — wait for:
+
+```bash
+docker logs jellyfin 2>&1 | grep "Startup complete"
+```
+
+Seerr logs a `503` if its library sync lands in that window; it recovers on the next run. For scale: backing up a 4 GB config volume with `tar` from a throwaway container took about 13 minutes on the NAS.
+
 ### v1.7.9 → v1.7.10
 
 Docs-only fix. No migration needed — just `git pull`.
