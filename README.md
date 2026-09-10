@@ -100,8 +100,14 @@ The full walkthrough — directories on the host, app configuration, DNS, HTTPS,
 | qBittorrent / SABnzbd | `NAS_IP:8085` / `:8082` | `https://qbit.lan`, `https://sabnzbd.lan` | LAN only |
 | Pi-hole admin | `NAS_IP:8081/admin` | `https://pihole.lan` | LAN only |
 | Uptime Kuma | `NAS_IP:3001` | `https://uptime.lan` | LAN only |
-| Traefik dashboard | `NAS_IP:9090` | `https://traefik.lan` | LAN only |
+| Traefik dashboard | — (see the note below) | `https://traefik.lan` | LAN only |
 | Homepage / Beszel / duc | — (no published port; reached through Traefik) | `https://homepage.lan`, `https://beszel.lan`, `https://duc.lan` | LAN only |
+
+> **On the Traefik dashboard port.** `docker-compose.traefik.yml` publishes `9090:8080`, but the
+> live static config sets `api.insecure: false`, so that port accepts a connection and then resets
+> it — nothing is served there. The dashboard is reached through `traefik.lan` (its router targets
+> `api@internal` behind the auth middleware). The published mapping is a leftover, and removing it
+> would be tidier than documenting it.
 
 The `.lan` names need the edge layer, and the `https` URLs need its auth middleware; Jellyfin and Seerr keep their own app-level login on top. The complete matrix, including which services are deliberately unpublished, is [docs/REFERENCE.md](docs/REFERENCE.md).
 
