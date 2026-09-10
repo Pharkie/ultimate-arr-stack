@@ -118,6 +118,13 @@ mutation runner-deletes-the-backup-it-names \
   --why "cleanup rm -rf's the pristine copy the FATAL message just told the reader to restore from" \
   --apply 'sed -i "s@^    if \[\[ \"\$RESTORE_FAILED\" -eq 1 \]\]; then\$@    if false; then@" "$F"'
 
+mutation sync-nas-requires-gnu-timeout \
+  --file scripts/sync-nas.sh \
+  --bats tests/nas-sync.bats \
+  --test "sync-nas does not require GNU timeout" \
+  --why "puts the bare timeout back, which is what shipped: macOS has no such command, so every sync from the maintainer's Mac exited 127 printing nothing at all, and the post-merge hook could only report that the deploy had failed" \
+  --apply 'sed -i "s@bounded 20 git ls-remote@timeout 20 git ls-remote@" "$F"'
+
 mutation runner-vanished-backup-is-silent \
   --file tests/mutation/lib-mutate.sh \
   --bats tests/mutation-framework.bats \

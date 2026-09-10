@@ -52,13 +52,33 @@ if ! ssh -o ConnectTimeout=5 -o BatchMode=yes "$NAS_SYNC_HOST" true 2>/dev/null;
     exit 1
 fi
 
+# `timeout` is GNU coreutils. macOS ships neither it nor `gtimeout` (that one
+# needs Homebrew coreutils), so calling it bare made this script exit 127 having
+# printed NOTHING on the maintainer's Mac -- and the post-merge hook, whose only
+# job is to invoke this script, could then only report that the deploy had
+# failed, with no reason to look at. Prefer timeout, then gtimeout, then perl's
+# alarm, which is in the base system on both macOS and Debian.
+bounded() {
+    local secs="$1"; shift
+    if command -v timeout >/dev/null 2>&1; then
+        timeout "$secs" "$@"
+    elif command -v gtimeout >/dev/null 2>&1; then
+        gtimeout "$secs" "$@"
+    elif command -v perl >/dev/null 2>&1; then
+        perl -e 'alarm shift; exec @ARGV' "$secs" "$@"
+    else
+        echo "sync-nas: no timeout, gtimeout or perl on PATH - cannot bound the remote call" >&2
+        return 1
+    fi
+}
+
 # The NAS pulls from origin, so origin -- not the local repo -- decides what it
 # can reach. A local commit that has not been pushed is invisible to it, and the
 # remote pull then succeeds with "Already up to date." while leaving the NAS on
 # the old commit. Measured 2026-08-31: local at 90e72c4, NAS at 93c8ed4, this
 # script printed "done." and exited 0. Compare against the remote ref before
 # doing anything, so the impossible case fails before it can look like success.
-REMOTE_SHA="$(GIT_TERMINAL_PROMPT=0 timeout 20 git ls-remote origin "refs/heads/${BRANCH}" 2>/dev/null | awk '{print $1}')"
+REMOTE_SHA="$(GIT_TERMINAL_PROMPT=0 bounded 20 git ls-remote origin "refs/heads/${BRANCH}" 2>/dev/null | awk '{print $1}')"
 if [[ -z "$REMOTE_SHA" ]]; then
     echo "sync-nas: origin has no branch '${BRANCH}' - push it first, the NAS pulls from origin" >&2
     exit 1

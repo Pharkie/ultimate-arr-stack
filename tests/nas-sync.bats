@@ -259,3 +259,30 @@ use_real_sync_script() {
     }
     [[ "$output" == *"no branch"* ]] || { echo "unclear message: $output"; return 1; }
 }
+
+@test "sync-nas does not require GNU timeout (a stock macOS has none)" {
+    # This script bounded its `git ls-remote` with a bare `timeout`. macOS ships
+    # neither `timeout` nor `gtimeout` (the latter needs Homebrew coreutils), so
+    # on the maintainer's Mac the script exited 127 having printed NOTHING -- and
+    # the post-merge hook, whose only job is to invoke it, could report that the
+    # deploy had failed but not why. Reproduced by running the real script with a
+    # PATH built from just the tools it needs and no timeout binary anywhere on
+    # it, which is also the state of a Debian host mid-bootstrap.
+    make_fixture
+    use_real_sync_script
+    install_ssh_stub "$(git -C "$REPO" rev-parse HEAD)"
+    local bin="$FX/minbin" tool p
+    mkdir -p "$bin"
+    for tool in bash git awk sed grep cat perl; do
+        p="$(command -v "$tool" 2>/dev/null)" || continue
+        ln -sf "$p" "$bin/$tool"
+    done
+    # The stub, not the real ssh: this test is about the bound, not the network.
+    ln -sf "$FX/bin/ssh" "$bin/ssh"
+    cd "$REPO"
+    PATH="$bin" run ./scripts/sync-nas.sh
+    [ "$status" -eq 0 ] \
+        || { echo "exited $status with no timeout binary on PATH: $output"; return 1; }
+    [[ "$output" == *"verified"* ]] \
+        || { echo "never reached the verification step: $output"; return 1; }
+}
