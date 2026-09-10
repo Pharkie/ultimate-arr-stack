@@ -436,6 +436,7 @@ configure_bazarr() {
         dry "Enable subtitle sync (ffsubsync) with thresholds"
         dry "Enable Sub-Zero mods (remove tags, emoji, OCR fixes, common fixes, fix uppercase)"
         dry "Set default subtitle language to English"
+        dry "Enforce subtitle languages (en) in profiles and enabled list"
         return
     fi
 
@@ -637,6 +638,60 @@ print(' '.join(diff) if diff else 'MATCH')")
             needs_restart=true
         else
             fail "Bazarr: set default subtitle language"
+        fi
+    fi
+
+    # --- Subtitle language contents (English only) ---
+    #
+    # The step above only checks that profile 1 is the DEFAULT. It never looks
+    # at what profile 1 contains, so a stray language inside it reports as
+    # "already configured" forever. That is how Latvian ended up both in the
+    # profile and in the enabled-languages list, and Bazarr spent every nightly
+    # search hunting Latvian subtitles for the whole movie library (2026-09-10).
+    #
+    # Both key spaces must agree: the profile drives what gets searched; the
+    # enabled list is what the UI offers. POST semantics (Bazarr's
+    # api/system/settings.py): `languages-enabled` zeroes every language and
+    # then enables the listed ones, and `languages-profiles` is authoritative —
+    # any profileId missing from the payload is DELETED. So the full profile
+    # list is always read and sent back, with only the item filter applied.
+    local SUBTITLE_LANGUAGES="en"   # space-separated code2 list; edit to add languages
+    local lang_profiles enabled_langs lang_stray
+    lang_profiles=$(api_get "${BASE}/api/system/languages/profiles" "$AUTH") || true
+    enabled_langs=$(api_get "${BASE}/api/system/languages" "$AUTH") || true
+
+    lang_stray=$(python3 -c "
+import sys, json
+want = set(sys.argv[3].split())
+profiles = json.loads(sys.argv[1])
+enabled = {l['code2'] for l in json.loads(sys.argv[2]) if l.get('enabled')}
+stray = enabled - want
+for p in profiles:
+    stray |= {i['language'] for i in p['items']} - want
+print(' '.join(sorted(stray)) if stray else 'MATCH')
+" "$lang_profiles" "$enabled_langs" "$SUBTITLE_LANGUAGES" 2>/dev/null)
+
+    if [[ -z "$lang_stray" ]]; then
+        fail "Bazarr: could not read language profiles"
+    elif [[ "$lang_stray" == "MATCH" ]]; then
+        skip "Bazarr: subtitle languages (${SUBTITLE_LANGUAGES})"
+    else
+        local fixed_profiles
+        fixed_profiles=$(python3 -c "
+import sys, json
+want = set(sys.argv[2].split())
+profiles = json.loads(sys.argv[1])
+for p in profiles:
+    p['items'] = [i for i in p['items'] if i['language'] in want]
+print(json.dumps(profiles))
+" "$lang_profiles" "$SUBTITLE_LANGUAGES")
+        local enabled_args=()
+        for code in $SUBTITLE_LANGUAGES; do enabled_args+=("languages-enabled=${code}"); done
+        if bazarr_settings_post "$BASE" "$AUTH" "${enabled_args[@]}" "languages-profiles=${fixed_profiles}"; then
+            ok "Bazarr: removed stray subtitle language(s): ${lang_stray}"
+            needs_restart=true
+        else
+            fail "Bazarr: remove stray subtitle language(s): ${lang_stray}"
         fi
     fi
 
