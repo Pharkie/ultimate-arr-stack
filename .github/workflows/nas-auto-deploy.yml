@@ -53,6 +53,29 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Require an open PR for this branch
+        # main is protected: pull requests are required and the protection
+        # applies to admins, so the "Merge to main" step at the end of this job
+        # can only ever merge a PR. Checking here matters because that step runs
+        # AFTER services have been recreated on the NAS -- a run that cannot
+        # merge would otherwise leave the host deployed from a commit that main
+        # never reaches.
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BRANCH: ${{ github.ref_name }}
+        run: |
+          set -e
+          if [ "$BRANCH" = "main" ]; then
+            echo "Dispatched on main - this run verifies, it does not merge."
+            exit 0
+          fi
+          PR=$(gh pr list --head "$BRANCH" --state open --json number -q '.[0].number')
+          if [ -z "$PR" ]; then
+            echo "::error::No open PR for '$BRANCH'. main is protected (pull requests required), so this run cannot merge; push the branch, open a PR, then re-dispatch."
+            exit 1
+          fi
+          echo "Will merge PR #$PR once the NAS verification passes."
+
       - name: Fast static checks (bats)
         run: |
           set -e
@@ -312,17 +335,17 @@ jobs:
           BRANCH: ${{ github.ref_name }}
         run: |
           set -e
-          PR_NUMBER=$(gh pr list --head "$BRANCH" --state open --json number -q '.[0].number' || true)
-          if [ -n "$PR_NUMBER" ]; then
-            echo "Squash-merging PR #$PR_NUMBER"
-            gh pr merge "$PR_NUMBER" --squash --delete-branch=false
-          else
-            echo "No open PR for $BRANCH — merging directly"
-            git fetch origin main
-            git checkout main
-            git merge --no-ff "origin/$BRANCH" -m "Merge $BRANCH (auto-deploy verified on NAS)"
-            git push origin main
+          if [ "$BRANCH" = "main" ]; then
+            echo "Dispatched on main - nothing to merge."
+            exit 0
           fi
+          PR_NUMBER=$(gh pr list --head "$BRANCH" --state open --json number -q '.[0].number')
+          if [ -z "$PR_NUMBER" ]; then
+            echo "::error::No open PR for '$BRANCH'. main is protected, so the direct-push fallback this step used to have is gone; the preflight should have stopped the run before the NAS was touched."
+            exit 1
+          fi
+          echo "Squash-merging PR #$PR_NUMBER"
+          gh pr merge "$PR_NUMBER" --squash --delete-branch=false
 
       - name: Sync main to NAS
         env:
