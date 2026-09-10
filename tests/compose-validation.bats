@@ -194,3 +194,18 @@ get_service_block() {
     run grep -E -- '^[[:space:]]+- TS_EXTRA_ARGS=.*--reset($|[[:space:]])' <<<"$block"
     assert_failure
 }
+
+@test "cloudflared is opt-in: a plain 'up -d' cannot start a tunnel with no config" {
+    # cloudflared/config.yml is gitignored, so any checkout where an operator has
+    # not created one has no tunnel config at all. scripts/boot-compose-up.sh runs
+    # `up -d` over every compose file in this repo on every boot, and
+    # scripts/restart-stack.sh's `all` arm does the same, so an unprofiled
+    # cloudflared is started unconditionally, exits immediately (nothing to read),
+    # and is restarted forever by `restart: always` -- the crash-loop observed on
+    # this NAS on 2026-08-16. A profiled service is skipped by a plain `up -d`;
+    # verified against this file on the NAS: "no service selected", exit 0.
+    local f="$REPO_ROOT/docker-compose.cloudflared.yml"
+    [ -f "$f" ] || fail "docker-compose.cloudflared.yml is missing"
+    get_service_block "cloudflared" "$f" | grep -qE '^    profiles:' \
+        || fail "cloudflared must declare a profile, or boot/restart will crash-loop a tunnel with no config"
+}

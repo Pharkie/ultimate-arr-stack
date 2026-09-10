@@ -47,7 +47,33 @@ restart_compose() {
     local file="$1"
     local name="$2"
     echo "♻️  Restarting $name..."
-    docker compose -f "$file" up -d --force-recreate
+    # Output is captured rather than streamed so the "restarted" line below can be
+    # made conditional on compose having actually selected a service. A stack
+    # whose only service sits behind an unselected profile (cloudflared, until an
+    # operator opts in) exits 0 having done nothing, and reporting that as
+    # "restarted" is the same false-success shape this repo keeps finding in its
+    # own guards. `up -d` is a short-lived command, so nothing is lost by it.
+    local out rc=0
+    out=$(docker compose -f "$file" up -d --force-recreate 2>&1) || rc=$?
+    # `if`, not `[ -n "$out" ] && printf` -- a false test as a standalone statement
+    # returns non-zero and `set -e` (set at the top of this file) would abort the
+    # whole run on a stack that produced no output.
+    if [ -n "$out" ]; then
+        printf '%s\n' "$out"
+    fi
+    if [ "$rc" -ne 0 ]; then
+        # The exit code is propagated unchanged, not flattened to 1. The stub
+        # harness in tests/helpers/stubs.bash signals "a test tried to reach live
+        # docker" with 99, and tests/restart-stack.bats asserts on that number;
+        # swallowing it here would make the harness's refusal indistinguishable
+        # from an ordinary compose failure.
+        echo "❌ $name FAILED (exit $rc)" >&2
+        return "$rc"
+    fi
+    if printf '%s' "$out" | grep -q "no service selected"; then
+        echo "⏭️  $name skipped - opt-in profile not enabled"
+        return 0
+    fi
     echo "✅ $name restarted"
 }
 

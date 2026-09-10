@@ -11,6 +11,17 @@
 #
 # No web UI - runs silently in background.
 #
+# OPT-IN, because `ready` is not the same as `configured`. The service sits behind
+# the `tunnel` profile, so a plain `up -d` on this file starts nothing until an
+# operator supplies cloudflared/config.yml (gitignored -- see config.yml.example)
+# and asks for the profile:
+#   docker compose -f docker-compose.cloudflared.yml --profile tunnel up -d
+# Both scripts/boot-compose-up.sh (every boot) and scripts/restart-stack.sh's
+# `all` arm reconcile EVERY compose file in this repo. Unprofiled, that means a
+# tunnel with no config to read: cloudflared exits immediately, `restart: always`
+# loops it, and the crash-loop consumes the NAS (observed 2026-08-16). Profiled,
+# compose skips it and exits 0 with "no service selected" (verified on the NAS).
+#
 # NOTE: Uses separate project name so compose operations on other files
 # don't accidentally stop the tunnel (was causing Error 1033).
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -21,6 +32,7 @@ services:
   cloudflared:
     image: cloudflare/cloudflared:2026.7.3
     container_name: cloudflared
+    profiles: ["tunnel"]
     security_opt:
       - no-new-privileges:true
     cap_drop:
