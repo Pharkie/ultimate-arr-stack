@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Fixed
+- **`configure-apps.sh` creates Bazarr's English language profile when none exist.** The default-language step set both defaults to profile 1 and assumed it was there; a fresh Bazarr ships with no profiles, so on a first run the step reported success while pointing the defaults at nothing, and the languages step only ever pruned profiles that already existed. When `GET /api/system/languages/profiles` is empty the script now inserts the profile (and ticks English under Languages Filter) before setting it as the default. Bazarr's handler deletes any existing profileId left out of a `languages-profiles` POST, so the insert only fires on an empty list and can never drop one. Proven against a throwaway `bazarr:1.6.0`, never the live volume: fresh → created, second run → all skips, `--dry-run` on fresh → `Would:` and nothing written. `BAZARR_CONTAINER` / `BAZARR_PORT` env overrides let the Bazarr section target such an instance.
+
 ## [1.11.0] - 2026-09-10
 
 A public indexer served malware for a day, the stack's defences held, and the tool meant to preview changes turned out to be incapable of previewing anything.
