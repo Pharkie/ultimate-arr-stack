@@ -48,6 +48,7 @@ QBIT_COOKIE="/tmp/qbit_configure_cookie.txt"
 CONFIGURED=0
 SKIPPED=0
 FAILED=0
+WOULD=0    # dry-run only: steps whose state check found them missing
 
 # API keys (discovered at runtime)
 SONARR_API_KEY=""
@@ -234,24 +235,30 @@ configure_qbittorrent() {
         return
     fi
 
-    if $DRY_RUN; then
-        dry "Authenticate to qBittorrent"
-        dry "Create category 'tv' → /data/torrents/tv"
-        dry "Create category 'movies' → /data/torrents/movies"
-        dry "Set preferences: auto TMM, disable UPnP, encryption, stall timeout, concurrent limits"
-        return
-    fi
-
-    # Authenticate using shared helper (see lib/configure-helpers.sh)
+    # Authenticate using shared helper (see lib/configure-helpers.sh).
+    # This runs in a dry run too: it is a session login, not a config write,
+    # and without it none of the state reads below are possible.
     local http_code
     if ! qbit_auth "$QBIT_URL" "$QBIT_USERNAME" "$QBIT_PASSWORD" "$QBIT_COOKIE"; then
         fail "qBittorrent: authentication failed (check QBIT_USERNAME/QBIT_PASSWORD)"
         return
     fi
 
-    # Create categories (409 = already exists, that's fine)
+    # Create categories. The list is read first so a dry run can tell "exists"
+    # from "would create" — inferring existence from a 409 on the write only
+    # works if the write is sent. 409 is still handled for the race case.
+    local existing_cats
+    existing_cats=$(curl -s -b "$QBIT_COOKIE" "${QBIT_URL}/api/v2/torrents/categories" 2>/dev/null)
     for cat_name in tv movies; do
         local save_path="/data/torrents/${cat_name}"
+        if json_extract "$existing_cats" "sys.exit(0 if '${cat_name}' in data else 1)"; then
+            skip "qBittorrent: category '${cat_name}'"
+            continue
+        fi
+        if $DRY_RUN; then
+            ok "qBittorrent: created category '${cat_name}' → ${save_path}"
+            continue
+        fi
         http_code=$(curl -s -o /dev/null -w '%{http_code}' \
             -b "$QBIT_COOKIE" \
             --data-urlencode "category=${cat_name}" \
@@ -308,10 +315,14 @@ if p.get('excluded_file_names', '') != '${excluded_names}': sys.exit(1)
         # stalls at metaDL while the WebUI and usenet both look healthy.
         # See docs/TROUBLESHOOTING.md -> "Torrents Stall Forever at 0% / metaDL".
         local prefs='{"auto_tmm_enabled":true,"upnp":false,"limit_utp_rate":true,"limit_lan_peers":true,"encryption":1,"max_inactive_seeding_time_enabled":true,"max_inactive_seeding_time":30,"max_ratio_act":0,"max_active_downloads":5,"max_active_torrents":10,"max_active_uploads":5,"current_network_interface":"tun0","current_interface_address":"","excluded_file_names_enabled":true,"excluded_file_names":"'"${excluded_names}"'"}'
-        http_code=$(curl -s -o /dev/null -w '%{http_code}' \
-            -b "$QBIT_COOKIE" \
-            --data-urlencode "json=${prefs}" \
-            "${QBIT_URL}/api/v2/app/setPreferences")
+        if $DRY_RUN; then
+            http_code=200
+        else
+            http_code=$(curl -s -o /dev/null -w '%{http_code}' \
+                -b "$QBIT_COOKIE" \
+                --data-urlencode "json=${prefs}" \
+                "${QBIT_URL}/api/v2/app/setPreferences")
+        fi
 
         if [[ "$http_code" == "200" ]]; then
             ok "qBittorrent: set preferences (auto TMM, UPnP off, encryption, stall timeout, concurrent limits, VPN interface binding, executable exclusions)"
@@ -361,13 +372,6 @@ configure_prowlarr() {
     local AUTH="X-Api-Key: ${PROWLARR_API_KEY}"
 
     if ! wait_for_service "Prowlarr" "${BASE}/api/v1/health"; then return; fi
-
-    if $DRY_RUN; then
-        dry "Add FlareSolverr indexer proxy"
-        dry "Add Sonarr application sync"
-        dry "Add Radarr application sync"
-        return
-    fi
 
     # FlareSolverr proxy
     local proxies
@@ -429,16 +433,6 @@ configure_bazarr() {
     local AUTH="X-API-KEY: ${BAZARR_API_KEY}"
 
     if ! wait_for_service "Bazarr" "${BASE}/api/system/status"; then return; fi
-
-    if $DRY_RUN; then
-        dry "Connect Bazarr to Sonarr (sonarr:8989)"
-        dry "Connect Bazarr to Radarr (radarr:7878)"
-        dry "Enable subtitle sync (ffsubsync) with thresholds"
-        dry "Enable Sub-Zero mods (remove tags, emoji, OCR fixes, common fixes, fix uppercase)"
-        dry "Set default subtitle language to English"
-        dry "Enforce subtitle languages (en) in profiles and enabled list"
-        return
-    fi
 
     # Get current settings
     local settings
@@ -695,8 +689,8 @@ print(json.dumps(profiles))
         fi
     fi
 
-    # Restart if any changes were made
-    if $needs_restart; then
+    # Restart if any changes were made (never in a dry run — nothing was written)
+    if $needs_restart && ! $DRY_RUN; then
         info "Restarting Bazarr to apply changes..."
         docker restart bazarr >/dev/null 2>&1
     fi
@@ -709,11 +703,6 @@ print(json.dumps(profiles))
 configure_pihole() {
     log "Configuring Pi-hole..."
 
-    if $DRY_RUN; then
-        dry "Set Pi-hole upstream DNS to dnscrypt-proxy (172.20.0.6#5053)"
-        return
-    fi
-
     # Check current upstream DNS configuration
     local current_dns
     current_dns=$(docker exec pihole pihole-FTL --config dns.upstreams 2>/dev/null || true)
@@ -722,7 +711,9 @@ configure_pihole() {
         skip "Pi-hole: upstream DNS (already using dnscrypt-proxy)"
     else
         # Set dnscrypt-proxy as upstream DNS using FTL config
-        if docker exec pihole pihole-FTL --config dns.upstreams '["172.20.0.6#5053"]' >/dev/null 2>&1; then
+        if $DRY_RUN; then
+            ok "Pi-hole: set upstream DNS to dnscrypt-proxy (172.20.0.6#5053)"
+        elif docker exec pihole pihole-FTL --config dns.upstreams '["172.20.0.6#5053"]' >/dev/null 2>&1; then
             ok "Pi-hole: set upstream DNS to dnscrypt-proxy (172.20.0.6#5053)"
             # Restart container to apply — pihole restartdns fails with cap_drop: ALL
             docker restart pihole >/dev/null 2>&1
@@ -756,7 +747,11 @@ configure_pihole
 
 echo ""
 echo "=========================================="
-echo "Summary: ${CONFIGURED} configured, ${SKIPPED} skipped, ${FAILED} failed"
+if $DRY_RUN; then
+    echo "Summary (dry-run): ${WOULD} would change, ${SKIPPED} already configured, ${FAILED} could not be checked"
+else
+    echo "Summary: ${CONFIGURED} configured, ${SKIPPED} skipped, ${FAILED} failed"
+fi
 echo "=========================================="
 
 if [[ $FAILED -gt 0 ]]; then

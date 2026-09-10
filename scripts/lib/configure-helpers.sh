@@ -29,11 +29,21 @@ $expr
 # ============================================
 
 log()   { echo "[configure] $1"; }
-ok()    { echo "  ✓ $1"; CONFIGURED=$((CONFIGURED + 1)); }
+# In a dry run, ok() is reached only after the same state check a real run
+# performs, and the write it would have followed was suppressed at the choke
+# points (_api_request, bazarr_settings_post, and the few raw curl/docker
+# sites in configure-apps.sh). So "Would:" here means "checked, and missing" —
+# not "listed unconditionally", which is what the old early-return blocks did.
+ok() {
+    if [[ "${DRY_RUN:-false}" == "true" ]]; then
+        echo "  [dry-run] Would: $1"; WOULD=$((WOULD + 1))
+    else
+        echo "  ✓ $1"; CONFIGURED=$((CONFIGURED + 1))
+    fi
+}
 skip()  { echo "  - $1 (already configured)"; SKIPPED=$((SKIPPED + 1)); }
 fail()  { echo "  ✗ $1"; FAILED=$((FAILED + 1)); }
 info()  { echo "  $1"; }
-dry()   { echo "  [dry-run] Would: $1"; }
 
 # ============================================
 # HTTP helpers
@@ -50,6 +60,9 @@ _api_request() {
         if [[ -n "$data" ]]; then args+=(--data "$data"); fi
     fi
     for h in "$@"; do args+=(-H "$h"); done
+    # Dry run: reads go through so state checks are real; writes are reported
+    # as done without being sent.
+    if [[ "${DRY_RUN:-false}" == "true" && "$method" != "GET" ]]; then return 0; fi
     local response
     response=$(curl "${args[@]}" "$url")
     local code
@@ -176,6 +189,10 @@ bazarr_settings_post() {
     local kv
     for kv in "$@"; do args+=(--data-urlencode "$kv"); done
 
+    # Dry run: never sent. Bazarr restarts itself on every accepted settings
+    # POST, so a dry run that leaked one would also bounce the container.
+    if [[ "${DRY_RUN:-false}" == "true" ]]; then return 0; fi
+
     local response code body
     response=$(curl "${args[@]}" "${BASE}/api/system/settings")
     code=$(echo "$response" | tail -1)
@@ -218,8 +235,15 @@ print(ids[0] if ids else '')")
     else
         local cf_payload cf_result
         cf_payload="{\"name\":\"${cf_name}\",\"includeCustomFormatWhenRenaming\":false,\"specifications\":${cf_specs}}"
-        cf_result=$(api_post "${BASE}/api/v3/customformat" "application/json" "$cf_payload" "$AUTH") || true
-        cf_id=$(json_extract "$cf_result" "print(data.get('id', ''))")
+        if [[ "${DRY_RUN:-false}" == "true" ]]; then
+            # No id comes back from a write that was never sent. -1 matches no
+            # profile's formatItems, so the loop below reports every profile as
+            # needing the score — which is exactly what a real run would do.
+            cf_id=-1
+        else
+            cf_result=$(api_post "${BASE}/api/v3/customformat" "application/json" "$cf_payload" "$AUTH") || true
+            cf_id=$(json_extract "$cf_result" "print(data.get('id', ''))")
+        fi
         if [[ -n "$cf_id" ]]; then
             ok "${name}: added ${cf_name} custom format"
         else
@@ -307,22 +331,6 @@ configure_arr_service() {
         cat_field="movieCategory"
         priority_recent="recentMoviePriority"
         priority_older="olderMoviePriority"
-    fi
-
-    if $DRY_RUN; then
-        dry "Add root folder ${root_path}"
-        dry "Add qBittorrent download client (category: ${category})"
-        if $SABNZBD_RUNNING; then dry "Add SABnzbd download client (category: ${category})"; fi
-        dry "Enable NFO metadata (Kodi/Emby)"
-        dry "Set TRaSH naming scheme"
-        dry "Add Reject ISO custom format"
-        dry "Score Reject ISO at -10000 in quality profiles"
-        dry "Add DV (Profile 5) custom format"
-        dry "Score DV (Profile 5) at -1000 in quality profiles"
-        dry "Add DV HDR10 (Profile 8.1) custom format"
-        dry "Score DV HDR10 (Profile 8.1) at 500 in quality profiles"
-        if $SABNZBD_RUNNING; then dry "Add delay profile (Usenet 0, Torrent 30)"; fi
-        return
     fi
 
     # --- Root folder ---
