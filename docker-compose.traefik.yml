@@ -10,7 +10,7 @@
 # You DON'T need this for Core setup (IP:port access like 192.168.1.50:8096).
 # You DO need this for .lan domains or external access.
 #
-# Access: traefik.lan | traefik.yourdomain.com | NAS_IP:9090
+# Access: traefik.lan | traefik.yourdomain.com
 # ═══════════════════════════════════════════════════════════════════════════════
 
 # Own compose project name so operations on other files can't accidentally
@@ -46,9 +46,13 @@ services:
       traefik-lan:
         ipv4_address: ${TRAEFIK_LAN_IP}
         mac_address: ${TRAEFIK_LAN_MAC}
-    ports:
-      # Dashboard only - HTTP served via macvlan IP on port 80
-      - "9090:8080" # Traefik Dashboard
+    # No published ports on the host's IP. The dashboard used to be mapped as
+    # 9090:8080, and it served nothing: the static config sets api.insecure:
+    # false, so that port accepted a connection and reset it. Measured before
+    # removing it -- the API is only reachable through the traefik.lan router,
+    # which targets api@internal behind the auth middleware, and HTTP is served
+    # on the macvlan address (TRAEFIK_LAN_IP) rather than on NAS_IP. Re-add a
+    # mapping only together with api.insecure: true, and say why here.
     environment:
       - TZ=${TZ}
     volumes:
