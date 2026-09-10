@@ -195,7 +195,7 @@ services:
   # Internal only, no published port.
   # ═══════════════════════════════════════════════════════════════════════════
   magnetio-redis:
-    image: redis:7-alpine
+    image: redis:8-alpine
     container_name: magnetio-redis
     <<: *default-security
     # redis:7-alpine's entrypoint uses setpriv to drop from root to the redis
