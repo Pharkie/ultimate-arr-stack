@@ -260,6 +260,8 @@ Manages torrent/Usenet indexers and syncs them to Sonarr/Radarr.
 
    > **Tested with:** NZBGeek (~$12/year, reliable). Free alternatives: DrunkenSlug, NZBFinder.
 
+   > **Public torrent indexers carry malware.** On 2026-09-10 one of them (LimeTorrents) answered five routine new-episode searches with ~1 GB Windows executables named after real release groups, plus two season packs labelled S06 that contained S05 — while every Usenet result in the same window was clean. If you add public indexers: rank a Usenet indexer above them (Indexers → edit → **Priority**; lower wins, and every indexer defaults to 25, so without this Usenet has no advantage), and leave YTS out of a TV setup entirely — it only carries movies, so anything it returns for a series is mislabelled. The stack's own defences, in order: qBittorrent drops executables before a byte transfers (set by `configure-apps.sh`), Sonarr/Radarr refuse to import a release containing one, and [`scan-executables.sh`](MAINTENANCE.md#executable-scan) finds anything that still reached disk.
+
 4. **Add FlareSolverr** (for protected torrent sites):
    - Settings → Indexers → Add FlareSolverr
    - Host: `http://localhost:8191` (FlareSolverr shares Gluetun's network with Prowlarr)

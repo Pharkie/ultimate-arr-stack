@@ -40,27 +40,53 @@ docker compose -f docker-compose.arr-stack.yml up -d  # Restarts containers with
 
 When upgrading across versions, check below for any action required.
 
-### Jellyfin 10.11 → 12.0 (image bump)
+### v1.10.1 → v1.11.0
 
-12.0 rewrites the database on first start and a backup is the only way back. Direct upgrade from 10.11.x is supported. Two things the release notes don't say, both hit on this stack on 2026-09-10:
+Hardening against poisoned public-indexer results, a `--dry-run` that works, and image bumps including **Jellyfin 12.0** — a major version that rewrites its database on first start. Order matters: fix Jellyfin's config *before* the new image boots.
 
-**1. Hardware transcoding settings are silently reset** if `encoding.xml` contains `<EncoderPreset xsi:nil="true" />` — which is what 10.11 writes when the preset was never touched. 12.0's parser rejects the empty value, logs a single `[ERR] Error loading configuration file: /config/config/encoding.xml`, and rewrites the file with defaults: acceleration `none`, VPP tonemapping off, HEVC encoding off, and hevc/vp9/vp8/mpeg2 dropped from hardware decoding. Playback keeps working — in software — so nothing alerts you. With Jellyfin stopped, fix the preset before pulling the new image:
+#### 1. Pull
 
 ```bash
+cd $NAS_STACK_DIR && git pull
+```
+
+#### 2. Jellyfin: fix the preset before 12.0 starts
+
+12.0 refuses to parse the `encoding.xml` that 10.11 writes when the encoder preset was never touched — `<EncoderPreset xsi:nil="true" />` is an empty value to its stricter parser. It logs one line, `[ERR] Error loading configuration file: /config/config/encoding.xml`, then **rewrites the file with defaults**: hardware acceleration `none`, VPP tonemapping off, HEVC encoding off, hevc/vp9/vp8/mpeg2 dropped from hardware decoding. Playback keeps working — in software — so nothing alerts you.
+
+Back up the config volume first (a 4 GB volume took ~13 minutes on the NAS), then fix the preset with Jellyfin stopped:
+
+```bash
+docker run --rm -v arr-stack_jellyfin-config:/src:ro -v /path/to/backups:/bak alpine \
+  tar czf /bak/jellyfin-config-backup-$(date +%Y%m%d-%H%M%S).tgz -C /src .
 docker stop jellyfin
 docker run --rm -v arr-stack_jellyfin-config:/src alpine \
   sed -i 's|<EncoderPreset xsi:nil="true" />|<EncoderPreset>auto</EncoderPreset>|' /src/config/encoding.xml
 ```
 
-If you have already upgraded, compare `/config/config/encoding.xml` against your backup's copy and put the values back (or re-enter them in Dashboard → Playback → Transcoding). Look for that `[ERR]` line in the first-boot log either way.
+Already on 12.0 and transcoding has quietly moved to the CPU? Compare `/config/config/encoding.xml` with your backup's copy and put the values back, or re-enter them in Dashboard → Playback → Transcoding.
 
-**2. The healthcheck goes green before the migration finishes.** `/health` answered 200 about ten seconds in; `Startup complete` arrived 3m41s later. `docker ps` reporting healthy is not the signal — wait for:
+#### 3. Recreate, and wait for the log — not the healthcheck
 
 ```bash
-docker logs jellyfin 2>&1 | grep "Startup complete"
+docker compose -f docker-compose.arr-stack.yml up -d
+docker logs -f jellyfin 2>&1 | grep -m1 "Startup complete"
 ```
 
-Seerr logs a `503` if its library sync lands in that window; it recovers on the next run. For scale: backing up a 4 GB config volume with `tar` from a throwaway container took about 13 minutes on the NAS.
+`/health` answered 200 about ten seconds into a migration that took 3m41s, so `docker ps` reports healthy long before the server is usable. Seerr logs a `503` if its sync lands in that window; it recovers on the next run.
+
+#### 4. Re-run the configuration script
+
+```bash
+./scripts/configure-apps.sh --dry-run   # preview — this now reports real deltas
+./scripts/configure-apps.sh
+```
+
+Two new steps: qBittorrent's executable exclusion list (`*.exe`, `*.scr`, … rejected at the metadata stage, before any bytes transfer), and Bazarr's subtitle languages — the script now enforces *what* the language profile contains, not just which profile is default. It restarts Bazarr only if it changed something.
+
+#### 5. Optional: indexer hygiene and a standing scan
+
+Using public torrent indexers? Read the note in [APP-CONFIG.md § 4.6](APP-CONFIG.md#46-prowlarr-indexer-manager) on what hit this stack and how to rank them. `scripts/scan-executables.sh` reports any executables already sitting under `/data`; [MAINTENANCE.md](MAINTENANCE.md#executable-scan) has the cron line.
 
 ### v1.7.9 → v1.7.10
 

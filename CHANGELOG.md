@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased]
+## [1.11.0] - 2026-09-10
 
 A public indexer served malware for a day, the stack's defences held, and the tool meant to preview changes turned out to be incapable of previewing anything.
 

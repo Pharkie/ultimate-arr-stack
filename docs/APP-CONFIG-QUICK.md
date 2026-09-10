@@ -2,7 +2,7 @@
 
 > Return to [Setup Guide](SETUP.md) · [Manual setup instead?](APP-CONFIG.md)
 
-The [configure-apps.sh](../scripts/configure-apps.sh) script automates ~22 configuration steps across qBittorrent, Sonarr, Radarr, Prowlarr, and Bazarr — root folders, download clients, naming schemes, NFO metadata, custom formats, delay profiles, subtitle sync, and more.
+The [configure-apps.sh](../scripts/configure-apps.sh) script automates ~30 configuration steps across qBittorrent, Sonarr, Radarr, Prowlarr, Bazarr and Pi-hole — root folders, download clients, naming schemes, NFO metadata, custom formats, delay profiles, subtitle sync and languages, qBittorrent's executable exclusion list, and more. `--dry-run` shows exactly what would change on your stack.
 
 > **Note:** This script is LLM-generated and human-reviewed. Best not to blindly run scripts from the internet — review [configure-apps.sh](../scripts/configure-apps.sh) for security before running it.
 
@@ -34,6 +34,7 @@ Create admin account when prompted.
 
 **Bazarr** — `http://NAS_IP:6767`
 Create admin account when prompted.
+Then Settings → Languages: tick **English** under *Languages Filter*, and under *Languages Profiles* add one profile — name it English, add English to it — and Save. The script sets that profile as the series/movie default and keeps its contents to English; it does not create it.
 
 ## Step 2: Run the script
 

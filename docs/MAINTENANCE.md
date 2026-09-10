@@ -158,6 +158,23 @@ Removed releases are blocklisted so the same broken release won't be grabbed aga
 
 ---
 
+## Executable Scan
+
+Public torrent indexers sometimes serve a Windows executable padded to episode size and named after a real release group. qBittorrent rejects the usual extensions up front and Sonarr/Radarr refuse to import a release containing one — but a refused import leaves the payload in `/data/torrents`, inert on the NAS and one SMB browse away from a machine where it isn't. This reports anything already on disk:
+
+```bash
+./scripts/scan-executables.sh          # lists findings, exit 1 if any
+./scripts/scan-executables.sh --quiet  # findings only, for cron
+```
+
+Weekly is plenty. Pair it with an Uptime Kuma push monitor the same way as the VPN check, or just log it:
+
+```bash
+0 4 * * 0 $NAS_STACK_DIR/scripts/scan-executables.sh --quiet >> $NAS_STACK_DIR/logs/scan-executables.log 2>&1
+```
+
+Anything it finds: verify, delete, then blocklist the release in Sonarr/Radarr (Activity → Queue → remove with **Blocklist** ticked) so the same grab isn't repeated. The e2e suite asserts the same steady state in `tests/e2e/media-hygiene.spec.ts`.
+
 ## Health Checks
 
 All services have Docker healthchecks. Check status:
