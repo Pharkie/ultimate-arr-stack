@@ -34,6 +34,10 @@ setup() {
     MEDIA="$BATS_TEST_TMPDIR/media"
     mkdir -p "$MEDIA/media/movies"
 
+    # Empty body on purpose, not an oversight: this half of the fixer only decides
+    # curl's argv (asserted below) and redirects the response into a file that the
+    # *Python* half reads -- and python3 is stubbed out on the next line. The JSON
+    # contract is owned by tests/python/test_fix_radarr_paths.py, not by this file.
     stub_curl ''
     # Neither script's Python half is under test here; what it was handed is.
     stub_tool python3 'echo "ARGV: $*"'
