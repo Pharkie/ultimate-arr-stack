@@ -48,6 +48,7 @@ QBIT_COOKIE="/tmp/qbit_configure_cookie.txt"
 CONFIGURED=0
 SKIPPED=0
 FAILED=0
+WOULD=0    # dry-run only: steps whose state check found them missing
 
 # API keys (discovered at runtime)
 SONARR_API_KEY=""
@@ -234,24 +235,30 @@ configure_qbittorrent() {
         return
     fi
 
-    if $DRY_RUN; then
-        dry "Authenticate to qBittorrent"
-        dry "Create category 'tv' → /data/torrents/tv"
-        dry "Create category 'movies' → /data/torrents/movies"
-        dry "Set preferences: auto TMM, disable UPnP, encryption, stall timeout, concurrent limits"
-        return
-    fi
-
-    # Authenticate using shared helper (see lib/configure-helpers.sh)
+    # Authenticate using shared helper (see lib/configure-helpers.sh).
+    # This runs in a dry run too: it is a session login, not a config write,
+    # and without it none of the state reads below are possible.
     local http_code
     if ! qbit_auth "$QBIT_URL" "$QBIT_USERNAME" "$QBIT_PASSWORD" "$QBIT_COOKIE"; then
         fail "qBittorrent: authentication failed (check QBIT_USERNAME/QBIT_PASSWORD)"
         return
     fi
 
-    # Create categories (409 = already exists, that's fine)
+    # Create categories. The list is read first so a dry run can tell "exists"
+    # from "would create" — inferring existence from a 409 on the write only
+    # works if the write is sent. 409 is still handled for the race case.
+    local existing_cats
+    existing_cats=$(curl -s -b "$QBIT_COOKIE" "${QBIT_URL}/api/v2/torrents/categories" 2>/dev/null)
     for cat_name in tv movies; do
         local save_path="/data/torrents/${cat_name}"
+        if json_extract "$existing_cats" "sys.exit(0 if '${cat_name}' in data else 1)"; then
+            skip "qBittorrent: category '${cat_name}'"
+            continue
+        fi
+        if $DRY_RUN; then
+            ok "qBittorrent: created category '${cat_name}' → ${save_path}"
+            continue
+        fi
         http_code=$(curl -s -o /dev/null -w '%{http_code}' \
             -b "$QBIT_COOKIE" \
             --data-urlencode "category=${cat_name}" \
@@ -271,6 +278,17 @@ configure_qbittorrent() {
     local current_prefs
     current_prefs=$(curl -s -b "$QBIT_COOKIE" "${QBIT_URL}/api/v2/app/preferences" 2>/dev/null)
 
+    # Reject executables at the metadata stage, before any bytes transfer.
+    # Public torrent indexers serve droppers that impersonate real release groups:
+    # a ~1GB .exe padded to episode size, named e.g.
+    # "Reacher S04E08 1080p WEB H264-CAKES.exe". Sonarr does catch these on import
+    # ("Caution: Found executable file") but only AFTER the full download, and it
+    # cannot see one nested inside a folder until the release is already on disk.
+    # qBittorrent's exclusion list drops the matching files from the torrent
+    # up front, so a poisoned release arrives as a 0-byte no-op instead.
+    # See memory: indexer_poisoning_limetorrents (5 poisoned grabs, 2026-09-10).
+    local excluded_names='*.exe\n*.scr\n*.bat\n*.cmd\n*.com\n*.msi\n*.lnk\n*.vbs\n*.ps1\n*.jar'
+
     if json_extract "$current_prefs" "
 p = data
 if not p.get('auto_tmm_enabled', False): sys.exit(1)
@@ -285,6 +303,8 @@ if p.get('max_active_downloads', -1) != 5: sys.exit(1)
 if p.get('max_active_torrents', -1) != 10: sys.exit(1)
 if p.get('max_active_uploads', -1) != 5: sys.exit(1)
 if p.get('current_network_interface', '') != 'tun0': sys.exit(1)
+if not p.get('excluded_file_names_enabled', False): sys.exit(1)
+if p.get('excluded_file_names', '') != '${excluded_names}': sys.exit(1)
 "; then
         skip "qBittorrent: preferences"
     else
@@ -294,14 +314,18 @@ if p.get('current_network_interface', '') != 'tun0': sys.exit(1)
         # EPERM, so no announce escapes, no peers are found, and every torrent
         # stalls at metaDL while the WebUI and usenet both look healthy.
         # See docs/TROUBLESHOOTING.md -> "Torrents Stall Forever at 0% / metaDL".
-        local prefs='{"auto_tmm_enabled":true,"upnp":false,"limit_utp_rate":true,"limit_lan_peers":true,"encryption":1,"max_inactive_seeding_time_enabled":true,"max_inactive_seeding_time":30,"max_ratio_act":0,"max_active_downloads":5,"max_active_torrents":10,"max_active_uploads":5,"current_network_interface":"tun0","current_interface_address":""}'
-        http_code=$(curl -s -o /dev/null -w '%{http_code}' \
-            -b "$QBIT_COOKIE" \
-            --data-urlencode "json=${prefs}" \
-            "${QBIT_URL}/api/v2/app/setPreferences")
+        local prefs='{"auto_tmm_enabled":true,"upnp":false,"limit_utp_rate":true,"limit_lan_peers":true,"encryption":1,"max_inactive_seeding_time_enabled":true,"max_inactive_seeding_time":30,"max_ratio_act":0,"max_active_downloads":5,"max_active_torrents":10,"max_active_uploads":5,"current_network_interface":"tun0","current_interface_address":"","excluded_file_names_enabled":true,"excluded_file_names":"'"${excluded_names}"'"}'
+        if $DRY_RUN; then
+            http_code=200
+        else
+            http_code=$(curl -s -o /dev/null -w '%{http_code}' \
+                -b "$QBIT_COOKIE" \
+                --data-urlencode "json=${prefs}" \
+                "${QBIT_URL}/api/v2/app/setPreferences")
+        fi
 
         if [[ "$http_code" == "200" ]]; then
-            ok "qBittorrent: set preferences (auto TMM, UPnP off, encryption, stall timeout, concurrent limits, VPN interface binding)"
+            ok "qBittorrent: set preferences (auto TMM, UPnP off, encryption, stall timeout, concurrent limits, VPN interface binding, executable exclusions)"
         else
             fail "qBittorrent: set preferences (HTTP $http_code)"
         fi
@@ -348,13 +372,6 @@ configure_prowlarr() {
     local AUTH="X-Api-Key: ${PROWLARR_API_KEY}"
 
     if ! wait_for_service "Prowlarr" "${BASE}/api/v1/health"; then return; fi
-
-    if $DRY_RUN; then
-        dry "Add FlareSolverr indexer proxy"
-        dry "Add Sonarr application sync"
-        dry "Add Radarr application sync"
-        return
-    fi
 
     # FlareSolverr proxy
     local proxies
@@ -416,15 +433,6 @@ configure_bazarr() {
     local AUTH="X-API-KEY: ${BAZARR_API_KEY}"
 
     if ! wait_for_service "Bazarr" "${BASE}/api/system/status"; then return; fi
-
-    if $DRY_RUN; then
-        dry "Connect Bazarr to Sonarr (sonarr:8989)"
-        dry "Connect Bazarr to Radarr (radarr:7878)"
-        dry "Enable subtitle sync (ffsubsync) with thresholds"
-        dry "Enable Sub-Zero mods (remove tags, emoji, OCR fixes, common fixes, fix uppercase)"
-        dry "Set default subtitle language to English"
-        return
-    fi
 
     # Get current settings
     local settings
@@ -627,8 +635,62 @@ print(' '.join(diff) if diff else 'MATCH')")
         fi
     fi
 
-    # Restart if any changes were made
-    if $needs_restart; then
+    # --- Subtitle language contents (English only) ---
+    #
+    # The step above only checks that profile 1 is the DEFAULT. It never looks
+    # at what profile 1 contains, so a stray language inside it reports as
+    # "already configured" forever. That is how Latvian ended up both in the
+    # profile and in the enabled-languages list, and Bazarr spent every nightly
+    # search hunting Latvian subtitles for the whole movie library (2026-09-10).
+    #
+    # Both key spaces must agree: the profile drives what gets searched; the
+    # enabled list is what the UI offers. POST semantics (Bazarr's
+    # api/system/settings.py): `languages-enabled` zeroes every language and
+    # then enables the listed ones, and `languages-profiles` is authoritative —
+    # any profileId missing from the payload is DELETED. So the full profile
+    # list is always read and sent back, with only the item filter applied.
+    local SUBTITLE_LANGUAGES="en"   # space-separated code2 list; edit to add languages
+    local lang_profiles enabled_langs lang_stray
+    lang_profiles=$(api_get "${BASE}/api/system/languages/profiles" "$AUTH") || true
+    enabled_langs=$(api_get "${BASE}/api/system/languages" "$AUTH") || true
+
+    lang_stray=$(python3 -c "
+import sys, json
+want = set(sys.argv[3].split())
+profiles = json.loads(sys.argv[1])
+enabled = {l['code2'] for l in json.loads(sys.argv[2]) if l.get('enabled')}
+stray = enabled - want
+for p in profiles:
+    stray |= {i['language'] for i in p['items']} - want
+print(' '.join(sorted(stray)) if stray else 'MATCH')
+" "$lang_profiles" "$enabled_langs" "$SUBTITLE_LANGUAGES" 2>/dev/null)
+
+    if [[ -z "$lang_stray" ]]; then
+        fail "Bazarr: could not read language profiles"
+    elif [[ "$lang_stray" == "MATCH" ]]; then
+        skip "Bazarr: subtitle languages (${SUBTITLE_LANGUAGES})"
+    else
+        local fixed_profiles
+        fixed_profiles=$(python3 -c "
+import sys, json
+want = set(sys.argv[2].split())
+profiles = json.loads(sys.argv[1])
+for p in profiles:
+    p['items'] = [i for i in p['items'] if i['language'] in want]
+print(json.dumps(profiles))
+" "$lang_profiles" "$SUBTITLE_LANGUAGES")
+        local enabled_args=()
+        for code in $SUBTITLE_LANGUAGES; do enabled_args+=("languages-enabled=${code}"); done
+        if bazarr_settings_post "$BASE" "$AUTH" "${enabled_args[@]}" "languages-profiles=${fixed_profiles}"; then
+            ok "Bazarr: removed stray subtitle language(s): ${lang_stray}"
+            needs_restart=true
+        else
+            fail "Bazarr: remove stray subtitle language(s): ${lang_stray}"
+        fi
+    fi
+
+    # Restart if any changes were made (never in a dry run — nothing was written)
+    if $needs_restart && ! $DRY_RUN; then
         info "Restarting Bazarr to apply changes..."
         docker restart bazarr >/dev/null 2>&1
     fi
@@ -641,11 +703,6 @@ print(' '.join(diff) if diff else 'MATCH')")
 configure_pihole() {
     log "Configuring Pi-hole..."
 
-    if $DRY_RUN; then
-        dry "Set Pi-hole upstream DNS to dnscrypt-proxy (172.20.0.6#5053)"
-        return
-    fi
-
     # Check current upstream DNS configuration
     local current_dns
     current_dns=$(docker exec pihole pihole-FTL --config dns.upstreams 2>/dev/null || true)
@@ -654,7 +711,9 @@ configure_pihole() {
         skip "Pi-hole: upstream DNS (already using dnscrypt-proxy)"
     else
         # Set dnscrypt-proxy as upstream DNS using FTL config
-        if docker exec pihole pihole-FTL --config dns.upstreams '["172.20.0.6#5053"]' >/dev/null 2>&1; then
+        if $DRY_RUN; then
+            ok "Pi-hole: set upstream DNS to dnscrypt-proxy (172.20.0.6#5053)"
+        elif docker exec pihole pihole-FTL --config dns.upstreams '["172.20.0.6#5053"]' >/dev/null 2>&1; then
             ok "Pi-hole: set upstream DNS to dnscrypt-proxy (172.20.0.6#5053)"
             # Restart container to apply — pihole restartdns fails with cap_drop: ALL
             docker restart pihole >/dev/null 2>&1
@@ -688,7 +747,11 @@ configure_pihole
 
 echo ""
 echo "=========================================="
-echo "Summary: ${CONFIGURED} configured, ${SKIPPED} skipped, ${FAILED} failed"
+if $DRY_RUN; then
+    echo "Summary (dry-run): ${WOULD} would change, ${SKIPPED} already configured, ${FAILED} could not be checked"
+else
+    echo "Summary: ${CONFIGURED} configured, ${SKIPPED} skipped, ${FAILED} failed"
+fi
 echo "=========================================="
 
 if [[ $FAILED -gt 0 ]]; then
