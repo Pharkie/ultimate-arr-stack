@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Fixed
+- **`configure-apps.sh` no longer hangs forever when Bazarr cannot reach Sonarr or Radarr.** Bazarr's settings POST writes `config.yaml` and then, still inside the request, restarts its SignalR client — whose `start()` retries `connection.start()` every 5 s with no attempt limit. So the "Sonarr/Radarr connections" step blocked indefinitely whenever the two were unreachable from Bazarr's network (seen 2026-09-10 against a throwaway `bazarr:1.6.0` with no Sonarr beside it), and the `curl` behind it had no `--max-time` to notice. The POST is now bounded at 60 s (`BAZARR_POST_TIMEOUT` to change it); on timeout the step fails with a message that says so and points at Bazarr's reachability instead of a generic failure. The settings land before the hang, so the next run compares them and skips — verified on the NAS against a throwaway, with the unpatched helper shown to hang under the same conditions.
+
 ## [1.11.0] - 2026-09-10
 
 A public indexer served malware for a day, the stack's defences held, and the tool meant to preview changes turned out to be incapable of previewing anything.

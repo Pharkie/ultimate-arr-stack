@@ -510,9 +510,18 @@ print(' '.join(diff) if diff else 'MATCH')")
         [[ -n "$SONARR_API_KEY" ]] && conn_keys+=("settings-sonarr-apikey=${SONARR_API_KEY}")
         [[ -n "$RADARR_API_KEY" ]] && conn_keys+=("settings-radarr-apikey=${RADARR_API_KEY}")
 
-        if bazarr_settings_post "$BASE" "$AUTH" "${conn_keys[@]}"; then
+        local conn_rc=0
+        bazarr_settings_post "$BASE" "$AUTH" "${conn_keys[@]}" || conn_rc=$?
+        if [[ $conn_rc -eq 0 ]]; then
             ok "Bazarr: configured Sonarr/Radarr connections (${conn_state})"
             needs_restart=true
+        elif [[ $conn_rc -eq 2 ]]; then
+            # Bazarr writes the settings, then blocks the request restarting its
+            # SignalR clients until Sonarr and Radarr answer — with no attempt
+            # limit. See bazarr_settings_post in lib/configure-helpers.sh.
+            fail "Bazarr: configure Sonarr/Radarr connections — POST timed out after ${BAZARR_POST_TIMEOUT:-60}s"
+            info "  Bazarr is probably unable to reach ${sonarr_host}:${sonarr_port} or ${radarr_host}:${radarr_port} from its network; check its log."
+            info "  The settings were written before it hung — a re-run should report them as already configured."
         else
             fail "Bazarr: configure Sonarr/Radarr connections"
         fi
