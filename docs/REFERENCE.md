@@ -64,7 +64,7 @@
 
 | Service | IP | Port | Notes |
 |---------|-----|------|-------|
-| Cloudflared | 172.20.0.12 | — | Tunnel (no ports exposed) |
+| Cloudflared | 172.20.0.12 | — | Tunnel (no ports exposed). **Opt-in `tunnel` profile** — boot/restart reconciles skip it until an operator adds `cloudflared/config.yml` and enables it explicitly (see below) |
 
 **+ remote access — Tailscale path** (tailscale.yml):
 
@@ -195,6 +195,16 @@ Services start in dependency order (handled automatically by `depends_on`):
 | Service | Description |
 |---------|-------------|
 | Cloudflared | Tunnel to Cloudflare for external access |
+
+**Opt-in.** The service is behind the `tunnel` profile, so `scripts/boot-compose-up.sh`
+(every boot) and `scripts/restart-stack.sh all` skip it rather than starting a tunnel
+whose gitignored `cloudflared/config.yml` does not exist — which would exit immediately
+and be restarted forever by `restart: always`. To enable it:
+
+```bash
+cp cloudflared/config.yml.example cloudflared/config.yml   # then fill it in
+docker compose -f docker-compose.cloudflared.yml --profile tunnel up -d
+```
 
 ### `docker-compose.tailscale.yml` (+ remote access — Tailscale path)
 
