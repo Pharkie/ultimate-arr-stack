@@ -9,13 +9,21 @@
 #   ./scripts/configure-apps.sh [OPTIONS]
 #
 # Options:
-#   --dry-run       Preview what would be configured without making changes
-#   --verbose, -v   Print curl response bodies on failure (for debugging)
+#   --dry-run          Preview what would change without writing anything
+#   --only <section>   Run one section: qbittorrent, sabnzbd, sonarr, radarr,
+#                      prowlarr, bazarr or pihole. Everything else is untouched.
+#   --verbose, -v      Print curl response bodies on failure (for debugging)
 #
 # Environment overrides:
-#   BAZARR_CONTAINER, BAZARR_PORT   Point the Bazarr section at another
-#                   container/port (default: bazarr, 6767). Lets the section be
-#                   tested against a throwaway instance instead of the live one.
+#   BAZARR_CONTAINER   Bazarr container to configure (default: bazarr). Its host
+#                      port is read from `docker port`, so pointing this at a
+#                      throwaway instance is enough; BAZARR_PORT forces the port.
+#                      Pair with `--only bazarr` or the rest of the live stack is
+#                      configured too.
+#   API_TIMEOUT        Seconds any one API request may take (default 60).
+#   BAZARR_POST_TIMEOUT  Same, for Bazarr settings writes (default 60).
+#   BAZARR_SCAN_TIMEOUT  For the Bazarr language-profile write, which rescans
+#                      the whole library inside the request (default 600).
 #
 # Safe to re-run: The script is idempotent — it skips anything already
 # configured and only applies missing settings. You can run it as many
@@ -61,7 +69,8 @@ RADARR_API_KEY=""
 PROWLARR_API_KEY=""
 BAZARR_API_KEY=""
 BAZARR_CONTAINER="${BAZARR_CONTAINER:-bazarr}"
-BAZARR_PORT="${BAZARR_PORT:-6767}"
+BAZARR_PORT="${BAZARR_PORT:-}"   # derived from the container after the docker check unless set
+ONLY=""
 SABNZBD_API_KEY=""
 QBIT_USERNAME="${QBIT_USERNAME:-}"
 QBIT_PASSWORD="${QBIT_PASSWORD:-}"
@@ -80,15 +89,26 @@ while [[ $# -gt 0 ]]; do
             VERBOSE=true
             shift
             ;;
+        --only)
+            ONLY="${2:-}"
+            case "$ONLY" in
+                qbittorrent|sabnzbd|sonarr|radarr|prowlarr|bazarr|pihole) ;;
+                *) echo "Unknown section for --only: '${ONLY}'"; echo "Sections: qbittorrent sabnzbd sonarr radarr prowlarr bazarr pihole"; exit 1 ;;
+            esac
+            shift 2
+            ;;
         --help|-h)
-            head -27 "$0" | tail -24
+            # The header comment block, however long it grows: from line 3 to
+            # the first line that is not a comment. Fixed head/tail offsets
+            # silently dropped the tail of it every time a line was added.
+            awk 'NR < 3 { next } /^#/ { sub(/^# ?/, ""); print; next } { exit }' "$0"
             echo ""
             echo "This script is idempotent — safe to re-run at any time."
             exit 0
             ;;
         *)
             echo "Unknown option: $1"
-            echo "Usage: $0 [--dry-run] [--verbose|-v] [--help|-h]"
+            echo "Usage: $0 [--dry-run] [--only <section>] [--verbose|-v] [--help|-h]"
             exit 1
             ;;
     esac
@@ -120,7 +140,13 @@ fi
 echo ""
 
 # Check key containers are running
-REQUIRED_CONTAINERS="gluetun qbittorrent sonarr radarr prowlarr ${BAZARR_CONTAINER}"
+case "$ONLY" in
+    "")            REQUIRED_CONTAINERS="gluetun qbittorrent sonarr radarr prowlarr ${BAZARR_CONTAINER}" ;;
+    sonarr|radarr) REQUIRED_CONTAINERS="gluetun qbittorrent $ONLY" ;;   # they test their download client on save
+    bazarr)        REQUIRED_CONTAINERS="${BAZARR_CONTAINER}" ;;
+    pihole)        REQUIRED_CONTAINERS="pihole" ;;
+    *)             REQUIRED_CONTAINERS="gluetun $ONLY" ;;
+esac
 MISSING=""
 for c in $REQUIRED_CONTAINERS; do
     if ! docker ps --format '{{.Names}}' | grep -q "^${c}$"; then
@@ -131,6 +157,22 @@ if [[ -n "$MISSING" ]]; then
     echo "ERROR: Required containers not running:$MISSING"
     echo "Start the stack first: docker compose -f docker-compose.arr-stack.yml up -d"
     exit 1
+fi
+
+# Bazarr's host port comes from the container, so BAZARR_CONTAINER alone is
+# enough to target a throwaway. The two used to be independent knobs, and
+# setting one without the other read a throwaway's API key while writing to
+# the live port.
+if [[ -z "$BAZARR_PORT" ]]; then
+    BAZARR_PORT=$(docker port "$BAZARR_CONTAINER" 6767/tcp 2>/dev/null | head -1 | sed 's/.*://')
+    if [[ -z "$BAZARR_PORT" ]]; then
+        if [[ "$BAZARR_CONTAINER" == "bazarr" ]]; then
+            BAZARR_PORT=6767
+        else
+            echo "ERROR: could not read the published port of container '${BAZARR_CONTAINER}' (docker port ... 6767/tcp). Set BAZARR_PORT."
+            exit 1
+        fi
+    fi
 fi
 
 # Gluetun must be healthy — qBittorrent and the *arr services share its network
@@ -566,7 +608,9 @@ configure_bazarr() {
 
     if ! wait_for_service "Bazarr" "${BASE}/api/system/status"; then return; fi
 
-    # Get current settings
+    # Get current settings. Nothing below changes a key another step compares,
+    # so one read serves the whole section (the language step reads its own
+    # two endpoints).
     local settings
     settings=$(api_get "${BASE}/api/system/settings" "$AUTH") || true
 
@@ -575,7 +619,103 @@ configure_bazarr() {
         return
     fi
 
-    local needs_restart=false
+    # Bazarr applies every setting inside the POST (in memory, then
+    # config.yaml) and never restarts its process for them — read from the
+    # v1.6.0 source. There is no container bounce at the end of this section.
+
+    # --- Subtitle language profile: find, adopt or create; then reconcile ---
+    #
+    # This runs FIRST, before Sonarr and Radarr are connected, because Bazarr
+    # stamps the default profile onto each series and movie when the row is
+    # inserted — and connecting Sonarr/Radarr starts the initial library sync
+    # immediately. Set the profile afterwards and the whole existing library
+    # has none, and only titles added later get it.
+    #
+    # The decision lives in lib/bazarr-language-plan.py (unit-tested in
+    # tests/bazarr-language-plan.bats): the profile named
+    # SUBTITLE_PROFILE_NAME is managed, else a profile whose languages are
+    # exactly SUBTITLE_LANGUAGES is adopted, else one is created with the next
+    # free id — never a hard-coded 1. Other profiles are never modified.
+    # Languages Filter ticks become the wanted languages plus whatever other
+    # profiles use, so a stray tick (Latvian, 2026-09-10) is cleared without
+    # unticking a language another profile depends on.
+    #
+    # Bazarr rescans the whole library inside a languages-profiles write, so
+    # this one call gets BAZARR_SCAN_TIMEOUT rather than the usual bound. On a
+    # fresh install it runs before use_sonarr/use_radarr are set, so there is
+    # nothing to scan yet.
+    local SUBTITLE_LANGUAGES="en"          # space-separated code2 list — the managed profile's contents
+    local SUBTITLE_PROFILE_NAME="English"  # name when creating; an existing profile with this name is managed
+
+    local lang_profiles enabled_langs plan
+    lang_profiles=$(api_get "${BASE}/api/system/languages/profiles" "$AUTH") || true
+    enabled_langs=$(api_get "${BASE}/api/system/languages" "$AUTH") || true
+    plan=$(python3 "${SCRIPT_DIR}/lib/bazarr-language-plan.py" "$lang_profiles" "$enabled_langs" "$SUBTITLE_LANGUAGES" "$SUBTITLE_PROFILE_NAME" 2>/dev/null)
+
+    local lang_action="" profile_id="" profile_name="" lang_added lang_removed tick_added tick_removed lang_enabled plan_profiles
+    IFS='|' read -r lang_action profile_id profile_name lang_added lang_removed tick_added tick_removed lang_enabled <<< "$(printf '%s\n' "$plan" | head -1)"
+    plan_profiles=$(printf '%s\n' "$plan" | sed -n '2p')
+
+    if [[ -z "$lang_action" ]]; then
+        fail "Bazarr: could not read the language profiles or the enabled-language list"
+    elif [[ "$lang_action" == "MATCH" ]]; then
+        skip "Bazarr: subtitle profile '${profile_name}' (id ${profile_id}) = ${SUBTITLE_LANGUAGES}"
+    else
+        local enabled_args=() code change=""
+        for code in $lang_enabled; do enabled_args+=("languages-enabled=${code}"); done
+        [[ -n "$lang_added" ]]   && change+=" languages +${lang_added// /,+}"
+        [[ -n "$lang_removed" ]] && change+=" languages -${lang_removed// /,-}"
+        [[ -n "$tick_added" ]]   && change+=" ticks +${tick_added// /,+}"
+        [[ -n "$tick_removed" ]] && change+=" ticks -${tick_removed// /,-}"
+        if API_MAX_TIME="$BAZARR_SCAN_TIMEOUT" bazarr_settings_post "$BASE" "$AUTH" "${enabled_args[@]}" "languages-profiles=${plan_profiles}"; then
+            if [[ "$lang_action" == "CREATE" ]]; then
+                ok "Bazarr: created subtitle profile '${profile_name}' (id ${profile_id}) = ${SUBTITLE_LANGUAGES}"
+            else
+                ok "Bazarr: reconciled subtitle profile '${profile_name}' (id ${profile_id}):${change}"
+            fi
+        else
+            fail "Bazarr: ${lang_action,,} subtitle profile '${profile_name}'"
+        fi
+    fi
+
+    # --- Default subtitle profile for new series and movies ---
+    #
+    # Points at the profile the step above found or created — by its real id.
+    # It was hard-coded to 1, which reported ✓ while aiming the defaults at a
+    # profile that did not exist. Bazarr only type-checks the value.
+    if [[ -z "$profile_id" ]]; then
+        fail "Bazarr: default subtitle profile — no profile to point at (see above)"
+    else
+        local lang_state
+        lang_state=$(json_extract "$settings" "
+want = {
+    'serie_default_enabled': True,
+    'serie_default_profile': ${profile_id},
+    'movie_default_enabled': True,
+    'movie_default_profile': ${profile_id},
+}
+current = data.get('general', {})
+def norm(k, v):
+    return int(v) if k.endswith('_profile') and str(v).isdigit() else v
+diff = [k for k, v in sorted(want.items()) if norm(k, current.get(k)) != v]
+print(' '.join(diff) if diff else 'MATCH')")
+
+        if [[ -z "$lang_state" ]]; then
+            fail "Bazarr: could not compare default subtitle profile settings"
+        elif [[ "$lang_state" == "MATCH" ]]; then
+            skip "Bazarr: default subtitle profile (id ${profile_id})"
+        else
+            if bazarr_settings_post "$BASE" "$AUTH" \
+                "settings-general-serie_default_enabled=true" \
+                "settings-general-serie_default_profile=${profile_id}" \
+                "settings-general-movie_default_enabled=true" \
+                "settings-general-movie_default_profile=${profile_id}"; then
+                ok "Bazarr: set default subtitle profile to '${profile_name}' (id ${profile_id}) (${lang_state})"
+            else
+                fail "Bazarr: set default subtitle profile"
+            fi
+        fi
+    fi
 
     # --- Sonarr/Radarr connections ---
     #
@@ -585,14 +725,17 @@ configure_bazarr() {
     # from Bazarr since that change (verified on the NAS 2026-08-17: gluetun:8989
     # and gluetun:7878 both fail to connect, sonarr:8989 and radarr:7878 both
     # answer HTTP 401). Change these only alongside the compose networking.
+    #
+    # If Bazarr cannot reach them, its handler blocks inside this POST with no
+    # attempt limit; bazarr_settings_post bounds that and explains it.
     local sonarr_host="sonarr" sonarr_port=8989
     local radarr_host="radarr" radarr_port=7878
 
     # Compare every field this step would write, so a run that would change
-    # nothing skips instead of POSTing and bouncing the container. Prints MATCH
-    # when the live config already matches, otherwise the differing fields.
-    # Empty output means the comparison itself broke (bad JSON, python error) —
-    # that is reported as a failure, never as a silent skip.
+    # nothing skips instead of POSTing. Prints MATCH when the live config
+    # already matches, otherwise the differing fields. Empty output means the
+    # comparison itself broke (bad JSON, python error) — that is reported as a
+    # failure, never as a silent skip.
     local conn_state
     conn_state=$(json_extract "$settings" "
 want = {
@@ -642,18 +785,8 @@ print(' '.join(diff) if diff else 'MATCH')")
         [[ -n "$SONARR_API_KEY" ]] && conn_keys+=("settings-sonarr-apikey=${SONARR_API_KEY}")
         [[ -n "$RADARR_API_KEY" ]] && conn_keys+=("settings-radarr-apikey=${RADARR_API_KEY}")
 
-        local conn_rc=0
-        bazarr_settings_post "$BASE" "$AUTH" "${conn_keys[@]}" || conn_rc=$?
-        if [[ $conn_rc -eq 0 ]]; then
+        if bazarr_settings_post "$BASE" "$AUTH" "${conn_keys[@]}"; then
             ok "Bazarr: configured Sonarr/Radarr connections (${conn_state})"
-            needs_restart=true
-        elif [[ $conn_rc -eq 2 ]]; then
-            # Bazarr writes the settings, then blocks the request restarting its
-            # SignalR clients until Sonarr and Radarr answer — with no attempt
-            # limit. See bazarr_settings_post in lib/configure-helpers.sh.
-            fail "Bazarr: configure Sonarr/Radarr connections — POST timed out after ${BAZARR_POST_TIMEOUT:-60}s"
-            info "  Bazarr is probably unable to reach ${sonarr_host}:${sonarr_port} or ${radarr_host}:${radarr_port} from its network; check its log."
-            info "  The settings were written before it hung — a re-run should report them as already configured."
         else
             fail "Bazarr: configure Sonarr/Radarr connections"
         fi
@@ -688,7 +821,6 @@ print(' '.join(diff) if diff else 'MATCH')")
             "settings-subsync-use_subsync_movie_threshold=true" \
             "settings-subsync-subsync_movie_threshold=70"; then
             ok "Bazarr: enabled subtitle sync, thresholds series 90 / movies 70 (${subsync_state})"
-            needs_restart=true
         else
             fail "Bazarr: enable subtitle sync"
         fi
@@ -716,8 +848,7 @@ print(' '.join(diff) if diff else 'MATCH')")
     #
     # Mods beyond this set are left alone rather than stripped. Removing one a
     # user enabled by hand would put the live config permanently at odds with
-    # the script, which is exactly the write-every-run restart loop this is
-    # meant to end.
+    # the script, which is exactly the write-every-run loop this is meant to end.
     local subzero_missing
     subzero_missing=$(json_extract "$settings" "
 want = ['remove_tags', 'emoji', 'OCR_fixes', 'common', 'fix_uppercase']
@@ -736,136 +867,9 @@ print(' '.join(missing) if missing else 'MATCH')")
         done
         if bazarr_settings_post "$BASE" "$AUTH" "${subzero_keys[@]}"; then
             ok "Bazarr: enabled Sub-Zero mods (${subzero_missing})"
-            needs_restart=true
         else
             fail "Bazarr: enable Sub-Zero mods"
         fi
-    fi
-
-    # --- English language profile (create when none exist) ---
-    #
-    # The default-language step below points both defaults at profile 1 and
-    # assumed it existed. A fresh Bazarr ships with no profiles at all, so on
-    # a first run that step reported success while pointing the defaults at
-    # nothing, and the languages step further down only prunes profiles that
-    # already exist — nothing ever created one. Bazarr's handler
-    # (api/system/settings.py) takes the INSERT branch for a profileId it has
-    # not seen and DELETES any existing profileId missing from the list, so
-    # this only ever sends when the list is empty: there is nothing to drop.
-    # `languages-enabled` is sent alongside because a profile can only search
-    # languages that are ticked under Languages Filter.
-    local existing_profiles profile_count
-    existing_profiles=$(api_get "${BASE}/api/system/languages/profiles" "$AUTH") || true
-    profile_count=$(json_extract "$existing_profiles" "print(len(data))")
-
-    if [[ -z "$profile_count" ]]; then
-        fail "Bazarr: could not read language profiles"
-    elif [[ "$profile_count" != "0" ]]; then
-        skip "Bazarr: English language profile"
-    else
-        local english_profile
-        english_profile='[{"profileId":1,"name":"English","cutoff":null,"items":[{"id":1,"language":"en","audio_exclude":"False","audio_only_include":"False","hi":"False","forced":"False"}],"mustContain":[],"mustNotContain":[],"originalFormat":0,"tag":null}]'
-        if bazarr_settings_post "$BASE" "$AUTH" "languages-enabled=en" "languages-profiles=${english_profile}"; then
-            ok "Bazarr: create English language profile"
-            needs_restart=true
-        else
-            fail "Bazarr: create English language profile"
-        fi
-    fi
-
-    # --- Default subtitle language (English) ---
-    #
-    # Profile 1 is the English language profile, created above when missing.
-    # Checking only serie_default_enabled left the movie half, and both
-    # profile ids, unverified — all three could be wrong and still report
-    # "configured".
-    local lang_state
-    lang_state=$(json_extract "$settings" "
-want = {
-    'serie_default_enabled': True,
-    'serie_default_profile': 1,
-    'movie_default_enabled': True,
-    'movie_default_profile': 1,
-}
-current = data.get('general', {})
-diff = [k for k, v in sorted(want.items()) if current.get(k) != v]
-print(' '.join(diff) if diff else 'MATCH')")
-
-    if [[ -z "$lang_state" ]]; then
-        fail "Bazarr: could not compare default subtitle language settings"
-    elif [[ "$lang_state" == "MATCH" ]]; then
-        skip "Bazarr: default subtitle language"
-    else
-        if bazarr_settings_post "$BASE" "$AUTH" \
-            "settings-general-serie_default_enabled=true" \
-            "settings-general-serie_default_profile=1" \
-            "settings-general-movie_default_enabled=true" \
-            "settings-general-movie_default_profile=1"; then
-            ok "Bazarr: set default subtitle language to English (${lang_state})"
-            needs_restart=true
-        else
-            fail "Bazarr: set default subtitle language"
-        fi
-    fi
-
-    # --- Subtitle language contents (English only) ---
-    #
-    # The step above only checks that profile 1 is the DEFAULT. It never looks
-    # at what profile 1 contains, so a stray language inside it reports as
-    # "already configured" forever. That is how Latvian ended up both in the
-    # profile and in the enabled-languages list, and Bazarr spent every nightly
-    # search hunting Latvian subtitles for the whole movie library (2026-09-10).
-    #
-    # Both key spaces must agree: the profile drives what gets searched; the
-    # enabled list is what the UI offers. POST semantics (Bazarr's
-    # api/system/settings.py): `languages-enabled` zeroes every language and
-    # then enables the listed ones, and `languages-profiles` is authoritative —
-    # any profileId missing from the payload is DELETED. So the full profile
-    # list is always read and sent back, with only the item filter applied.
-    local SUBTITLE_LANGUAGES="en"   # space-separated code2 list; edit to add languages
-    local lang_profiles enabled_langs lang_stray
-    lang_profiles=$(api_get "${BASE}/api/system/languages/profiles" "$AUTH") || true
-    enabled_langs=$(api_get "${BASE}/api/system/languages" "$AUTH") || true
-
-    lang_stray=$(python3 -c "
-import sys, json
-want = set(sys.argv[3].split())
-profiles = json.loads(sys.argv[1])
-enabled = {l['code2'] for l in json.loads(sys.argv[2]) if l.get('enabled')}
-stray = enabled - want
-for p in profiles:
-    stray |= {i['language'] for i in p['items']} - want
-print(' '.join(sorted(stray)) if stray else 'MATCH')
-" "$lang_profiles" "$enabled_langs" "$SUBTITLE_LANGUAGES" 2>/dev/null)
-
-    if [[ -z "$lang_stray" ]]; then
-        fail "Bazarr: could not read language profiles"
-    elif [[ "$lang_stray" == "MATCH" ]]; then
-        skip "Bazarr: subtitle languages (${SUBTITLE_LANGUAGES})"
-    else
-        local fixed_profiles
-        fixed_profiles=$(python3 -c "
-import sys, json
-want = set(sys.argv[2].split())
-profiles = json.loads(sys.argv[1])
-for p in profiles:
-    p['items'] = [i for i in p['items'] if i['language'] in want]
-print(json.dumps(profiles))
-" "$lang_profiles" "$SUBTITLE_LANGUAGES")
-        local enabled_args=()
-        for code in $SUBTITLE_LANGUAGES; do enabled_args+=("languages-enabled=${code}"); done
-        if bazarr_settings_post "$BASE" "$AUTH" "${enabled_args[@]}" "languages-profiles=${fixed_profiles}"; then
-            ok "Bazarr: removed stray subtitle language(s): ${lang_stray}"
-            needs_restart=true
-        else
-            fail "Bazarr: remove stray subtitle language(s): ${lang_stray}"
-        fi
-    fi
-
-    # Restart if any changes were made (never in a dry run — nothing was written)
-    if $needs_restart && ! $DRY_RUN; then
-        info "Restarting Bazarr to apply changes..."
-        docker restart "$BAZARR_CONTAINER" >/dev/null 2>&1
     fi
 }
 
@@ -900,20 +904,24 @@ configure_pihole() {
 # Run all
 # ============================================
 
-configure_qbittorrent
-if $SABNZBD_RUNNING; then configure_sabnzbd; fi
-echo ""
-configure_arr_service "Sonarr" 8989 "$SONARR_API_KEY" "/data/media/tv" "tv" \
-    "renameEpisodes" "$SONARR_METADATA_FIELDS" "$SONARR_NAMING_PAYLOAD"
-echo ""
-configure_arr_service "Radarr" 7878 "$RADARR_API_KEY" "/data/media/movies" "movies" \
-    "renameMovies" "$RADARR_METADATA_FIELDS" "$RADARR_NAMING_PAYLOAD"
-echo ""
-configure_prowlarr
-echo ""
-configure_bazarr
-echo ""
-configure_pihole
+# --only <section> runs one of these and nothing else.
+want_section() { [[ -z "$ONLY" || "$ONLY" == "$1" ]]; }
+
+if want_section qbittorrent; then configure_qbittorrent; echo ""; fi
+if want_section sabnzbd && $SABNZBD_RUNNING; then configure_sabnzbd; echo ""; fi
+if want_section sonarr; then
+    configure_arr_service "Sonarr" 8989 "$SONARR_API_KEY" "/data/media/tv" "tv" \
+        "renameEpisodes" "$SONARR_METADATA_FIELDS" "$SONARR_NAMING_PAYLOAD"
+    echo ""
+fi
+if want_section radarr; then
+    configure_arr_service "Radarr" 7878 "$RADARR_API_KEY" "/data/media/movies" "movies" \
+        "renameMovies" "$RADARR_METADATA_FIELDS" "$RADARR_NAMING_PAYLOAD"
+    echo ""
+fi
+if want_section prowlarr; then configure_prowlarr; echo ""; fi
+if want_section bazarr; then configure_bazarr; echo ""; fi
+if want_section pihole; then configure_pihole; fi
 
 # ============================================
 # Summary

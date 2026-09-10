@@ -34,7 +34,7 @@ Create admin account when prompted.
 
 **Bazarr** — `http://NAS_IP:6767`
 Create admin account when prompted.
-The script creates an English language profile if Bazarr has none, sets it as the series/movie default and keeps its contents to English — nothing to do here. If you already have profiles but none is English, add one first: Settings → Languages, tick **English** under *Languages Filter*, add a profile named English containing English, and Save.
+Nothing else to do here. The script manages a subtitle profile named **English** — adopting an existing one whose languages are exactly English whatever it's called, or creating it — makes it the series/movie default, and leaves any other profiles you have alone.
 
 ## Step 2: Run the script
 
@@ -66,7 +66,7 @@ Preview what it will do without making changes:
 | Radarr | Root folder, qBittorrent + SABnzbd download clients, TRaSH naming, NFO metadata, custom formats (Reject ISO, Dolby Vision profile scoring), Usenet delay profile |
 | Prowlarr | FlareSolverr proxy, Sonarr + Radarr app sync, qBittorrent + SABnzbd as its *own* download clients so the search page can grab (→ category `other`) |
 | SABnzbd | `other` category for Prowlarr search-page grabs (`/data/usenet/complete/other`) |
-| Bazarr | Sonarr + Radarr connections, subtitle sync (ffsubsync), Sub-Zero content mods, default English language |
+| Bazarr | English subtitle profile (found, adopted or created) set as the series/movie default — before the Sonarr/Radarr connections, so the first library sync gets it; subtitle sync (ffsubsync); Sub-Zero content mods |
 
 ## Step 3: Configure the remaining services
 

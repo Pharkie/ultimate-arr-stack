@@ -338,4 +338,30 @@ test.describe('API assertions', () => {
     expect(settings.sonarr.apikey, "Bazarr holds a stale Sonarr API key").toBe(sonarrKey);
     expect(settings.radarr.apikey, "Bazarr holds a stale Radarr API key").toBe(radarrKey);
   });
+
+  // configure-apps.sh manages one subtitle profile (named English, or adopted
+  // by contents) and points both defaults at its real id. The previous
+  // version pinned the defaults to id 1 without checking that such a profile
+  // existed, so a Bazarr with a different layout was reported configured
+  // while searching for nothing. Added 2026-09-10 with that rewrite.
+  test('Bazarr — an English subtitle profile exists and both defaults point at it', async ({ request }) => {
+    const bazarrKey = process.env.BAZARR_API_KEY;
+    test.skip(!bazarrKey, 'BAZARR_API_KEY not set');
+    const headers = { 'X-API-KEY': bazarrKey! };
+
+    const profilesRes = await request.get(url('bazarr', '/api/system/languages/profiles'), { headers });
+    expect(profilesRes.ok()).toBeTruthy();
+    const profiles: Array<{ profileId: number; name: string; items: Array<{ language: string }> }> =
+      await profilesRes.json();
+    const english = profiles.find((p) => p.items.map((i) => i.language).sort().join(' ') === 'en');
+    expect(english, `no profile whose languages are exactly [en]; have: ${JSON.stringify(profiles.map((p) => [p.name, p.items.map((i) => i.language)]))}`).toBeDefined();
+
+    const settingsRes = await request.get(url('bazarr', '/api/system/settings'), { headers });
+    expect(settingsRes.ok()).toBeTruthy();
+    const general = (await settingsRes.json()).general;
+    expect(general.serie_default_enabled, 'series default profile not enabled').toBe(true);
+    expect(general.movie_default_enabled, 'movie default profile not enabled').toBe(true);
+    expect(Number(general.serie_default_profile), 'series default points at a different profile').toBe(english!.profileId);
+    expect(Number(general.movie_default_profile), 'movie default points at a different profile').toBe(english!.profileId);
+  });
 });
