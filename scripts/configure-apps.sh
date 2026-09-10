@@ -271,6 +271,17 @@ configure_qbittorrent() {
     local current_prefs
     current_prefs=$(curl -s -b "$QBIT_COOKIE" "${QBIT_URL}/api/v2/app/preferences" 2>/dev/null)
 
+    # Reject executables at the metadata stage, before any bytes transfer.
+    # Public torrent indexers serve droppers that impersonate real release groups:
+    # a ~1GB .exe padded to episode size, named e.g.
+    # "Reacher S04E08 1080p WEB H264-CAKES.exe". Sonarr does catch these on import
+    # ("Caution: Found executable file") but only AFTER the full download, and it
+    # cannot see one nested inside a folder until the release is already on disk.
+    # qBittorrent's exclusion list drops the matching files from the torrent
+    # up front, so a poisoned release arrives as a 0-byte no-op instead.
+    # See memory: indexer_poisoning_limetorrents (5 poisoned grabs, 2026-09-10).
+    local excluded_names='*.exe\n*.scr\n*.bat\n*.cmd\n*.com\n*.msi\n*.lnk\n*.vbs\n*.ps1\n*.jar'
+
     if json_extract "$current_prefs" "
 p = data
 if not p.get('auto_tmm_enabled', False): sys.exit(1)
@@ -285,6 +296,8 @@ if p.get('max_active_downloads', -1) != 5: sys.exit(1)
 if p.get('max_active_torrents', -1) != 10: sys.exit(1)
 if p.get('max_active_uploads', -1) != 5: sys.exit(1)
 if p.get('current_network_interface', '') != 'tun0': sys.exit(1)
+if not p.get('excluded_file_names_enabled', False): sys.exit(1)
+if p.get('excluded_file_names', '') != '${excluded_names}': sys.exit(1)
 "; then
         skip "qBittorrent: preferences"
     else
@@ -294,14 +307,14 @@ if p.get('current_network_interface', '') != 'tun0': sys.exit(1)
         # EPERM, so no announce escapes, no peers are found, and every torrent
         # stalls at metaDL while the WebUI and usenet both look healthy.
         # See docs/TROUBLESHOOTING.md -> "Torrents Stall Forever at 0% / metaDL".
-        local prefs='{"auto_tmm_enabled":true,"upnp":false,"limit_utp_rate":true,"limit_lan_peers":true,"encryption":1,"max_inactive_seeding_time_enabled":true,"max_inactive_seeding_time":30,"max_ratio_act":0,"max_active_downloads":5,"max_active_torrents":10,"max_active_uploads":5,"current_network_interface":"tun0","current_interface_address":""}'
+        local prefs='{"auto_tmm_enabled":true,"upnp":false,"limit_utp_rate":true,"limit_lan_peers":true,"encryption":1,"max_inactive_seeding_time_enabled":true,"max_inactive_seeding_time":30,"max_ratio_act":0,"max_active_downloads":5,"max_active_torrents":10,"max_active_uploads":5,"current_network_interface":"tun0","current_interface_address":"","excluded_file_names_enabled":true,"excluded_file_names":"'"${excluded_names}"'"}'
         http_code=$(curl -s -o /dev/null -w '%{http_code}' \
             -b "$QBIT_COOKIE" \
             --data-urlencode "json=${prefs}" \
             "${QBIT_URL}/api/v2/app/setPreferences")
 
         if [[ "$http_code" == "200" ]]; then
-            ok "qBittorrent: set preferences (auto TMM, UPnP off, encryption, stall timeout, concurrent limits, VPN interface binding)"
+            ok "qBittorrent: set preferences (auto TMM, UPnP off, encryption, stall timeout, concurrent limits, VPN interface binding, executable exclusions)"
         else
             fail "qBittorrent: set preferences (HTTP $http_code)"
         fi
