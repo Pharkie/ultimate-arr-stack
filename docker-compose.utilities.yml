@@ -98,7 +98,7 @@ services:
   # See TROUBLESHOOTING.md "After a Gluetun RECREATE".
   # ═══════════════════════════════════════════════════════════════════════════
   gluetun-recover:
-    image: docker:29.7-cli
+    image: docker:29.8-cli
     container_name: gluetun-recover
     <<: *default-security
     volumes:
@@ -221,7 +221,7 @@ services:
   # Access: beszel.lan | NAS_IP:8090 (LAN-only, use WireGuard for remote)
   # ═══════════════════════════════════════════════════════════════════════════
   beszel:
-    image: henrygd/beszel:0.18
+    image: henrygd/beszel:0.19
     container_name: beszel
     <<: *default-security
     cap_add:
@@ -248,7 +248,7 @@ services:
       start_period: 30s
 
   beszel-agent:
-    image: henrygd/beszel-agent:0.18
+    image: henrygd/beszel-agent:0.19
     container_name: beszel-agent
     <<: *default-security
     restart: always
