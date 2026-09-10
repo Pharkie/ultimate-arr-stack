@@ -70,6 +70,35 @@ Configure your router's DHCP to advertise your NAS IP as DNS server. All devices
 
 See [REFERENCE.md](REFERENCE.md#service-access) for the full list of `.lan` URLs.
 
+### Which resolver actually serves each VLAN (read off the router, 2026-09-10)
+
+Every DHCP pool that hands out a resolver names the **NAS Pi-hole**, and nothing else does:
+
+| Pool | `dhcp_option 6` |
+|---|---|
+| `lan` | `192.168.110.246` |
+| `vlan10` | `192.168.110.246` |
+| `vlan20` | `192.168.110.246` |
+| `vlan30` | `192.168.110.246` |
+
+Check it from a host with router access — this repo's design makes pi1 the only one:
+`ssh arr-stack-router 'uci show dhcp | grep dhcp_option'`.
+
+Two consequences worth keeping:
+
+- **The NAS Pi-hole is a single point of failure for the entire house.** That is what makes `scripts/boot-compose-up.service` load-bearing rather than a nicety — see [Docker: Ports Not Published After Reboot](TROUBLESHOOTING.md#docker-ports-not-published-after-reboot-containers-running-nothing-listening).
+- **The `pi2-dns` stack (Pi-hole + dnscrypt-proxy on the Pi 3) is a standby, not a peer** — it serves no DHCP client. It was **stopped and retired on 2026-09-10**: containers stopped (not removed), and pi2's checkout returned to `main` so no unmerged branch code stays live. To bring it back deliberately:
+
+  ```bash
+  ssh pi@pi2 'cd /home/pi/arr-stack && git fetch origin feat/pi1-pi2-split && \
+      git checkout feat/pi1-pi2-split && \
+      docker compose -f docker-compose.pi2-dns.yml up -d'
+  ```
+
+  It remains a usable fallback if the NAS is ever down: repoint `dhcp_option 6` at `192.168.120.241`. That is a router edit, not a code change.
+
+**Upstream is encrypted.** The NAS Pi-hole forwards to `dnscrypt-proxy` at `172.20.0.6#5053` (set 2026-09-10, which is what `scripts/configure-apps.sh` has always prescribed), rather than sending plaintext to `8.8.8.8`. Verify with `docker exec pihole pihole-FTL --config dns.upstreams`.
+
 ---
 
 ## ✅ + local DNS Complete!

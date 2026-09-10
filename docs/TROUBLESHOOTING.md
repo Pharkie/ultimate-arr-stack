@@ -390,6 +390,18 @@ dig @<NAS_IP> google.com                                    # "connection refuse
 
 DNS is back ~20s after boot (Pi-hole's stack is first in the list, deliberately); the full sweep takes ~5 minutes.
 
+> **Status on this NAS, 2026-09-10: the unit is NOT installed.** `systemctl status boot-compose-up.service` returns *Unit could not be found*; there is no unit file in `/etc/systemd/system`, nothing in any `.wants/` directory, and no `@reboot` entry in the root crontab or `/etc/crontab`. The script's own log path (`/volume1/docker/boot-compose-up.log`) **has never existed**, so it has never run on this host. The symlink above *is* in place (recreated 2026-09-10); installing the unit needs root, which the deploy account (`leoleg`) does not have — it is not in `sudoers` and cron is not writable for it either:
+>
+> ```bash
+> sudo ln -sf /volume1/docker/arr-stack/scripts/boot-compose-up.service /etc/systemd/system/boot-compose-up.service
+> sudo systemctl daemon-reload
+> sudo systemctl enable --now boot-compose-up.service
+> ```
+>
+> **Do not read "it hasn't bitten us since August" as "it cannot".** Pi-hole's current container was created 2026-08-21 — two days *after* the last boot (2026-08-19) — which is exactly the shape of a binding that failed at boot and was repaired later by hand. Until the unit is enabled, every reboot leaves the whole house one missing binding away from losing DNS.
+>
+> The script is compatible with the unit's invocation: it is `#!/bin/sh` with no bashisms, so the `ExecStart` line's `/bin/sh /volume1/docker/boot-compose-up.sh` parses and runs under dash (checked with `sh -n`), and it works through the symlink. `<NAS admin user>` can also run it by hand at any time — no root needed.
+
 **Critical: use `Wants=`, never `Requires=` or `RequiresMountsFor=` in that unit.** The first version used `RequiresMountsFor=/volume1` + `Requires=docker.service`. Those are *hard* dependencies: `/volume1` wasn't mounted nine seconds into boot, so systemd failed the job outright (`Job boot-compose-up.service/start failed with result 'dependency'`) and **never retried**. DNS stayed down and the unit sat `inactive (dead)` with no error visible in `systemctl status`. The unit now waits for the script itself in `ExecStart`.
 
 **A static IP does NOT fix this** (unlike the exit-128 case above). UGOS reverts the Control Panel setting to DHCP on reboot, and `/etc/network/interfaces.d/ifcfg-eth0` has declared `static` since February while UGOS's own `dhclient@eth0.service` overrides it regardless.
