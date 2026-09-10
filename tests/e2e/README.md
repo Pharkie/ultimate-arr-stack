@@ -31,3 +31,21 @@ Requires `.env.e2e` (copy from `.env.e2e.example`) with `NAS_HOST` and the servi
   ```bash
   ALLOW_DISRUPTIVE_TESTS=1 npx playwright test tests/e2e/vpn-security.spec.ts -g killswitch
   ```
+
+## Coverage floor
+
+Skipping is a feature here — the gates above are what keep the suite runnable off-NAS — but
+skipping *everything* is a configuration failure that would otherwise read as a pass, because
+Playwright exits 0 when tests skip.
+
+`executed-floor-reporter.ts` prints a census (`executed / skipped / failed / collected`) on every
+run and fails any **full-suite** run that executed fewer than 30 of the 58 collected tests. Runs
+that collected fewer than 50 in total (a single spec, or `-g`) are exempt, so the documented
+single-file invocations above still work.
+
+Reference numbers: 56 execute on the NAS with a complete `.env.e2e`; ~40 execute off-NAS (16 skip
+for `DOCKER_AVAILABLE`, 2 are permanent or opt-in); 3 is the signature of a missing or rotted
+`.env.e2e`. `forbidOnly` is on for the same reason — a stray `test.only` would shrink a green run
+to one test.
+
+To watch the floor fire: `E2E_EXECUTED_FLOOR=200 npx playwright test`.

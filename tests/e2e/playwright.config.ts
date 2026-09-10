@@ -9,7 +9,13 @@ export default defineConfig({
   timeout: 30_000,
   retries: 0,
   workers: 1,
-  reporter: 'list',
+  reporter: [
+    ['list'],
+    ['./executed-floor-reporter.ts', { floor: 30 }],
+  ],
+  // A committed test.only would silently shrink the suite to that one test, and a
+  // green "1 passed" is exactly the failure mode the floor reporter exists for.
+  forbidOnly: true,
   use: {
     headless: true,
     ignoreHTTPSErrors: true,
