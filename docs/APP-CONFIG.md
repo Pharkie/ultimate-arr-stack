@@ -72,6 +72,7 @@ Receives download requests from Sonarr and Radarr and downloads files via torren
 6. **Create categories:** Right-click categories → Add
    - `tv` → Save path: `/data/torrents/tv`
    - `movies` → Save path: `/data/torrents/movies`
+   - `other` → Save path: `/data/torrents/other` — anything grabbed from Prowlarr's own search page (see [4.6 step 8](#46-prowlarr-indexer-manager)); nothing imports from it
 
    > **Why categories matter:** Sonarr/Radarr tell qBittorrent which category to use when requesting downloads. qBittorrent puts files in the category's save path. After download completes, Sonarr/Radarr create hardlinks from `/data/torrents/tv` or `/data/torrents/movies` to your library (`/data/media/tv` or `/data/media/movies`). If categories don't match, downloads won't be found.
 
@@ -274,6 +275,11 @@ Manages torrent/Usenet indexers and syncs them to Sonarr/Radarr.
    - API Key: (from Sonarr → Settings → General → Security)
 6. **Connect to Radarr:** Same process — Radarr Server: `http://172.20.0.11:7878`
 7. **Sync:** Settings → Apps → Sync App Indexers
+8. **Download clients for Prowlarr's own search page** (optional but recommended): Settings → Download Clients → +
+   - qBittorrent: Host `localhost`, Port `8085`, your qBittorrent username/password, Category `other`
+   - SABnzbd: Host `localhost`, Port `8080`, SABnzbd API key, Category `other`
+   - `localhost` is right *here* — Prowlarr shares Gluetun's network with both clients. Create the `other` category in qBittorrent (4.1) and SABnzbd (Config → Categories, folder left blank) first.
+   - Sonarr and Radarr never use these; they grab through their own clients into `tv`/`movies`. This pair exists so the search page's download button works for anything that is neither — an ISO, an audiobook, music. Without it that button does nothing at all: no grab, no error, nothing in History.
 
 ## 4.7 Seerr (Request Manager)
 

@@ -90,8 +90,10 @@
 | Radarr | qBittorrent | `gluetun:8085` | Download client is behind the VPN |
 | Sonarr | SABnzbd | `gluetun:8080` | Download client is behind the VPN |
 | Radarr | SABnzbd | `gluetun:8080` | Download client is behind the VPN |
-| Prowlarr | Sonarr | `sonarr:8989` | Sonarr is on the bridge (own IP) |
-| Prowlarr | Radarr | `radarr:7878` | Radarr is on the bridge (own IP) |
+| Prowlarr | Sonarr | `172.20.0.10:8989` | Sonarr is on the bridge; Prowlarr's DNS is Pi-hole, which can't resolve container names — use the static IP |
+| Prowlarr | Radarr | `172.20.0.11:7878` | Same — static IP, not the name |
+| Prowlarr | qBittorrent | `localhost:8085` | Prowlarr's own client for search-page grabs (category `other`); same network stack |
+| Prowlarr | SABnzbd | `localhost:8080` | Same — Prowlarr's own client, category `other` |
 | Prowlarr | FlareSolverr | `localhost:8191` | Same network stack (both behind Gluetun) |
 | Seerr | Sonarr | `sonarr:8989` | Both on the bridge |
 | Seerr | Radarr | `radarr:7878` | Both on the bridge |

@@ -100,10 +100,12 @@ test.describe('API assertions', () => {
    */
   async function assertDownloadClientsHealthy(
     request: import('@playwright/test').APIRequestContext,
-    app: 'sonarr' | 'radarr',
+    app: 'sonarr' | 'radarr' | 'prowlarr',
     apiKey: string,
   ) {
-    const listRes = await request.get(url(app, '/api/v3/downloadclient'), {
+    // Prowlarr's API is v1; Sonarr and Radarr are v3. Same shape otherwise.
+    const api = app === 'prowlarr' ? '/api/v1' : '/api/v3';
+    const listRes = await request.get(url(app, `${api}/downloadclient`), {
       headers: { 'X-Api-Key': apiKey },
     });
     expect(listRes.ok()).toBeTruthy();
@@ -112,7 +114,7 @@ test.describe('API assertions', () => {
     const enabled = clients.filter((c) => c.enable);
     expect(enabled.length, `${app} has no enabled download client at all`).toBeGreaterThan(0);
 
-    const testRes = await request.post(url(app, '/api/v3/downloadclient/testall'), {
+    const testRes = await request.post(url(app, `${api}/downloadclient/testall`), {
       headers: { 'X-Api-Key': apiKey },
     });
     expect(testRes.ok()).toBeTruthy();
@@ -140,6 +142,46 @@ test.describe('API assertions', () => {
     const apiKey = process.env.RADARR_API_KEY;
     test.skip(!apiKey, 'RADARR_API_KEY not set');
     await assertDownloadClientsHealthy(request, 'radarr', apiKey!);
+  });
+
+  // Prowlarr's own download clients serve only its search page — the one
+  // route this stack has for something that is neither TV nor a movie. Added
+  // 2026-09-10 after that page's download button turned out to do nothing at
+  // all: no clients configured, so no grab event and no error, just silence.
+  test('Prowlarr — every enabled download client is reachable', async ({ request }) => {
+    const apiKey = process.env.PROWLARR_API_KEY;
+    test.skip(!apiKey, 'PROWLARR_API_KEY not set');
+    await assertDownloadClientsHealthy(request, 'prowlarr', apiKey!);
+  });
+
+  // The `other` category is where those grabs land. Sonarr and Radarr collect
+  // from tv/ and movies/; nothing collects from other/ — it is a landing spot.
+  test('qBittorrent — tv, movies and other categories map to /data/torrents/<name>', async ({ request }) => {
+    // qBittorrent whitelists the LAN for auth; log in anyway when credentials
+    // are provided so the test does not depend on where it is run from.
+    const user = process.env.QBIT_USERNAME;
+    const pass = process.env.QBIT_PASSWORD;
+    if (user && pass) {
+      await request.post(url('qbittorrent', '/api/v2/auth/login'), { form: { username: user, password: pass } });
+    }
+    const res = await request.get(url('qbittorrent', '/api/v2/torrents/categories'));
+    expect(res.ok(), `categories request: HTTP ${res.status()}`).toBeTruthy();
+    const cats: Record<string, { savePath: string }> = await res.json();
+    for (const name of ['tv', 'movies', 'other']) {
+      expect(cats[name]?.savePath, `qBittorrent category "${name}"`).toBe(`/data/torrents/${name}`);
+    }
+  });
+
+  test('SABnzbd — tv, movies and other categories exist', async ({ request }) => {
+    const apiKey = process.env.SABNZBD_API_KEY;
+    test.skip(!apiKey, 'SABNZBD_API_KEY not set');
+    const res = await request.get(
+      url('sabnzbd', `/api?mode=get_config&section=categories&output=json&apikey=${apiKey}`),
+    );
+    expect(res.ok()).toBeTruthy();
+    const body: { config: { categories: Array<{ name: string }> } } = await res.json();
+    const names = body.config.categories.map((c) => c.name);
+    expect(names).toEqual(expect.arrayContaining(['tv', 'movies', 'other']));
   });
 
   test('Sonarr — has at least one RSS-enabled indexer', async ({ request }) => {
