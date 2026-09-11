@@ -127,6 +127,24 @@ this repository's most repeated documentation defect: `CLAUDE.md`'s old "14
 tests" claim and `ci.yml`'s corpus-entry count both outlived the thing they
 described.
 
+### Image pinning
+
+Runtime images are pinned. Every `image:` in a compose file carries an explicit
+tag, no `:latest`, and `tests/compose-validation.bats` asserts it, which is why
+the stack's upgrades are deliberate.
+
+Build images are pinned by base tag or digest, and where a step inside them
+still floats, the Dockerfile says so and why. The two CI tool images
+(`tests/mutation`, `tests/toolkit`) are pinned by digest because a floating
+toolchain there would move the oracle under the mutation corpus. The
+`.devcontainer` image floats on purpose and carries the same note: nothing in it
+is deployed, so a bad upstream release breaks an editor, not the NAS.
+
+Lockfiles are a separate axis and are NOT committed for the three Node
+subprojects (`package-lock.json` is gitignored), so their `npm install` resolves
+against `package.json` on every build. That is deliberate today; a Dockerfile
+that depends on it says so.
+
 ### Config File Pattern
 
 Files requiring domain customization use the `.example` pattern:
