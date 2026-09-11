@@ -10,6 +10,11 @@ CRON_FILE="${DUC_CRON_FILE:-/etc/cron.d/duc-index}"
 CRON_BIN="${DUC_CRON_BIN:-cron}"
 SCAN_SH="${DUC_SCAN_SH:-/scan.sh}"
 MANUAL_SCAN_SH="${DUC_MANUAL_SCAN_SH:-/manual_scan.sh}"
+# The fifth seam, and the one that makes the wait in start_webserver reachable
+# at all: /var/run/fcgiwrap.socket is root-owned on both hosts the suite runs on,
+# so a test that drives that loop has to point it at a path it can bind a socket
+# in. The default is the path the image uses.
+FCGI_SOCKET="${DUC_FCGI_SOCKET:-/var/run/fcgiwrap.socket}"
 FALLBACK_SCHEDULE="0 0 * * *"
 
 # A cron schedule is exactly five whitespace-separated fields on exactly one
@@ -43,13 +48,15 @@ write_cron_file() {
 
 # A seam. Everything in here is process-level setup that a test has no business
 # performing - and tests/duc-service.bats overrides it so main() can be driven
-# end to end without fcgiwrap or nginx being installed.
+# end to end without fcgiwrap or nginx being installed. The socket path it waits
+# on is a seam of its own (DUC_FCGI_SOCKET) so that the wait loop itself can be
+# driven directly, since no test that overrides this function ever reaches it.
 start_webserver() {
     echo "Launching webserver"
-    rm -f /var/run/fcgiwrap.socket
-    nohup fcgiwrap -s unix:/var/run/fcgiwrap.socket &
-    while ! [ -S /var/run/fcgiwrap.socket ]; do sleep .2; done
-    chmod 777 /var/run/fcgiwrap.socket
+    rm -f "$FCGI_SOCKET"
+    nohup fcgiwrap -s unix:"$FCGI_SOCKET" &
+    while ! [ -S "$FCGI_SOCKET" ]; do sleep .2; done
+    chmod 777 "$FCGI_SOCKET"
     test -f nohup.out && rm -f ./nohup.out
 
     nginx

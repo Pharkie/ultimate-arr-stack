@@ -68,5 +68,12 @@ mutation check-network-failed-inspect-kills-the-run \
   --file scripts/check-network.sh \
   --bats tests/check-network.bats \
   --test "check-network: a container-list inspect that fails does not kill the report" \
-  --why "makes a failed container-list inspect fatal. The existence check and the templated check are two separate docker calls and they can disagree - the network can be removed between them, or the daemon can fail the second one - and a half-finished cleanup is the state this script is run in. Under set -e the whole run then exits 1 having said nothing about that network and never looks at the rest of the list, so an orphan further down is reported by nobody" \
-  --apply 'perl -pi -e '"'"'s{ 2>/dev/null \|\| true\)}{ 2>/dev/null && true)}'"'"' "$F"'
+  --why "makes a failed container-list inspect fatal. The existence check and the templated check are two separate docker calls and they can disagree - the network can be removed between them, or the daemon can fail the second one - and a half-finished cleanup is the state this script is run in. Without the status captured on the assignment, the bare substitution carries docker's own status into the script's errexit, which exits 1 having said nothing about that network and never looks at the rest of the list, so an orphan further down is reported by nobody" \
+  --apply 'perl -pi -e '"'"'s{ \|\| inspect_rc=\$\?}{}'"'"' "$F"'
+
+mutation check-network-failed-inspect-read-as-empty \
+  --file scripts/check-network.sh \
+  --bats tests/check-network.bats \
+  --test "check-network: a failed container-list inspect is not read as an empty network" \
+  --why "swallows the inspect failure, which is how this shipped: the container list comes back empty, an empty list is what the orphan branch reports, and the operator is offered the removal of a live network on nothing worse than a failed docker call. The two states are byte-identical on stdout - the templated inspect prints nothing for a network with no containers and nothing for a call that failed - so the only thing that separates them is the status" \
+  --apply 'perl -pi -e '"'"'s{ \|\| inspect_rc=\$\?}{ || true}'"'"' "$F"'

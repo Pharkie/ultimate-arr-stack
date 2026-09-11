@@ -242,9 +242,24 @@ duc_fails_with() { echo "$1" > "$DUC_RC_FILE"; }
     # resolve, which makes this hermetic and independent of the uid the suite
     # runs as; it stands in for any mkdir failure, a full /tmp or a read-only
     # mount among them.
+    #
+    # All four assertions are load-bearing. The absent success message and the
+    # non-zero status are both satisfied by a response that stopped after the
+    # headers, which is exactly what the bare `mkdir` under `set -e` produced:
+    # the client is told the response is text and then gets nothing to read. So
+    # the content type and the body have to be asserted too, and the body has to
+    # be the one that says nothing was queued.
+    #
+    # The status is the script's, not the response's: the headers are already
+    # out when the mkdir fails, so there is no 500 left to send and the reply
+    # the client sees is a 200 carrying this body. Moving the fallible work
+    # above the headers would buy a real 500 at the cost of the errexit entry
+    # in tests/mutation/corpus/duc-service.sh, which is a separate decision.
     : > "$DUC_REQUEST_DIR"
     run "$APP/manual_scan.cgi"
     assert_failure
+    assert_output --partial "Content-type: text/plain"
+    assert_output --partial "The scan request could not be completed"
     refute_output --partial "A scan will be started within one minute"
 }
 
@@ -305,6 +320,71 @@ startup() {
     startup write_cron_file "0 4 * * *" "$DUC_CRON_FILE"
     run stat -c '%a' "$DUC_CRON_FILE"
     assert_output "644"
+}
+
+# start_webserver, driven directly through DUC_FCGI_SOCKET. That seam is the
+# reason these two tests exist at all: the shipped path is
+# /var/run/fcgiwrap.socket, which is root-owned on every host the suite runs on,
+# and every test that drives main() overrides start_webserver instead - so
+# before the seam the wait loop was unreachable and its condition could be
+# inverted with nothing going red (tests/mutation/survivors.tsv, startup.sh:51).
+#
+# fcgiwrap and nginx are stubbed for both, because neither is installed here.
+# The fcgiwrap stub is what can bind the socket, as the real one does; `sleep`
+# is the loop's own body and is the only place a test can act from while the
+# function is inside it.
+
+@test "duc: start_webserver returns as soon as the socket is up" {
+    # Nothing here waits: the fcgiwrap stub binds a real unix socket at the seam
+    # path, so the loop's check passes and the function carries on to nginx. It
+    # has to be a socket and not a file, because the loop tests `[ -S ]`.
+    #
+    # The `sleep` stub is what makes an inverted condition fail instead of hang.
+    # Entered with the socket already up, nothing else ends that loop, so after
+    # 100 calls the stub takes the socket away: the loop leaves, the chmod finds
+    # nothing, and errexit kills the function before nginx. A hang would be
+    # scored by the oracle's time budget rather than by an assertion, and 100 is
+    # far more calls than the real form needs for a bind that takes milliseconds.
+    export DUC_FCGI_SOCKET="$BATS_TEST_TMPDIR/fcgiwrap.socket"
+    export SLEEP_COUNT="$BATS_TEST_TMPDIR/sleep-count"
+    stub_tool fcgiwrap '
+        python3 -c "import socket, sys; socket.socket(socket.AF_UNIX).bind(sys.argv[1])" "$DUC_FCGI_SOCKET"
+        echo "fcgiwrap stub: $*"
+    '
+    stub_tool nginx 'echo "nginx stub"'
+    stub_tool sleep '
+        n=$(( $(cat "$SLEEP_COUNT" 2>/dev/null || echo 0) + 1 ))
+        echo "$n" > "$SLEEP_COUNT"
+        [ "$n" -lt 100 ] || rm -f "$DUC_FCGI_SOCKET"
+    '
+    startup start_webserver
+    assert_success
+    assert_output --partial "Launching webserver"
+    assert_stub_called nginx ""
+    [ "$(cat "$SLEEP_COUNT" 2>/dev/null || echo 0)" -lt 100 ] \
+        || fail "the wait never saw the socket the fcgiwrap stub bound"
+}
+
+@test "duc: start_webserver waits for the socket rather than assuming it is there" {
+    # The socket is absent when the function starts, and the fcgiwrap stub is
+    # not going to bind one - that is the case the loop is for. `sleep` is the
+    # loop's body, so the stub binds the socket itself on its first call and
+    # records that it ran. The assertion is on that behaviour, that the loop
+    # body ran and nginx started afterwards, rather than on how long the wait
+    # took. An inverted condition skips the loop entirely, so the chmod finds no
+    # socket, errexit kills the function, and nginx never runs.
+    export DUC_FCGI_SOCKET="$BATS_TEST_TMPDIR/fcgiwrap.socket"
+    export SLEEP_WAITED="$BATS_TEST_TMPDIR/sleep-called"
+    stub_tool fcgiwrap 'echo "fcgiwrap stub: $*"'
+    stub_tool nginx 'echo "nginx stub"'
+    stub_tool sleep '
+        : > "$SLEEP_WAITED"
+        python3 -c "import socket, sys; socket.socket(socket.AF_UNIX).bind(sys.argv[1])" "$DUC_FCGI_SOCKET"
+    '
+    startup start_webserver
+    assert_success
+    [ -f "$SLEEP_WAITED" ] || fail "the function never waited for the socket"
+    assert_stub_called nginx ""
 }
 
 # main() end to end, with the two process-level steps replaced. SCHEDULE and

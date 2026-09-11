@@ -42,14 +42,32 @@ stdin_is_tty() { [[ -t 0 ]]; }
 # Report on one network, and offer to remove it if it is orphaned.
 # Args: $1 = network name
 check_one_network() {
-    local net="$1" containers
+    local net="$1" containers inspect_rc=0
 
     if ! docker network inspect "$net" &>/dev/null; then
         echo -e "${GREEN}OK${NC}: $net doesn't exist (will be created on deploy)"
         return 0
     fi
 
-    containers=$(docker network inspect "$net" -f '{{range .Containers}}{{.Name}} {{end}}' 2>/dev/null || true)
+    # Three outcomes here, not two. `inspect` prints an empty string both for a
+    # network with nothing attached and for a call that failed, and this line
+    # used to collapse the two with `|| true`: the failure came back as an empty
+    # container list, and an empty list is what the orphan branch below asks the
+    # operator to delete. A half-finished deploy is where that lands worst -- it
+    # is the state this script is run in, and the one where the daemon is most
+    # likely to fail one inspect and answer the next.
+    #
+    # The status goes into a variable rather than being read from `$?` further
+    # down, because the `[[` tests in between overwrite it.
+    containers=$(docker network inspect "$net" -f '{{range .Containers}}{{.Name}} {{end}}' 2>/dev/null) || inspect_rc=$?
+
+    if [[ "$inspect_rc" -ne 0 ]]; then
+        echo -e "${YELLOW}WARNING${NC}: could not read the container list for $net: docker network inspect failed."
+        echo "         That is not the same as a network with nothing attached, so it is not offered for removal."
+        echo "         Look at it by hand, then re-run this script: docker network inspect $net"
+        return 0
+    fi
+
     if [[ -n "${containers// /}" ]]; then
         # The template emits a trailing space after every name, so a network
         # with one container yields "name " -- and an EMPTY one yields "". The

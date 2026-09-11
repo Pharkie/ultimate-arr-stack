@@ -128,10 +128,10 @@ created_networks() {
     # `docker network inspect` calls and they can disagree: the network can be
     # removed between them, or the daemon can fail one and not the other. A
     # half-finished cleanup is the state this script is run in, so that is the
-    # moment it must not die. `|| true` keeps a failed substitution from
-    # becoming a fatal assignment under `set -e`; with `&& true` the assignment
-    # carries docker's status, the script exits 1 having printed nothing about
-    # the network, and every network after it goes unexamined.
+    # moment it must not die. The `|| inspect_rc=$?` on the assignment is what
+    # keeps a failed substitution from becoming a fatal one under `set -e`:
+    # without it the script exits 1 having printed nothing about the network,
+    # and every network after it goes unexamined.
     stub_docker '
         [ "$1" = network ] || { echo "unexpected docker argv: $*" >&2; exit 125; }
         case "$2" in
@@ -150,6 +150,36 @@ created_networks() {
     # The list is worked to the end rather than stopping at the first network
     # whose container list could not be read.
     assert_stub_called docker "network inspect traefik-lan -f"
+}
+
+@test "check-network: a failed container-list inspect is not read as an empty network" {
+    # The two outcomes this separates are byte-identical on stdout: a network
+    # with nothing attached and a call that failed both come back empty. Only
+    # one of them is safe to put up for removal, and the other is a live network
+    # an operator would delete on a transient daemon failure -- during the
+    # half-finished deploy this script exists to clean up after.
+    #
+    # The tty seam is forced on and the answer is `y`, so the assertion is not
+    # merely that the report looks different: the removal path has to stay
+    # unreached even when the operator says yes.
+    stub_docker '
+        [ "$1" = network ] || { echo "unexpected docker argv: $*" >&2; exit 125; }
+        case "$2" in
+            inspect)
+                # It exists, and then cannot be asked what is attached to it.
+                [ "${4:-}" = "-f" ] && exit 1
+                exit 0
+                ;;
+            ls) printf "NAME\tDRIVER\tSCOPE\n" ;;
+            *)  echo "unexpected docker network verb: $2" >&2; exit 126 ;;
+        esac
+    '
+    FAKE_TTY=1 run "$DRIVER" check_one_network arr-core <<< "y"
+    assert_success
+    assert_stub_called docker "network inspect arr-core -f"
+    assert_output --partial "could not read the container list for arr-core"
+    refute_output --partial "no containers attached"
+    assert_nothing_forbidden
 }
 
 @test "check-network: a non-interactive run prints the manual command and removes nothing" {

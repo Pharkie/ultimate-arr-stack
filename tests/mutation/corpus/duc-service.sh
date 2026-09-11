@@ -97,6 +97,13 @@ mutation duc-cgi-missing-log-is-fatal \
   --why "removes the fallback for an absent log. Under set -e the script dies AFTER the headers have gone out, so a fresh container answers the status page with a truncated response and no explanation" \
   --apply 'sed -i "s@^    cat \"\$LOG_FILE\" 2>/dev/null || echo \"(no log yet)\"\$@    cat \"\$LOG_FILE\"@" "$F"'
 
+mutation duc-cgi-response-never-completed \
+  --file duc-service/app/manual_scan.cgi \
+  --bats tests/duc-service.bats \
+  --test "duc: the cgi does not report a queued scan when the marker cannot be created" \
+  --why "removes the trap that finishes a response whose branch never reached the end of the script. A failed mkdir then leaves the client the Content-type header and nothing else: the status is still non-zero and the success message is still absent, so only an assertion on the shape of the response can see it" \
+  --apply 'perl -pi -e '"'"'s{^trap _finish_response EXIT}{:}'"'"' "$F"'
+
 # The three below all drop errexit and nothing else. Each names the one place in
 # its file where that is load-bearing: an unguarded command whose failure the
 # script would otherwise continue past. Applying them with perl rather than
@@ -124,3 +131,15 @@ mutation duc-scan-log-write-failure-reported-as-success \
   --test "duc: a scan whose log cannot be written is not reported as a success" \
   --why "drops errexit from scan.sh, so a tee that cannot open the log stops failing the run. The script falls through to its explicit exit \${PIPESTATUS[0]}, which is the index's status - 0 - so a scan that left no record anywhere is reported as a success to cron and to the poller" \
   --apply 'perl -pi -e "s/^set -euo pipefail\$/set -uo pipefail/" "$F"'
+
+# The last real-gap row in tests/mutation/survivors.tsv (startup.sh:51). It was
+# unreachable for as long as the socket path was hardcoded to /var/run: every
+# test that drives main() overrides start_webserver, because the function needs
+# fcgiwrap, nginx and a root-owned directory. DUC_FCGI_SOCKET is the seam that
+# lets a test drive the wait itself, in both directions.
+mutation duc-webserver-socket-wait-inverted \
+  --file duc-service/app/startup.sh \
+  --bats tests/duc-service.bats \
+  --test "duc: start_webserver returns as soon as the socket is up" \
+  --why "inverts the wait for the fcgiwrap socket, which is severe in both directions. With the socket up the loop spins instead of returning, so the chmod and nginx are never reached and the container serves no web UI at all; with it absent the loop is skipped, the chmod finds no socket, and errexit kills the function before nginx - the same dead UI, arrived at from the other side" \
+  --apply 'perl -pi -e '"'"'s{while ! \[ -S "\$FCGI_SOCKET" \]}{while [ -S "\$FCGI_SOCKET" ]}'"'"' "$F"'
