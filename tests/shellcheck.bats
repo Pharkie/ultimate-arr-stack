@@ -198,10 +198,14 @@ sourced_repo_files() {
     # reports its own failure with `return 1` and is unaffected -- matching on
     # the name prefix would flag exactly the files that already did the right
     # thing.
+    # `awk`, not `paste -sd'|'`: macOS's paste wants the delimiter as a separate
+    # option argument and reads `|` as a filename, so the assertion list came
+    # back empty and this test failed with `usage: paste` on any BSD host. awk
+    # joins the same list on every host the suite runs on.
     local assertions_re
     assertions_re="$(grep -hoE '^[a-zA-Z_][a-zA-Z0-9_]*\(\)' \
                         "$REPO_ROOT"/tests/bats-assert/src/*.bash 2>/dev/null \
-                     | tr -d '()' | sort -u | paste -sd'|')"
+                     | tr -d '()' | sort -u | awk 'NR>1{printf "|"} {printf "%s", $0} END{if (NR) printf "\n"}')"
     [ -n "$assertions_re" ] || fail "found no bats-assert assertions; the discovery is broken"
 
     for b in $(cd "$REPO_ROOT" && git ls-files 'tests/*.bats'); do
@@ -237,11 +241,20 @@ sourced_repo_files() {
 # scripts/ that is a script. Systemd units live there too and are deliberately
 # out of scope -- the section is titled "Scripts Structure", and listing a
 # .timer beside a .sh would blur what the tree is for.
+#
+# `sed` prefixes each path rather than `find -printf`: GNU find's -printf is not
+# in BSD find, and on macOS the failure is quiet in the worst way -- find exits
+# non-zero having printed nothing, so the list comes back empty and this test
+# fails reporting every documented script as stale. That is the opposite of the
+# truth, and it read as a real mismatch until the `find: -printf: unknown
+# primary` line above it was noticed. The suite is meant to give the same
+# verdict on the Mac, on pi1 and on the NAS; only the container and GNU-userland
+# paths were exercised, so this went unseen.
 documented_script_files() {
     { find "$REPO_ROOT/scripts" -maxdepth 1 -type f \
-           \( -name '*.sh' -o -name '*.py' \) -printf 'scripts/%f\n'
+           \( -name '*.sh' -o -name '*.py' \) | sed 's|.*/|scripts/|'
       find "$REPO_ROOT/scripts/lib" -maxdepth 1 -type f \
-           \( -name '*.sh' -o -name '*.py' \) -printf 'scripts/lib/%f\n'
+           \( -name '*.sh' -o -name '*.py' \) | sed 's|.*/|scripts/lib/|'
       printf '%s\n' scripts/pre-commit scripts/post-merge
     } | sort -u
 }

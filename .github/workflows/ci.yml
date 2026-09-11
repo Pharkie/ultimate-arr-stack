@@ -163,12 +163,18 @@ jobs:
           if-no-files-found: error
 
       - name: Trivy (dependencies and misconfiguration)
-        # `--scanners vuln,misconfig` and not `secret`: gitleaks already owns
-        # secret scanning at two levels (pre-commit and this workflow), and a
-        # second scanner for the same job is how two answers to one question
-        # start disagreeing. HIGH and CRITICAL only: the misconfiguration rules
-        # below that are noise for a single-host compose stack, and a gate people
-        # learn to ignore is worse than no gate.
+        # `--scanners vuln,misconfig` and not `secret`: secret pattern scanning
+        # belongs to scripts/lib/check-secrets.sh, which owns the allowlist for
+        # this repo's placeholders. A second scanner for the same question is how
+        # two answers start disagreeing. (An earlier version of this comment
+        # claimed gitleaks covered pre-commit and this workflow. It does not run
+        # in either place -- nothing tracked invokes it -- so adding this scanner
+        # here would duplicate nothing and change the verdict in CI. Recorded in
+        # docs/QUALITY-CONTROL-MAP.md rather than fixed in passing.)
+        #
+        # HIGH and CRITICAL only: the misconfiguration rules below that are noise
+        # for a single-host compose stack, and a gate people learn to ignore is
+        # worse than no gate.
         #
         # This is the check that fails CI on a high-severity dependency finding.
         run: |
