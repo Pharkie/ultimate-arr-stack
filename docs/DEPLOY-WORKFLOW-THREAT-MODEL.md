@@ -268,7 +268,21 @@ the branch until someone re-dispatches on `main`. That is the documented
 recovery path rather than a new risk, and `scripts/sync-nas.sh` is the manual
 equivalent.
 
-**Verdict: verified.**
+One more consequence, found by watching this workflow merge its own branch on
+2026-09-11: **the commit it creates on `main` runs no CI at all.** GitHub does
+not start workflow runs for pushes made with the default `GITHUB_TOKEN`, so that
+guard against recursion means a merge performed by this job is the one push to
+`main` that no workflow observes. Every other merge in this repository's history
+has a run on `main` attached to it; `17f6859` does not, and `gh api
+repos/<owner>/<repo>/actions/runs?head_sha=<sha>` returning zero is how to
+confirm it. The evidence is not missing, just differently shaped: the PR's own
+head was checked by all three required contexts before the merge, and the deploy
+job itself runs the suite and the changed-guard mutations on the same tree. What
+is absent is an independent verdict on the commit `main` ends up holding.
+
+The gap is easy to close by hand and worth automating if it recurs: `gh workflow
+run ci.yml --ref main` starts the same four jobs on `main` after the fact. That
+is what was done for `17f6859`.
 
 ## 9. Accepted risks, in one list
 
