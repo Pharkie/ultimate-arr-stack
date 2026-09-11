@@ -231,3 +231,123 @@ registry_probe() {
     get_service_block "cloudflared" "$f" | grep -qE '^    profiles:' \
         || fail "cloudflared must declare a profile, or boot/restart will crash-loop a tunnel with no config"
 }
+
+# --- architecture: what must be inside the VPN namespace ---------------------
+
+@test "every BitTorrent or Usenet client runs inside gluetun's namespace" {
+    # The suite already checked the binding for services that DECLARE it
+    # (tests/vpn-zombies.bats parses every `network_mode: service:gluetun`). What
+    # nothing asserted is the positive rule, which is the one that matters: a
+    # download client added later without the binding leaks this house's IP to
+    # the swarm and passes every other test in this file.
+    #
+    # Two ways in, deliberately overlapping. The named list is the one that must
+    # hold today; the image pattern is what catches a second client added under a
+    # name nobody remembered to add here. decypharr is the documented exception
+    # and is named as one rather than pattern-matched out:
+    # docker-compose.arr-stack.yml's own header says it pulls finished files from
+    # TorBox over HTTPS and carries no swarm traffic from this host, so the VPN
+    # is not its problem. Moving it inside the tunnel would be safe, so nothing
+    # here fails if someone does.
+    run python3 - "$REPO_ROOT" <<'PY'
+import glob, os, re, sys
+
+root = sys.argv[1]
+BOUND = ("service:gluetun", "container:gluetun")
+NAMED = {"qbittorrent", "sabnzbd", "magnetio-addon"}
+CLIENT_IMAGE = re.compile(r"(qbittorrent|sabnzbd|transmission|deluge|rtorrent|nzbget)", re.I)
+EXEMPT = {"decypharr"}
+
+# service -> (file, image, network_mode or None), across every compose file.
+services = {}
+for path in sorted(glob.glob(os.path.join(root, "docker-compose*.yml"))):
+    name = os.path.basename(path)
+    svc, image, mode = None, None, None
+    for line in open(path):
+        m = re.match(r"^  ([A-Za-z0-9_.-]+):\s*$", line)
+        if m:
+            if svc:
+                services[svc] = (name, image, mode)
+            svc, image, mode = m.group(1), None, None
+            continue
+        if svc is None:
+            continue
+        s = line.strip()
+        if s.startswith("image:"):
+            image = s.split(":", 1)[1].strip().strip('"')
+        elif s.startswith("network_mode:"):
+            mode = s.split(":", 1)[1].strip().strip('"')
+    if svc:
+        services[svc] = (name, image, mode)
+
+# The candidates: the named list, plus anything whose image says it is a
+# download client under a name nobody added to the list.
+candidates = set(NAMED)
+for svc, (_, image, _) in services.items():
+    if image and CLIENT_IMAGE.search(image) and svc not in EXEMPT:
+        candidates.add(svc)
+
+bad = []
+for svc in sorted(candidates):
+    if svc not in services:
+        bad.append(f"{svc} is in the must-be-tunnelled list but no compose file defines it")
+        continue
+    name, image, mode = services[svc]
+    if mode not in BOUND:
+        bad.append(
+            f"{name}: {svc} ({image or 'no image'}) has network_mode "
+            f"{mode or 'unset'} -- it must be {' or '.join(BOUND)}"
+        )
+
+if bad:
+    print("VIOLATION: a download client is outside the VPN namespace")
+    print("\n".join("  " + b for b in bad))
+    sys.exit(1)
+print(f"checked {len(candidates)} client(s); decypharr exempt (debrid over HTTPS, no swarm traffic)")
+PY
+    assert_success
+    refute_output --partial "VIOLATION"
+}
+
+@test "every compose file pins its project name" {
+    # The project name is load-bearing, not cosmetic. Docker names every volume
+    # and container `<project>_<name>`, backup-volume-resolution.bats resolves
+    # backup volumes by that prefix, and CLAUDE.md's --remove-orphans warning
+    # exists because the stack's services are split across files that share one
+    # project. A file that loses its `name:` line silently renames its volumes on
+    # the next recreate -- which is how a backup ends up written to a volume
+    # nothing reads.
+    #
+    # The expected set is written out rather than derived: a rename should fail
+    # here, and that is the point of pinning it.
+    local expected="arr-core cloudflared magnetio tailscale traefik-edge arr-utilities"
+    local f name actual=""
+    for f in "$REPO_ROOT"/docker-compose*.yml; do
+        name=$(grep -m1 '^name:' "$f" | sed 's/^name:[[:space:]]*//')
+        [ -n "$name" ] || fail "$(basename "$f") does not pin a project name"
+        actual="$actual $name"
+    done
+    # shellcheck disable=SC2086
+    actual=$(printf '%s\n' $actual | sort | tr '\n' ' ' | sed 's/ $//')
+    # shellcheck disable=SC2086
+    expected=$(printf '%s\n' $expected | sort | tr '\n' ' ' | sed 's/ $//')
+    [ "$actual" = "$expected" ] || fail "compose project names changed: expected [$expected], found [$actual]"
+}
+
+@test "the arr-core subnet and its dynamic range stay pinned" {
+    # Two addresses in this stack are only safe because of these three lines.
+    # Static IPs (gluetun .3, traefik .6, duc .14 ...) are pinned outside the
+    # dynamic half, and ip_range is what confines Docker's own allocation to
+    # 172.20.0.128/25 -- the reason a manually-added container does not collide
+    # with a dynamic one on restart, which CLAUDE.md calls out by name. Widening
+    # the range to the whole /24 puts the allocator back on top of the pins.
+    local f="$REPO_ROOT/docker-compose.arr-stack.yml"
+    local block
+    block=$(get_service_block "arr-core" "$f")
+    grep -qE '^[[:space:]]*-[[:space:]]*subnet:[[:space:]]*172\.20\.0\.0/24$' <<<"$block" \
+        || fail "arr-core's subnet must stay 172.20.0.0/24"
+    grep -qE '^[[:space:]]+ip_range:[[:space:]]*172\.20\.0\.128/25$' <<<"$block" \
+        || fail "arr-core's ip_range must stay 172.20.0.128/25, or Docker's allocator overlaps the pinned static IPs"
+    grep -qE '^[[:space:]]+gateway:[[:space:]]*172\.20\.0\.1$' <<<"$block" \
+        || fail "arr-core's gateway must stay 172.20.0.1"
+}
