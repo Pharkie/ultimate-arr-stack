@@ -85,6 +85,21 @@ shebang into `#!+bin/bash`. Note that passing `none` as the language does **not*
 disable the built-in rules; only `--only shell.rules` does. Measured on
 `check-secrets.sh`: `none` alone produced 119 mutants, all of them noise.
 
+### A skipped oracle is refused, in both halves
+
+TAP spells a skip as `ok N name # skip reason`, so an oracle that skipped
+*wholesale* exits 0 and looks exactly like one that ran and passed. A mutant it
+never examined would be scored SURVIVED and merged into the ledger — a coverage
+gap invented out of an environment condition, filed against a test that never
+executed. `run-mutations.sh` has refused this since §8 of
+[docs/TEST-HARDENING-LOG.md](../../docs/TEST-HARDENING-LOG.md) recorded it; the
+generated half captured the same skip count from `run_tests` at both call sites
+and never read it, so a target whose oracle skips on the host being swept (the
+NAS, for anything git-gated) would have filed every unexamined mutant as a
+finding. Since 2026-09-11 `run-generated.sh` refuses at the control run — before
+generating anything, so a host that cannot judge a target does not pay to
+generate its mutants — and tallies a wholly-skipped mutant run as SKIPPED.
+
 ### Triaging a survivor
 
 Survivors land in `survivors.tsv` as `unreviewed`. Each gets one of:

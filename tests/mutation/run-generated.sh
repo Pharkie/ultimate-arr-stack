@@ -226,7 +226,7 @@ for target in "${SELECTED[@]}"; do
     # Control, once per target rather than once per mutant. A suite that is
     # already red would score every mutant KILLED and report a perfect sweep.
     control_start=$SECONDS
-    res=$(run_tests "$ROOT/$batsfile" "$testre"); read -r st count _skipped <<<"$res"
+    res=$(run_tests "$ROOT/$batsfile" "$testre"); read -r st count skipped <<<"$res"
     budget=$(oracle_budget $(( SECONDS - control_start )))
     if [[ "$count" -eq 0 ]]; then
         echo "   ERROR: -f '$testre' matched NO tests. bats exits 0 having run"
@@ -237,6 +237,22 @@ for target in "${SELECTED[@]}"; do
         echo "   ERROR: the oracle is already failing unmutated - every mutant"
         echo "          would score KILLED. Fix the tests first."
         ERRORED=$((ERRORED + 1)); continue
+    fi
+
+    # The whole oracle skipping is not a pass. TAP spells a skip as
+    # `ok N name # skip reason`, so an oracle that skipped entirely exits 0 and
+    # every mutant it never examined would be scored SURVIVED -- a coverage gap
+    # invented out of an environment condition and filed against a test that
+    # never executed. run-mutations.sh has refused to judge this case since §8 of
+    # docs/TEST-HARDENING-LOG.md recorded it; this half shares run_tests, which
+    # returns the skip count for exactly this reason, and was not reading it.
+    #
+    # Refusing here, before generation, also means a host that cannot judge a
+    # target never pays to generate its mutants.
+    if [[ "$skipped" -eq "$count" ]] && [[ "$count" -gt 0 ]]; then
+        echo "   SKIP: all $count oracle test(s) skipped, so it cannot judge any mutant:"
+        grep -m1 -E '^ok [0-9]+ .*# skip' "$WORK/last-output.txt" | sed 's/^/        | /'
+        SKIPPED=$((SKIPPED + 1)); continue
     fi
 
     outdir="$MUTANT_DIR/$(printf '%s' "$target" | tr -c 'A-Za-z0-9._-' '_')"
@@ -275,7 +291,7 @@ for target in "${SELECTED[@]}"; do
             ERRORED=$((ERRORED + 1)); restore_current || exit 3; continue
         fi
 
-        res=$(run_tests "$ROOT/$batsfile" "$testre" "$budget"); read -r st _count _skipped <<<"$res"
+        res=$(run_tests "$ROOT/$batsfile" "$testre" "$budget"); read -r st mcount mskipped <<<"$res"
 
         # Restore before classifying. Stop the whole run if it failed: mutating
         # the next target on top of a tree we could not put back turns one
@@ -291,6 +307,11 @@ for target in "${SELECTED[@]}"; do
             echo "   KILLED (oracle hit the ${budget}s budget)  $desc"
         elif [[ "$st" -ne 0 ]]; then
             KILLED=$((KILLED + 1))
+        elif [[ "$mskipped" -eq "$mcount" ]] && [[ "$mcount" -gt 0 ]]; then
+            # Same reasoning as the control run, per mutant: an oracle whose every
+            # test skipped did not judge this mutant, so it is not a finding.
+            SKIPPED=$((SKIPPED + 1))
+            echo "   SKIPPED (the whole oracle skipped on this mutant)  $desc"
         else
             SURVIVED=$((SURVIVED + 1))
             NEW_SURVIVORS+=("$target"$'\t'"$desc")

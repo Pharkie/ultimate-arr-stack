@@ -429,6 +429,40 @@ CORPUS
     }
 }
 
+@test "the generative runner reports SKIPPED, not SURVIVED, when the whole oracle skipped" {
+    # The corpus runner has refused to judge this since §8 of
+    # docs/TEST-HARDENING-LOG.md recorded the trap. The generated half shares
+    # run_tests -- which returns the skip count for exactly this reason -- and was
+    # not reading it, so an oracle that skipped wholesale exited 0 and every
+    # mutant it never examined was scored SURVIVED and written to the ledger: a
+    # coverage gap invented out of an environment condition, filed against a test
+    # that never executed.
+    #
+    # No docker is needed to prove this, and that is the point: the refusal
+    # happens at the control run, before a single mutant is generated, so a host
+    # that cannot judge a target never pays to generate them.
+    make_throwaway_repo
+    # TAP spells a skip as `ok N name # skip reason`, which the stub runner has
+    # no other way to express.
+    cat > "$THROWAWAY/tests/run-tests.sh" <<'STUB'
+#!/bin/bash
+printf '1..1\nok 1 fixture skips for an environment reason # skip no docker on this machine\n'
+STUB
+    chmod +x "$THROWAWAY/tests/run-tests.sh"
+    local ledger="$FX/gen-skip-ledger.tsv"
+
+    MUTATION_LEDGER="$ledger" run bash "$THROWAWAY/tests/mutation/run-generated.sh" -k check-secrets
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [[ "$output" == *"SKIP"* ]] || { echo "no refusal in: $output"; return 1; }
+    [[ "$output" != *"SURVIVED"* ]] || { echo "scored SURVIVED against a skipped oracle: $output"; return 1; }
+    # It says why, and it files nothing: a skip is not a finding.
+    [[ "$output" == *"no docker on this machine"* ]] || { echo "$output"; return 1; }
+    if [[ -f "$ledger" ]]; then
+        ! grep -q "check-secrets" "$ledger" \
+            || { echo "wrote a ledger row for a target it could not judge:"; cat "$ledger"; return 1; }
+    fi
+}
+
 @test "mutant generation reports an absent docker distinctly, not as success" {
     # 77, not 0. "docker is unavailable" and "the sweep found nothing" must
     # never be the same observable result -- that equivalence is the single

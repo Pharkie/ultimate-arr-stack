@@ -121,3 +121,11 @@ mutation gen-timeout-tallied-as-an-ordinary-kill \
   --test "hangs the oracle is scored a kill and named as a timeout" \
   --why "a hang and a clean red are the same exit status once the bound fires, so folding them together hides the only thing that explains a sweep getting slower - and a budget nobody can see firing is a budget nobody trusts" \
   --apply 'sed -i "s@^    if \[\[ \"\$st\" -eq 124 \]\]; then\$@    if false; then@" "$F"'
+
+mutation gen-skipped-oracle-scored-as-survivor \
+  --file tests/mutation/run-generated.sh \
+  --bats tests/mutation-framework.bats \
+  --test "the generative runner reports SKIPPED, not SURVIVED, when the whole oracle skipped" \
+  --why "drops the refusal, so an oracle that skipped wholesale reads as one that ran and passed: every mutant it never examined is scored SURVIVED and filed in the ledger as a coverage gap. That is the trap §8 of docs/TEST-HARDENING-LOG.md records - closed in run-mutations.sh, and left open in this half because it never read the skip count run_tests returns" \
+  --apply 'sed -i "s@^    if \[\[ \"\$skipped\" -eq \"\$count\" \]\] && \[\[ \"\$count\" -gt 0 \]\]; then\$@    if false; then@" "$F"'
+

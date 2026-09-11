@@ -459,7 +459,11 @@ write-up in `tests/mutation/README.md`; these are the one-line forms.
   environment condition and filed against a test that never executed. Two entries read
   that way here, both because their oracle skips on a dirty `scripts/lib` while the run
   was measuring a fix to `scripts/lib`. `run-mutations.sh` now reports SKIPPED and the
-  reason.
+  reason. **Update 2026-09-11:** the generated half had the same hole and kept it longer —
+  it captured the skip count `run_tests` returns at both of its call sites and never read
+  it, so a target whose oracle skips wholesale on the host being swept would have filed
+  every unexamined mutant as a survivor. `run-generated.sh` now refuses at the control
+  run, before generating any mutants, and tallies a wholly-skipped mutant run as SKIPPED.
 - **A corpus entry whose verdict depends on the ambient tree is worse than none.**
   `gen-dirty-guard-ignores-the-filter` killed while the tree was dirty and survived once
   it was clean, because the condition it needed was ambient rather than constructed. An
