@@ -40,6 +40,20 @@ docker compose -f docker-compose.arr-stack.yml up -d  # Restarts containers with
 
 When upgrading across versions, check below for any action required.
 
+### v1.11.0 → v1.12.0
+
+No compose changes. Pull, then re-run the configuration script — it is what changed:
+
+```bash
+cd $NAS_STACK_DIR && git pull
+./scripts/configure-apps.sh --dry-run   # shows exactly what would change
+./scripts/configure-apps.sh
+```
+
+What to expect from the Bazarr section: it now manages one subtitle profile — the one named **English**, or an existing profile whose languages are exactly English whatever it's called — points both series/movie defaults at that profile's real id, and leaves any other profiles alone. On a stack configured by earlier versions this is a no-op ("already configured" throughout). If you want a different language set, `SUBTITLE_LANGUAGES="en fr" ./scripts/configure-apps.sh` — the script owns that one profile's contents. Bazarr is no longer restarted after the section; it applies settings inside each write.
+
+New on the command line: `--only <section>` runs one section and touches nothing else, and `BAZARR_CONTAINER=<name> --only bazarr` is a genuinely isolated way to test the section against a throwaway. Prowlarr's search page can now download directly (category `other`, see [APP-CONFIG.md § 4.6](APP-CONFIG.md#46-prowlarr-indexer-manager)); the script creates the category in qBittorrent and SABnzbd and adds both as Prowlarr's own clients.
+
 ### v1.10.1 → v1.11.0
 
 Hardening against poisoned public-indexer results, a `--dry-run` that works, and image bumps including **Jellyfin 12.0** — a major version that rewrites its database on first start. Order matters: fix Jellyfin's config *before* the new image boots.

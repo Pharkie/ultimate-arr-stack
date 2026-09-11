@@ -988,3 +988,9 @@ fi
 
 # Cleanup
 rm -f "$QBIT_COOKIE"
+
+# The summary said it; the exit status should too. Anything wrapping this
+# script — a cron line, a CI step, a `&& echo done` — read 0 before, even
+# when steps had failed.
+if [[ $FAILED -gt 0 ]]; then exit 1; fi
+exit 0
