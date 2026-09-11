@@ -223,6 +223,32 @@ real_repo() {
     has_nas_config
 }
 
+@test "common: the user extracted from the SSH: form carries no surrounding space" {
+    # The space between "SSH:" and the user is consumed by the sed in
+    # load_nas_config, and that step was written with `\s` -- which BSD sed does
+    # not have. It reads the escape as a literal `s`, so `s/SSH:\s*//` behaves
+    # as `s/SSH:s*//`: it matches "SSH:" and stops. get_nas_user then answers
+    # " leoleg" on every macOS checkout, and that is the string ssh_to_nas
+    # interpolates into "$nas_user@$nas_host" -- a host named
+    # " leoleg@mynas.local" and a connect that cannot resolve.
+    #
+    # Measured: `printf 'SSH: leoleg@\n' | /usr/bin/sed 's/SSH:\s*//'` prints
+    # " leoleg@" on macOS, and this file went red on that host with the old sed.
+    #
+    # The test above asserts the same value and is the one that caught it. This
+    # one names the PROPERTY, because the failure is invisible: " leoleg" and
+    # "leoleg" print almost identically. The case below says which one arrived.
+    fake_root
+    printf 'SSH: leoleg@mynas.local\n' > "$FAKE/.claude/config.local.md"
+    run get_nas_user
+    assert_success
+    case "$output" in
+        " "*)  fail "the user came back with a leading space: '[$output]'" ;;
+        *" ")  fail "the user came back with a trailing space: '[$output]'" ;;
+    esac
+    assert_output "leoleg"
+}
+
 @test "common: it falls back to the SSH User table form for the user" {
     fake_root
     printf '| SSH User | `leoleg` |\n| Host | mynas.local |\n' \
@@ -383,6 +409,33 @@ real_repo() {
     _DOMAIN="example.com"
     run has_custom_domain
     assert_success
+}
+
+@test "common: an unset secrets_file is not an unbound variable" {
+    # load_domain_config's secrets_file was declared with `local` and assigned
+    # only inside the if/elif that picks .env or .env.nas.backup. With neither
+    # file present it stayed UNSET, so `[[ -n "$secrets_file" ]]` aborted under
+    # `set -u` with "secrets_file: unbound variable" instead of falling through
+    # to the no-domain answer. scripts/pre-commit sets -e and not -u today,
+    # which is exactly how a latent trap stays latent until the first caller
+    # that does -- the same shape as the NAS_SSH_PASS read in ssh_to_nas.
+    #
+    # The answer in that case is the point as much as the absence of the abort:
+    # no domain, and has_custom_domain false, so callers take the "no custom
+    # domain configured" path rather than the empty-string one.
+    fake_root
+    [ ! -f "$FAKE/.env" ]
+    [ ! -f "$FAKE/.env.nas.backup" ]
+
+    run bash -c 'set -u; root="$2"; source "$1"
+                 get_repo_root() { echo "$root"; }
+                 load_domain_config
+                 printf "domain=[%s]\n" "$_DOMAIN"
+                 if has_custom_domain; then echo CUSTOM; else echo NO-CUSTOM; fi' \
+        _ "$REPO_ROOT/scripts/lib/common.sh" "$FAKE"
+    assert_success
+    assert_line "domain=[]"
+    assert_line "NO-CUSTOM"
 }
 
 # ---------------------------------------------------------------- ssh helpers

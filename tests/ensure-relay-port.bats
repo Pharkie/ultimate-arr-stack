@@ -173,7 +173,13 @@ assert_not_recognised() {
     assert_output --partial "re-applied successfully"
 }
 
-@test "ensure-relay-port: a failed re-apply exits 1 and says so on stderr" {
+@test "ensure-relay-port: a failed re-apply exits 1 and reports it" {
+    # Status, and the message on `run`'s merged output. This test cannot see
+    # which stream the line went to, which is why it is no longer named for one:
+    # it used to say "on stderr" while asserting nothing of the kind, and passed
+    # identically with and without the `>&2` on that echo. What it pins is the
+    # contract the header documents, exit 1, and that the failure is said out
+    # loud at all.
     docker() { return 7; }
     run reapply_tail
     [ "$status" -eq 1 ]
@@ -181,8 +187,9 @@ assert_not_recognised() {
 }
 
 @test "ensure-relay-port: the FAILED line is on stderr and not on stdout" {
-    # The test above is named for the stream and cannot see it: `run` merges
-    # stdout and stderr into $output, so it passes identically with and without
+    # The only test here that reads the two streams apart. The test above was
+    # renamed to say what it checks: `run` merges stdout and stderr into
+    # $output, so one named for a stream can pass identically with and without
     # the `>&2` on that echo. Every other line this script prints goes to
     # stdout, so the failure line is the only thing that separates "the timer
     # did its job" from the one failure it can report, for any caller that

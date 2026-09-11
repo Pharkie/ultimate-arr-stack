@@ -11,6 +11,16 @@
 # override is on git itself -- `rev-parse --show-toplevel` for the root and
 # `diff --cached --name-only` for the staged list.
 #
+# Which arm a test judges, and on which host:
+#
+#   * the fallback tests call no_pyyaml(), so they judge the fallback anywhere;
+#   * the tests whose assertion is the parser's verdict call require_pyyaml() and
+#     skip with a reason where PyYAML is absent, instead of running against the
+#     fallback and going red while saying nothing about the code;
+#   * the regular-file guard test forces the arm with a stub that answers
+#     `import yaml` and delegates the parse, because python3 fails on a
+#     directory either way.
+#
 # Three things pinned here that the file does not currently get right; each is
 # marked DEFECT and asserts the FIXED behaviour:
 #
@@ -47,6 +57,23 @@ yml() {
 # Force the no-PyYAML arm. `import yaml` is the only thing the file asks
 # python3 for before it branches.
 no_pyyaml() { python3() { return 1; }; }
+
+# Force the PyYAML arm on a host that has none, for the tests whose assertion
+# does not depend on the parser's verdict. `import yaml` is answered here; every
+# other call is handed to the real python3, so what runs is still the real
+# interpreter -- on a directory it raises IsADirectoryError whether or not yaml
+# is installed. A stub that answered the parse call itself would make the test
+# an assertion about this stub.
+pyyaml_arm_present() { python3() { case "$*" in *"import yaml"*) return 0 ;; esac; command python3 "$@"; }; }
+
+# Skip where the parser's own verdict is the thing under test. Running one of
+# those against the fallback is not a weaker version of the same test: the
+# fallback cannot report a syntax error at all, only a leading tab, so a pass
+# there says nothing and a red there says less.
+require_pyyaml() {
+    python3 -c 'import yaml' 2>/dev/null \
+        || skip "PyYAML is not installed on this host, so the parser's verdict cannot be judged here"
+}
 
 # --- staged-file selection --------------------------------------------------
 
@@ -92,11 +119,15 @@ no_pyyaml() { python3() { return 1; }; }
     # a symlinked .yml whose target is a directory is a path anyone can stage,
     # which is the threat model this file states for itself.
     #
-    # Arm-specific, like the tests below: without PyYAML the fallback greps the
-    # path instead, and both versions skip a directory there.
+    # The PyYAML arm is forced, so this runs on any host and its corpus entry
+    # can be replayed on any host. That is safe here because the assertion is
+    # about the regular-file guard, not about parsing: python3 raises
+    # IsADirectoryError on the directory whether or not yaml is installed, and
+    # the guard is what stops the call from happening at all.
     mkdir -p "$WORK/realdir"
     ln -s "$WORK/realdir" "$WORK/linked.yml"
     STAGED=(linked.yml)
+    pyyaml_arm_present
     run check_yaml_syntax
     [ "$status" -eq 0 ]
     [[ "$output" != *"Invalid YAML"* ]]
@@ -112,6 +143,7 @@ no_pyyaml() { python3() { return 1; }; }
 }
 
 @test "yaml-syntax: invalid YAML is reported by name" {
+    require_pyyaml
     yml bad.yml 'services:' '  app:' ' image: [unclosed'
     STAGED=(bad.yml)
     run check_yaml_syntax
@@ -120,6 +152,7 @@ no_pyyaml() { python3() { return 1; }; }
 }
 
 @test "yaml-syntax: the parser's own message is shown, indented" {
+    require_pyyaml
     yml bad.yml 'a: [1, 2'
     STAGED=(bad.yml)
     run check_yaml_syntax
@@ -134,6 +167,7 @@ no_pyyaml() { python3() { return 1; }; }
     # PyYAML's safe_load takes the last value silently. This is the single most
     # likely real compose defect and this check cannot see it -- pinned so the
     # gap is recorded rather than assumed covered.
+    require_pyyaml
     yml dup.yml 'a: 1' 'a: 2'
     STAGED=(dup.yml)
     run check_yaml_syntax
@@ -181,6 +215,7 @@ no_pyyaml() { python3() { return 1; }; }
 @test "yaml-syntax: two bad files are reported as two" {
     yml b1.yml 'a: [1'
     yml b2.yml 'b: {2'
+    require_pyyaml
     STAGED=(b1.yml b2.yml)
     run check_yaml_syntax
     [[ "$output" == *"b1.yml"* ]]
@@ -193,6 +228,7 @@ no_pyyaml() { python3() { return 1; }; }
     # reached anyone; it only ever risked truncating to 0 at 256.
     yml b1.yml 'a: [1'
     yml b2.yml 'b: {2'
+    require_pyyaml
     STAGED=(b1.yml b2.yml)
     run check_yaml_syntax
     [ "$status" -eq 1 ]
@@ -202,6 +238,7 @@ no_pyyaml() { python3() { return 1; }; }
     # `for file in $staged_compose` splits on whitespace. Both halves then fail
     # the -f test and `continue`, so an unparseable file passes silently.
     yml 'my stack.yml' 'a: [1'
+    require_pyyaml
     STAGED=('my stack.yml')
     run check_yaml_syntax
     [ "$status" -eq 1 ]
@@ -215,6 +252,7 @@ no_pyyaml() { python3() { return 1; }; }
     # versions apart. It is the VALID file that separates them: every good file
     # whose name contains an apostrophe was reported as broken YAML.
     yml "it's.yml" 'a: 1'
+    require_pyyaml
     STAGED=("it's.yml")
     run check_yaml_syntax
     [ "$status" -eq 0 ]
@@ -228,6 +266,7 @@ no_pyyaml() { python3() { return 1; }; }
     export PWN="$BATS_TEST_TMPDIR/PWNED"
     local payload="x'+__import__('pathlib').Path(__import__('os').environ['PWN']).write_text('')+'.yml"
     yml "$payload" 'a: 1'
+    require_pyyaml
     STAGED=("$payload")
     run check_yaml_syntax
     [ ! -f "$BATS_TEST_TMPDIR/PWNED" ]

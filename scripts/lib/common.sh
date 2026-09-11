@@ -87,7 +87,15 @@ load_nas_config() {
         # Extract just the hostname (without .local)
         _NAS_HOSTNAME=$(echo "$_NAS_HOST" | sed 's/\.local$//')
         # Extract username from "SSH: user@host" or table "SSH User | `user`" pattern
-        _NAS_USER=$(grep -oE 'SSH:\s*[a-zA-Z0-9_-]+@' "$config_local" 2>/dev/null | sed 's/SSH:\s*//' | sed 's/@$//' | head -1)
+        # [[:space:]], not `\s`. BSD sed has no `\s` and reads the escape as a
+        # literal `s`, so `s/SSH:\s*//` degenerates to `s/SSH:s*//`: it matches
+        # "SSH:" and stops there, so the separating space stays in the user.
+        # Measured on macOS: `printf 'SSH: leoleg@\n' | /usr/bin/sed
+        # 's/SSH:\s*//'` prints " leoleg@", so get_nas_user answered " leoleg"
+        # and every ssh went out as "$nas_user@$nas_host" with a leading space
+        # in the user. The grep above keeps its `\s` because BSD grep does
+        # handle it in ERE (measured against the same file).
+        _NAS_USER=$(grep -oE 'SSH:\s*[a-zA-Z0-9_-]+@' "$config_local" 2>/dev/null | sed 's/SSH:[[:space:]]*//' | sed 's/@$//' | head -1)
         # Fallback: try table format "SSH User | `username`"
         if [[ -z "$_NAS_USER" ]]; then
             _NAS_USER=$(grep -i 'SSH User' "$config_local" 2>/dev/null | grep -oE '`[a-zA-Z0-9_-]+`' | tr -d '`' | head -1)
@@ -165,7 +173,14 @@ load_domain_config() {
         return 0
     fi
 
-    local repo_root env_file env_backup secrets_file
+    # secrets_file is INITIALISED here, not merely declared. The assignment
+    # below lives inside an if/elif, so with neither file present a bare
+    # `local secrets_file` would still be unset when the next line reads it,
+    # and any caller under `set -u` would abort with "secrets_file: unbound
+    # variable" instead of reporting the no-domain case. Same class as the
+    # NAS_SSH_PASS read in ssh_to_nas: latent under scripts/pre-commit, which
+    # sets -e and not -u, and fatal to the first caller that does.
+    local repo_root env_file env_backup secrets_file=""
     repo_root=$(get_repo_root)
     env_file="$repo_root/.env"
     env_backup="$repo_root/.env.nas.backup"

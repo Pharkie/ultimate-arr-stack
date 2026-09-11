@@ -97,3 +97,17 @@ mutation restart-stack-failure-line-on-stdout \
   --test "restart-stack: a failure is reported on stderr, not on stdout" \
   --why "moves the FAILED line from stderr to stdout. It is the one line of this script's output that is not compose's own text, and it is the only signal the operator gets that a stack did not come back: on stdout it merges into whatever the run printed, and any caller that captured stdout - to a log, to a variable, to a pipe - has no way left to separate the failure from the noise. This is the same class the 2026-09-02 arr-fixer sweep found nine of, and run merging the two streams is why none of them were caught" \
   --apply 'perl -pi -e "s@ >&2\$@@" "$F"'
+
+mutation restart-stack-profile-skip-branch-deleted \
+  --file scripts/restart-stack.sh \
+  --bats tests/restart-stack.bats \
+  --test "restart-stack: a stack with no service selected is skipped, not reported as restarted" \
+  --why "deletes the branch that reports a stack whose only service sits behind a profile nobody enabled. compose exits 0 having selected nothing, so the run goes on to claim 'restarted' for a stack it never touched - and cloudflared is exactly that state until an operator opts in. Nothing in the suite drove the branch, so it was deletable without a single test going red" \
+  --apply 'perl -ni -e "print unless /no service selected/ .. /^    fi\$/" "$F"'
+
+mutation restart-stack-profile-skip-always-fires \
+  --file scripts/restart-stack.sh \
+  --bats tests/restart-stack.bats \
+  --test "restart-stack: a stack with no service selected is skipped, not reported as restarted" \
+  --why "empties the pattern the skip branch matches on, so it fires against any output at all and every stack is reported as skipped. Nothing is restarted and every run still exits 0: the whole stack stays down while the command that was supposed to bring it back says it had nothing to do. This is the direction a test asserting only the skip line cannot see" \
+  --apply 'perl -pi -e "s@grep -q \"no service selected\"@grep -q \"\"@" "$F"'

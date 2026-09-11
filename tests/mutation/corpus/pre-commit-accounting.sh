@@ -35,12 +35,47 @@ mutation warnings-counter-aborts-bare-caller \
   --why "restores the post-increment in the domain half; harmless to a caller that wraps the check in \`if\` and fatal to one that does not, which is a correctness property no reader of this file can see, because it lives entirely at the call site" \
   --apply 'sed -i "s@warnings=\$((warnings + 1))@((warnings++))@" "$F"'
 
+# The count lines in both halves of check-hardcoded-domain.sh used to read
+# `count=$(... grep -ci ... || echo 0)`. `grep -c` PRINTS 0 and exits 1 when
+# nothing matches, so the `||` branch appends a second 0 instead of replacing
+# the first and the substitution captures "0\n0". Both lines now put the
+# fallback outside the substitution, where it can only ever assign.
+#
+# The three entries below pin that. Note the shape of the first: the fallback
+# goes back INSIDE as `&& echo 0`, not as the historical `||`. The `||` form is
+# unreachable -- the `grep -qi` guard on the line above matches the same pattern
+# against the same content, so the count's grep always succeeds -- which makes it
+# an equivalent mutant no test could kill. `&&` is what makes the corruption
+# observable, and `--why` says so rather than implying the historical text was
+# byte-for-byte restored.
+
 mutation hardcoded-domain-count-absorbs-fallback \
   --file scripts/lib/check-hardcoded-domain.sh \
   --bats tests/lib-hardcoded-domain.bats \
   --test "hardcoded-domain: the leak report counts the hostname occurrences" \
   --why "the report line then carries grep's count AND the fallback's 0, so a leak in a tracked file is named as \`docs/NOTES.md (2\` newline \`0 occurrences)\`. The ERROR header, the file name and the return 1 are all unchanged, so the two existing tests over that half still pass and the corruption is only in the count" \
-  --apply 'perl -pi -e '\''s@nas_hostname" 2>/dev/null \|\| echo 0\)@nas_hostname" 2>/dev/null && echo 0)@'\'' "$F"'
+  --apply 'perl -pi -e '\''s@grep -ci "\$nas_hostname" 2>/dev/null\) \|\| count=0@grep -ci "\$nas_hostname" 2>/dev/null && echo 0)@'\'' "$F"'
+
+# The pair below exists because the count's `-i` was proved by nothing. Both
+# count tests used all-lowercase fixtures, so `grep -ci` and `grep -c` gave the
+# same answer and the case-insensitivity could be deleted with the whole file
+# still green. Both fixtures are case-varied now, which is what makes these two
+# killable; one entry per half, because the two lines are twins and a fix
+# applied to one and not the other would leave the other unguarded.
+
+mutation hardcoded-domain-hostname-count-case-sensitive \
+  --file scripts/lib/check-hardcoded-domain.sh \
+  --bats tests/lib-hardcoded-domain.bats \
+  --test "hardcoded-domain: the leak report counts the hostname occurrences" \
+  --why "drops the -i from the hostname count, so a file naming the NAS host as MYNAS is reported as one occurrence fewer than it has. The block still fires and still names the file; only the number is wrong, which is the part of the report the reader uses to judge how much leaked" \
+  --apply 'perl -pi -e '\''s@grep -ci "\$nas_hostname"@grep -c "\$nas_hostname"@'\'' "$F"'
+
+mutation hardcoded-domain-count-case-sensitive \
+  --file scripts/lib/check-hardcoded-domain.sh \
+  --bats tests/lib-hardcoded-domain.bats \
+  --test "hardcoded-domain: reports the occurrence count per file" \
+  --why "the same defect in the domain half, where the count is the only thing the warning carries: a hardcoded domain written EXAMPLE.COM is counted only where it happens to be lowercase, so the number understates the leak it is reporting" \
+  --apply 'perl -pi -e '\''s@grep -ci "\$domain"@grep -c "\$domain"@'\'' "$F"'
 
 mutation hardcoded-domain-called-bare \
   --file scripts/pre-commit \

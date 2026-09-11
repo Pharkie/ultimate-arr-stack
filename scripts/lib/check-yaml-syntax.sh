@@ -55,8 +55,15 @@ check_yaml_syntax() {
         while IFS= read -r file; do
             [[ -n "$file" ]] || continue
             [[ -f "$repo_root/$file" ]] || continue
-            # Check for tabs (YAML uses spaces)
-            if grep -qP '^\t' "$repo_root/$file" 2>/dev/null; then
+            # Check for tabs at line start (YAML uses spaces). A literal tab
+            # needs no GNU -P: it matches in BRE and ERE alike, so -P bought
+            # nothing and cost this check its ability to fail at all on a host
+            # without GNU grep. BSD grep exits 2 with "invalid option", the
+            # 2>/dev/null discarded that, and the `if` read the non-zero status
+            # as "no tab found". This is the fallback arm, so the hosts it went
+            # quiet on are the ones with no PyYAML either: the ones with no
+            # second opinion available.
+            if grep -q $'^\t' "$repo_root/$file" 2>/dev/null; then
                 echo "    ERROR: Tab characters found in $file (YAML requires spaces)"
                 errors=$((errors + 1))
             fi

@@ -100,9 +100,17 @@ setup() {
     # DRIVER_PRE is arbitrary shell run after the source and before the call,
     # so a test can set a global or override a function without the script
     # needing a seam for each one.
+    #
+    # /usr/bin/env bash, not /bin/bash. The driver sources configure-apps.sh,
+    # which uses bash 4 parameter expansion (`${svc^^}` in two places), and
+    # macOS ships 3.2 at /bin/bash. Measured on this host: with /bin/bash the
+    # driver died on "bad substitution" and 16 of this file's 54 tests were red;
+    # `bash` on PATH is 5.x and runs them. The suite itself is already
+    # `#!/usr/bin/env bats`, so env bash lands the driver on the interpreter the
+    # harness picked rather than an older one nobody chose.
     DRIVER="$BATS_TEST_TMPDIR/drive"
     cat > "$DRIVER" <<'EOF'
-#!/bin/bash
+#!/usr/bin/env bash
 source "$SCRIPT"
 [ -n "${DRIVER_PRE:-}" ] && eval "$DRIVER_PRE"
 "$@"
@@ -427,16 +435,45 @@ EOF
 @test "configure-apps: the session cookie is a private temp file, removed on exit" {
     # Observed from inside the run, after mktemp and before run_all: proving the
     # cleanup means proving the file existed first.
+    #
+    # The cookie's own path, not a listing of $TMPDIR. BSD `mktemp -t` puts the
+    # file under the per-user confstr temp dir and ignores TMPDIR, so a listing
+    # of $TMPDIR is empty on macOS whatever the script does, and the assertions
+    # this test used to make about the name (`qbit_configure_cookie.` plus
+    # exactly six characters) are GNU mktemp's shape. The properties that matter
+    # hold on both: the path is under a temp directory, it carried a random
+    # component rather than the old fixed /tmp/qbit_configure_cookie.txt, and
+    # the trap removed it.
     export OBSERVED="$BATS_TEST_TMPDIR/observed"
-    DRIVER_PRE='discover_api_keys() { ls "$TMPDIR" > "$OBSERVED"; }; run_all() { :; }' \
-        run "$DRIVER" main --dry-run
+    cat > "$BATS_TEST_TMPDIR/observe" <<'EOF'
+discover_api_keys() {
+    local cookie="${QBIT_COOKIE:?the script did not create one}"
+    { [ -e "$cookie" ] && echo present || echo missing
+      printf '%s\n' "$cookie"
+    } > "$OBSERVED"
+}
+run_all() { :; }
+EOF
+    DRIVER_PRE="source $BATS_TEST_TMPDIR/observe" run "$DRIVER" main --dry-run
     assert_success
-    grep -q '^qbit_configure_cookie\.' "$OBSERVED"
-    # ...and nothing is left behind.
-    [ -z "$(ls -A "$TMPDIR")" ]
-    # ...and the name is unpredictable, not the old fixed
-    # /tmp/qbit_configure_cookie.txt that two concurrent runs shared.
-    grep -qE '^qbit_configure_cookie\.[A-Za-z0-9]{6}$' "$OBSERVED"
+    local state cookie
+    state=$(head -1 "$OBSERVED")
+    cookie=$(tail -1 "$OBSERVED")
+    [ "$state" = "present" ] || { echo "the cookie was not on disk during the run"; return 1; }
+    case "$cookie" in
+        */tmp/*|*/T/*) ;;
+        *) echo "the cookie is not under a temp directory: $cookie"; return 1 ;;
+    esac
+    # Not the fixed name two concurrent runs used to share, and not a name this
+    # test can predict: a second run must land somewhere else.
+    [ "$cookie" != "/tmp/qbit_configure_cookie.txt" ]
+    DRIVER_PRE="source $BATS_TEST_TMPDIR/observe" run "$DRIVER" main --dry-run
+    assert_success
+    [ "$(tail -1 "$OBSERVED")" != "$cookie" ] || {
+        echo "two runs used the same cookie path: $cookie"; return 1
+    }
+    # ...and the trap removed it.
+    [ ! -e "$cookie" ] || { echo "the cookie was left behind: $cookie"; return 1; }
 }
 
 # --------------------------------------------------------- the dry-run boundary

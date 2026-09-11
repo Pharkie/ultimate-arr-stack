@@ -317,3 +317,29 @@ restart_one() {
     assert_output --partial "Container pihole  Started"
     assert_output --partial "compose wrote this to stderr"
 }
+
+@test "restart-stack: a stack with no service selected is skipped, not reported as restarted" {
+    # The branch nothing drove until now. compose exits 0 having selected nothing
+    # when every service in the file sits behind a profile an operator has not
+    # enabled, which is cloudflared's state until they do; restart_compose's own
+    # comment says why reporting that as a restart is the false-success shape this
+    # repo keeps finding in its guards. Every other test in this file either
+    # stops at forbid() or replaces restart_compose with the dispatcher's logger,
+    # so deleting the branch was invisible to the suite.
+    #
+    # The second half is the negative control, and it is not decoration: a branch
+    # that fired unconditionally would print "skipped" for every stack, restart
+    # nothing, and pass the assertions above. One test asserts both directions so
+    # that a green run cannot mean either.
+    docker() { printf 'no service selected\n'; return 0; }
+    run restart_one docker-compose.cloudflared.yml cloudflared
+    assert_success
+    assert_output --partial "skipped - opt-in profile not enabled"
+    refute_output --partial "restarted"
+
+    docker() { printf 'Container pihole  Started\n'; return 0; }
+    run restart_one docker-compose.arr-stack.yml arr-stack
+    assert_success
+    assert_output --partial "restarted"
+    refute_output --partial "skipped"
+}

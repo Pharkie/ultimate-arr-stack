@@ -111,3 +111,23 @@ mutation common-ssh-available-guard-negated \
   --test "common: is_ssh_available is true when the host is set and the port answers" \
   --why "the same always-fails outcome reached from the other side: '|| return 1' fires whenever the host is NOT empty, and falls through to a connect on the empty string when it is (which fails anyway). A test that only ever asserts failure cannot tell a guard that works from a guard that always fires" \
   --apply 'perl -pi -e '"'"'s/\[\[ -z "\$nas_host" \]\] && return 1/\[\[ -z "\$nas_host" \]\] || return 1/'"'"' "$F"'
+
+# Some defects are only defects on the OTHER host. Both entries below are
+# correct on the machine that wrote them and wrong on the machine that runs CI,
+# which is the class a suite developed on one of the two cannot see at all: the
+# test that catches them is the one that asserts the property rather than the
+# value it happens to produce here.
+
+mutation common-ssh-user-leading-space \
+  --file scripts/lib/common.sh \
+  --bats tests/lib-common.bats \
+  --test "common: the user extracted from the SSH: form carries no surrounding space" \
+  --why "leaves the sed that strips the 'SSH:' prefix unable to consume the whitespace after it, so the user comes back as ' leoleg' and ssh_to_nas builds ' leoleg@mynas.local'. This is what the historical GNU-only \\s degenerates to on BSD sed: GNU sed reads \\s as [[:space:]] and BSD sed reads it as a literal s, so an entry written as a literal restore of \\s would be an equivalent mutant on the Linux host CI runs on and could never be killed there. Written as the portable form of the same defect, it dies on both" \
+  --apply 'perl -pi -e '"'"'s@SSH:\[\[:space:\]\]\*@SSH:@'"'"' "$F"'
+
+mutation common-domain-secrets-file-unbound \
+  --file scripts/lib/common.sh \
+  --bats tests/lib-common.bats \
+  --test "common: an unset secrets_file is not an unbound variable" \
+  --why "restores the bare \`local secrets_file\` declaration. The assignment lives inside the if/elif that picks .env or .env.nas.backup, so with neither file present the variable stays unset and the read on the next line aborts under set -u with 'secrets_file: unbound variable'. scripts/pre-commit sets -e and not -u, so nothing here has ever run it that way; the first caller that does gets no domain, no fall-through, and no message" \
+  --apply 'perl -pi -e '"'"'s@local repo_root env_file env_backup secrets_file=""@local repo_root env_file env_backup secrets_file@'"'"' "$F"'

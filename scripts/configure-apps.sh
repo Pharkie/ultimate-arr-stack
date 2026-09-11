@@ -215,8 +215,15 @@ check_prerequisites() {
 
 # The *arr services all keep theirs in the same place and the same shape.
 arr_api_key() {
+    # `sed -n 's|...|...|p'`, not `grep -oP '(?<=<ApiKey>)[^<]+'`. GNU grep's -P
+    # is not available on macOS or any other BSD grep, where it exits 2 with
+    # "invalid option" -- and the pipeline's status is discarded here, so every
+    # lookup came back empty and the operator was told the service had no API
+    # key to give. A lookbehind is the one thing sed cannot express, and it is
+    # not needed: capture the element's text instead, which is what the
+    # lookbehind was there to skip past.
     docker exec "$1" cat /config/config.xml 2>/dev/null \
-        | grep -oP '(?<=<ApiKey>)[^<]+' || true
+        | sed -n 's|.*<ApiKey>\([^<]*\).*|\1|p' || true
 }
 
 discover_api_keys() {
@@ -256,8 +263,12 @@ discover_api_keys() {
         QBIT_PASSWORD=$(env_value QBIT_PASSWORD "$CONFIGURE_ENV_FILE") || QBIT_PASSWORD=""
     fi
     if [[ -z "$QBIT_PASSWORD" ]]; then
+        # Same portability reason as arr_api_key above: `grep -oP ... \K` is
+        # GNU-only, so on a BSD grep host this scrape found nothing and the
+        # script told the operator to set a password that was sitting in the
+        # logs. `[^ ]*` after the last colon-space is what `\K\S+` selected.
         QBIT_PASSWORD=$(docker logs qbittorrent 2>&1 \
-            | grep -oP 'temporary password is provided.*: \K\S+' | tail -1 || true)
+            | sed -n 's|.*temporary password is provided.*: \([^ ]*\).*|\1|p' | tail -1 || true)
     fi
     if [[ -z "$QBIT_PASSWORD" ]]; then
         echo ""

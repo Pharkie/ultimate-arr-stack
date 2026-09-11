@@ -33,7 +33,18 @@ check_hardcoded_domain() {
             # Check for domain (case insensitive)
             if echo "$content" | grep -qi "$domain" 2>/dev/null; then
                 local count
-                count=$(echo "$content" | grep -ci "$domain" 2>/dev/null || echo 0)
+                # The fallback is a SEPARATE command, never a `||` inside the
+                # substitution. `grep -c` prints 0 and then exits 1 when nothing
+                # matches, so `$(... || echo 0)` does not replace the value, it
+                # appends to it -- the report line would carry "0" twice, on two
+                # stacked lines, and read "(0" newline "0 occurrences)".
+                #
+                # It cannot fire from here today, because the `-qi` guard above
+                # already matched the same pattern against the same content, so
+                # the count's grep always succeeds first. That coupling is the
+                # only reason the old form went unnoticed, and it is not
+                # something a later edit can be trusted to keep.
+                count=$(echo "$content" | grep -ci "$domain" 2>/dev/null) || count=0
                 files_with_domain+="      - $file ($count occurrences)"$'\n'
                 warnings=$((warnings + 1))
             fi
@@ -73,7 +84,11 @@ check_hardcoded_domain() {
             # Check for hostname (case insensitive)
             if echo "$content" | grep -qi "$nas_hostname" 2>/dev/null; then
                 local count
-                count=$(echo "$content" | grep -ci "$nas_hostname" 2>/dev/null || echo 0)
+                # Same shape as the domain half above: the fallback has to be a
+                # separate command, because `grep -c` prints 0 AND exits 1, so a
+                # `||` inside the substitution appends a second 0 instead of
+                # replacing the first.
+                count=$(echo "$content" | grep -ci "$nas_hostname" 2>/dev/null) || count=0
                 files_with_hostname+="      - $file ($count occurrences)"$'\n'
             fi
         done

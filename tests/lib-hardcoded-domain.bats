@@ -7,7 +7,7 @@
 #   * the domain half WARNS - a domain in a Traefik dynamic config is often
 #     unavoidable, so it prints and returns 0.
 #   * the hostname half BLOCKS - the NAS's hostname is private, and the file
-#     says so at L58: "BLOCKS - this should never be committed". It is the only
+#     says so at L69: "BLOCKS - this should never be committed". It is the only
 #     `return 1` in the file.
 #
 # Every test below names which half it is exercising, because a test that
@@ -63,16 +63,21 @@ configured() {
 @test "hardcoded-domain: the leak report counts the hostname occurrences" {
     # The half of this file that BLOCKS builds its report line from a `grep -ci`
     # count, and the two tests above assert only the ERROR header and the file
-    # name -- both of which survive a broken count. `|| echo 0` -> `&& echo 0`
-    # makes the substitution capture grep's number AND the `0`, so the report
-    # reads "(2" newline "0 occurrences)".
+    # name -- both of which survive a broken count. Putting the fallback back
+    # inside the substitution as `&& echo 0` makes it capture grep's number AND
+    # a `0`, so the report reads "(2" newline "0 occurrences)".
     #
-    # Measured under that mutation, with this fixture: the header, the file name
-    # and the exit status 1 are all unchanged, and only the count breaks. The
-    # `|| echo 0` fallback itself is unreachable here, because :74 has already
-    # matched the same pattern against the same variable.
+    # Measured under that mutation: the header, the file name and the exit
+    # status 1 are all unchanged, and only the count breaks.
+    #
+    # The fixture is case-VARIED for a reason. Two identical lowercase lines
+    # make `grep -ci` and `grep -c` give the same answer, so the test could not
+    # see the count stop being case-insensitive -- the one thing this line's
+    # `-i` is for, and the only reason its message can promise "occurrences" for
+    # a hostname written MYNAS. With `mynas` and `MYNAS`, `-ci` still answers 2
+    # and `-c` answers 1.
     configured
-    fixture docs/NOTES.md "$(printf 'mynas\nmynas')"
+    fixture docs/NOTES.md "$(printf 'mynas\nMYNAS')"
     run check_hardcoded_domain
     assert_failure
     assert_output --partial "docs/NOTES.md (2 occurrences)"
@@ -113,8 +118,13 @@ configured() {
 }
 
 @test "hardcoded-domain: reports the occurrence count per file" {
+    # The domain half's twin of the count test above, and it gets the same
+    # case-varied fixture for the same reason: three lowercase lines make
+    # `grep -ci` and `grep -c` agree, so neither this test nor the hostname one
+    # could see the count stop being case-insensitive. Here `-ci` answers 3 and
+    # `-c` answers 2.
     configured
-    fixture traefik/dynamic/app.yml "$(printf 'a.example.com\nb.example.com\nc.example.com')"
+    fixture traefik/dynamic/app.yml "$(printf 'a.example.com\nb.EXAMPLE.COM\nc.example.com')"
     run check_hardcoded_domain
     assert_output --partial "(3 occurrences)"
 }
@@ -187,7 +197,7 @@ configured() {
 # That is exactly how this file used to fail. `((hostname_errors++))` sat inside
 # the loop that builds the leak report, post-increment on a counter starting at
 # 0, so it returned 1 on the first hit -- and check 5 called the function bare.
-# The hook died mid-loop: no ERROR message, no file list, the `return 1` at :81
+# The hook died mid-loop: no ERROR message, no file list, the `return 1` at :100
 # never reached, and its last line of output an unrelated SKIP from check 5's
 # own preamble. The commit was still rejected, by the abort rather than by the
 # check, which is why a correct-looking exit code hid it.

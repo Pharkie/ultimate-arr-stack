@@ -52,7 +52,7 @@ mutation relay-port-reads-the-exit-node \
 mutation relay-port-failed-apply-reads-as-success \
   --file scripts/ensure-tailscale-relay-port.sh \
   --bats tests/ensure-relay-port.bats \
-  --test "ensure-relay-port: a failed re-apply exits 1 and says so on stderr" \
+  --test "ensure-relay-port: a failed re-apply exits 1 and reports it" \
   --why "exits 0 after a failed re-apply. The header of this script documents exit 1 as its one failure signal, and it is the only thing that would ever surface in the timer's journal - without it the unit reports success while the port stays unset and Android clients keep failing to relay" \
   --apply 'sed -i "/FAILED to re-apply/{n;s@^  exit 1@  exit 0@}" "$F"'
 

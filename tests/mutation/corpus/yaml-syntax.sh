@@ -5,6 +5,12 @@
 # Safe to run: tests/lib-yaml-syntax.bats overrides git for both the repo root
 # and the staged list, so every mutation reads only $BATS_TEST_TMPDIR. The
 # no-PyYAML arm is reached by overriding python3, not by uninstalling anything.
+#
+# Four entries below name tests that require PyYAML (yaml-count-as-exit-status,
+# yaml-staged-list-word-split, yaml-path-in-python-string). Those tests skip with
+# a reason where it is absent, and a skipped oracle reads as a pass, so replaying
+# them on a host without PyYAML reports SURVIVED and means nothing. CI and pi1
+# have it; this file says so rather than leaving the next reader to guess.
 
 mutation yaml-count-as-exit-status \
   --file scripts/lib/check-yaml-syntax.sh \
@@ -32,7 +38,7 @@ mutation yaml-fallback-tab-anywhere \
   --bats tests/lib-yaml-syntax.bats \
   --test "yaml-syntax: a tab that is not at line start is not flagged" \
   --why "drops the line-start anchor, so a tab anywhere in a file is called an indentation error. Only indentation matters to YAML; a tab inside a value is legal, so this rejects valid compose files on the machines that have no PyYAML - exactly the machines with no second opinion available" \
-  --apply "sed -i \"s@grep -qP '\\^\\\\\\\\t'@grep -qP '\\\\\\\\t'@\" \"\$F\"" \
+  --apply 'python3 -c "import sys;p=sys.argv[1];s=open(p).read();old=\"grep -q \x24\x27^\\\\t\x27\";new=\"grep -q \x24\x27\\\\t\x27\";assert old in s, old;s=s.replace(old,new,1);open(p,\"w\").write(s)" "$F"' \
 
 mutation yaml-fallback-never-runs \
   --file scripts/lib/check-yaml-syntax.sh \

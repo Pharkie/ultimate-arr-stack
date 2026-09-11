@@ -3,8 +3,11 @@
 #
 # run-mutations.sh treats "the mutation changed nothing" as a hard ERROR, because
 # a pattern that stopped matching after a refactor would otherwise score a false
-# KILLED. But that check only runs when somebody runs the corpus, and no workflow
-# does -- 271 entries, each running its oracle twice. This file performs the same
+# KILLED. But that check runs only when somebody runs the corpus, and the
+# per-push workflow does not: hundreds of entries, each running its oracle
+# twice. (No count is written down here on purpose. The previous version said
+# 271, which was true when it was written and false within the month, the same
+# way CLAUDE.md's old "14 tests" claim went stale.) This file performs the same
 # ASSERT step for every entry with no oracle at all: source each corpus with a
 # recording `mutation()` stub, apply each --apply to a COPY of the target, and
 # require the bytes to differ. Seconds instead of hours, and it catches both an

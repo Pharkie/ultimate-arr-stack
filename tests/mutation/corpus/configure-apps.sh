@@ -174,3 +174,14 @@ mutation configure-apps-sabnzbd-name-substring-match \
   --test "configure-apps: a container whose name merely contains sabnzbd is not sabnzbd" \
   --why "drops -x from the SABnzbd check, so any running container whose name contains 'sabnzbd' counts. SABNZBD_RUNNING gates both the API-key lookup and the manual step in the summary, so an unrelated container turns an optional service into one this script reaches into and reports a failure for - the same substring-match defect as the required-container check above, and the same one that reached production twice already" \
   --apply 'perl -pi -e "s/grep -qx \"sabnzbd\"/grep -q \"sabnzbd\"/" "$F"'
+
+# The -P removal in this file is not cosmetic: the extraction it replaced could
+# not fail on BSD grep (it exited 2 with the status discarded), so these two
+# lines were only ever judged on a GNU host. Pin the shape the replacement has
+# to keep.
+mutation configure-apps-arr-key-extraction-prints-the-whole-file \
+  --file scripts/configure-apps.sh \
+  --bats tests/configure-apps.bats \
+  --test "configure-apps: each arr key is read out of that service's own config.xml" \
+  --why "drops -n from the extraction, so sed prints every line of config.xml and then the substitution output as well. The variable that carries the service's API key then holds the whole file: every later request authenticates with a value containing newlines, and the eight characters shown to the operator come from the XML prologue instead of the value itself" \
+  --apply 'python3 -c "import sys;p=sys.argv[1];s=open(p).read();old=\"| sed -n \x27s|.*<ApiKey>\";new=\"| sed -e \x27s|.*<ApiKey>\";assert old in s, old;s=s.replace(old,new,1);open(p,\"w\").write(s)" "$F"'
