@@ -178,6 +178,59 @@ NATIVE_MEM_EXEMPT=(
     "tests/mutation-framework.bats"
 )
 
+# What bounds an oracle run, resolved once at source time.
+#
+# `timeout` is GNU coreutils and macOS does not ship it, which used to turn this
+# whole harness into a liar there rather than merely an unavailable tool: the
+# budget went straight to `timeout`, the command substitution came back 127
+# ("command not found"), and both runners read any non-zero status as a failed
+# test and scored the mutant KILLED. Measured 2026-09-11: all 19 entries of the
+# check-image-versions corpus reported KILLED on macOS, and replaying them with a
+# `timeout` shim on PATH turned one back into SURVIVED. A harness that invents
+# kills is worse than one that finds nothing, because the ledger it writes is
+# believed.
+#
+# `gtimeout` is coreutils under its macOS name; `perl` is the fallback
+# scripts/sync-nas.sh's bounded() already uses for the same reason.
+#
+# The perl form is deliberately not `perl -e 'alarm shift; exec @ARGV'`. That
+# bounds the direct child and nothing else, which is not what `timeout` does and
+# not what run_tests needs: tests/run-tests.sh forks bats, bats runs each test in
+# a further subshell, and that grandchild inherits the command substitution's
+# stdout pipe -- so killing only the direct child leaves run_tests blocked on a
+# pipe that stays open and the budget buys nothing. Measured on macOS: the alarm
+# fired at 1s and the call still came back after 30. This forks, puts the child
+# in its own process group, and kills the GROUP; it also exits 124 itself, so the
+# runners' "hit the budget" branch works without translation.
+MUTATE_BOUND="${MUTATE_BOUND_OVERRIDE:-}"
+if [[ -z "$MUTATE_BOUND" ]]; then
+    if command -v timeout >/dev/null 2>&1; then MUTATE_BOUND=timeout
+    elif command -v gtimeout >/dev/null 2>&1; then MUTATE_BOUND=gtimeout
+    elif command -v perl >/dev/null 2>&1; then MUTATE_BOUND=perl
+    fi
+fi
+
+MUTATE_PERL_BOUND='
+my $t = shift;
+my $pid = fork();
+die "fork: $!" unless defined $pid;
+if ($pid == 0) { setpgrp(0, 0); exec @ARGV or exit 127; }
+$SIG{ALRM} = sub { kill "-KILL", $pid; waitpid($pid, 0); exit 124; };
+alarm $t;
+waitpid($pid, 0);
+exit($? >> 8);
+'
+
+# A host with none of the three cannot judge a mutant that hangs, and judging it
+# wrongly is the failure mode this whole file is written against. Both runners
+# call this before they score anything, so the verdict is never reached.
+mutate_require_bound() {
+    [[ -n "$MUTATE_BOUND" ]] && return 0
+    echo "$1: no timeout, gtimeout or perl on PATH, so an oracle cannot be bounded." >&2
+    echo "                Refusing to score mutants: one that hangs would be judged by luck." >&2
+    exit 77
+}
+
 run_tests() {
     local batsfile="$1" regex="$2" budget="${3:-0}" out
     [[ "$budget" =~ ^[0-9]+$ ]] || budget=0
@@ -191,7 +244,11 @@ run_tests() {
         {
             (( exempt )) || ulimit -S -v "$NATIVE_MEM_KB"
             if (( budget > 0 )); then
-                timeout "$budget" "$ROOT/tests/run-tests.sh" -f "$regex" "$batsfile"
+                case "$MUTATE_BOUND" in
+                    timeout|gtimeout) "$MUTATE_BOUND" "$budget" "$ROOT/tests/run-tests.sh" -f "$regex" "$batsfile" ;;
+                    perl) perl -e "$MUTATE_PERL_BOUND" "$budget" "$ROOT/tests/run-tests.sh" -f "$regex" "$batsfile" ;;
+                    *) echo "run_tests: no way to bound the oracle at ${budget}s" >&2; exit 77 ;;
+                esac
             else
                 "$ROOT/tests/run-tests.sh" -f "$regex" "$batsfile"
             fi

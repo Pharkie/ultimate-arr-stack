@@ -82,6 +82,26 @@ no_pyyaml() { python3() { return 1; }; }
     [[ "$output" != *"ERROR"* ]]
 }
 
+@test "yaml-syntax: a staged symlink to a directory is skipped, not called invalid YAML" {
+    # The guard is "a regular file, or nothing to validate" -- not "anything that
+    # exists". The PyYAML arm hands the path to python3 whatever it is, and
+    # open() on a directory raises IsADirectoryError before yaml ever sees it,
+    # so an existence test reports it as "ERROR: Invalid YAML syntax" and
+    # returns 1. scripts/pre-commit:91 counts that as an error and stops the
+    # commit, over a path that was never a YAML file. git indexes symlinks, so
+    # a symlinked .yml whose target is a directory is a path anyone can stage,
+    # which is the threat model this file states for itself.
+    #
+    # Arm-specific, like the tests below: without PyYAML the fallback greps the
+    # path instead, and both versions skip a directory there.
+    mkdir -p "$WORK/realdir"
+    ln -s "$WORK/realdir" "$WORK/linked.yml"
+    STAGED=(linked.yml)
+    run check_yaml_syntax
+    [ "$status" -eq 0 ]
+    [[ "$output" != *"Invalid YAML"* ]]
+}
+
 # --- the PyYAML arm ---------------------------------------------------------
 
 @test "yaml-syntax: valid YAML passes" {

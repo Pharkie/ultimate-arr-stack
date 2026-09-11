@@ -123,6 +123,35 @@ created_networks() {
     refute_output --partial "exists with containers"
 }
 
+@test "check-network: a container-list inspect that fails does not kill the report" {
+    # The existence check and the container-list check are two separate
+    # `docker network inspect` calls and they can disagree: the network can be
+    # removed between them, or the daemon can fail one and not the other. A
+    # half-finished cleanup is the state this script is run in, so that is the
+    # moment it must not die. `|| true` keeps a failed substitution from
+    # becoming a fatal assignment under `set -e`; with `&& true` the assignment
+    # carries docker's status, the script exits 1 having printed nothing about
+    # the network, and every network after it goes unexamined.
+    stub_docker '
+        [ "$1" = network ] || { echo "unexpected docker argv: $*" >&2; exit 125; }
+        case "$2" in
+            inspect)
+                # It exists, and then cannot be asked what is attached to it.
+                [ "${4:-}" = "-f" ] && exit 1
+                exit 0
+                ;;
+            ls) printf "NAME\tDRIVER\tSCOPE\n" ;;
+            *)  echo "unexpected docker network verb: $2" >&2; exit 126 ;;
+        esac
+    '
+    run "$DRIVER" main
+    assert_success
+    assert_nothing_forbidden
+    # The list is worked to the end rather than stopping at the first network
+    # whose container list could not be read.
+    assert_stub_called docker "network inspect traefik-lan -f"
+}
+
 @test "check-network: a non-interactive run prints the manual command and removes nothing" {
     exists_empty arr-core
     FAKE_TTY=0 run "$DRIVER" check_one_network arr-core

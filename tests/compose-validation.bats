@@ -16,6 +16,28 @@ get_service_block() {
     ' "$file"
 }
 
+# curl with a bounded retry, for the registry probes below.
+#
+# Those probes talk to live registries, and this suite is a required check, so a
+# transient network failure is a blocked merge for whoever is unlucky enough to
+# push during one. Observed 2026-09-11: the heavy run's suite went red on
+# `curl -sf ... failed with status 35` (TLS connect error to hub.docker.com)
+# while the push and pull-request runs of the same commit were green within the
+# hour, and the failure read as "this image tag does not exist".
+#
+# Three attempts, one second apart. A 404 is still answered on the first
+# attempt by the two call sites that do not pass -f, so a genuinely missing tag
+# does not pay for the retries.
+registry_probe() {
+    local attempt rc=0
+    for attempt in 1 2 3; do
+        "$@" && return 0
+        rc=$?
+        sleep 1
+    done
+    return "$rc"
+}
+
 @test "all compose files pass docker compose config" {
     skip "requires docker compose CLI"
     for f in $(get_compose_files); do
@@ -97,10 +119,10 @@ get_service_block() {
             # GitHub Container Registry: use OCI token + manifest check
             local ghcr_repo="${repo#ghcr.io/}"
             local token
-            token=$(curl -sf "https://ghcr.io/token?scope=repository:${ghcr_repo}:pull" | grep -o '"token":"[^"]*"' | cut -d'"' -f4)
+            token=$(registry_probe curl -sf "https://ghcr.io/token?scope=repository:${ghcr_repo}:pull" | grep -o '"token":"[^"]*"' | cut -d'"' -f4)
             if [[ -n "$token" ]]; then
                 local status
-                status=$(curl -o /dev/null -w "%{http_code}" -s \
+                status=$(registry_probe curl -o /dev/null -w "%{http_code}" -s \
                     -H "Authorization: Bearer $token" \
                     -H "Accept: application/vnd.oci.image.index.v1+json,application/vnd.docker.distribution.manifest.v2+json" \
                     "https://ghcr.io/v2/${ghcr_repo}/manifests/${tag}")
@@ -118,7 +140,7 @@ get_service_block() {
 
         # Check Docker Hub API
         local http_code
-        http_code=$(curl -sf -o /dev/null -w "%{http_code}" "$url")
+        http_code=$(registry_probe curl -sf -o /dev/null -w "%{http_code}" "$url")
         if [[ "$http_code" != "200" ]]; then
             failed+=("$image")
         fi

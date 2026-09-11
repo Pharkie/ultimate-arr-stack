@@ -35,6 +35,13 @@ mutation warnings-counter-aborts-bare-caller \
   --why "restores the post-increment in the domain half; harmless to a caller that wraps the check in \`if\` and fatal to one that does not, which is a correctness property no reader of this file can see, because it lives entirely at the call site" \
   --apply 'sed -i "s@warnings=\$((warnings + 1))@((warnings++))@" "$F"'
 
+mutation hardcoded-domain-count-absorbs-fallback \
+  --file scripts/lib/check-hardcoded-domain.sh \
+  --bats tests/lib-hardcoded-domain.bats \
+  --test "hardcoded-domain: the leak report counts the hostname occurrences" \
+  --why "the report line then carries grep's count AND the fallback's 0, so a leak in a tracked file is named as \`docs/NOTES.md (2\` newline \`0 occurrences)\`. The ERROR header, the file name and the return 1 are all unchanged, so the two existing tests over that half still pass and the corruption is only in the count" \
+  --apply 'perl -pi -e '\''s@nas_hostname" 2>/dev/null \|\| echo 0\)@nas_hostname" 2>/dev/null && echo 0)@'\'' "$F"'
+
 mutation hardcoded-domain-called-bare \
   --file scripts/pre-commit \
   --bats tests/pre-commit-blocking.bats \

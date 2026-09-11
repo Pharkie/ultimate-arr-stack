@@ -60,6 +60,24 @@ configured() {
     assert_failure
 }
 
+@test "hardcoded-domain: the leak report counts the hostname occurrences" {
+    # The half of this file that BLOCKS builds its report line from a `grep -ci`
+    # count, and the two tests above assert only the ERROR header and the file
+    # name -- both of which survive a broken count. `|| echo 0` -> `&& echo 0`
+    # makes the substitution capture grep's number AND the `0`, so the report
+    # reads "(2" newline "0 occurrences)".
+    #
+    # Measured under that mutation, with this fixture: the header, the file name
+    # and the exit status 1 are all unchanged, and only the count breaks. The
+    # `|| echo 0` fallback itself is unreachable here, because :74 has already
+    # matched the same pattern against the same variable.
+    configured
+    fixture docs/NOTES.md "$(printf 'mynas\nmynas')"
+    run check_hardcoded_domain
+    assert_failure
+    assert_output --partial "docs/NOTES.md (2 occurrences)"
+}
+
 @test "hardcoded-domain: passes when no tracked file names the NAS hostname" {
     configured
     fixture docs/NOTES.md "nothing private in here"

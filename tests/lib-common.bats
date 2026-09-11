@@ -417,6 +417,32 @@ real_repo() {
     assert_failure
 }
 
+@test "common: is_ssh_available is true when the host is set and the port answers" {
+    # The empty-host test above cannot see a guard that returns 1 for EVERY
+    # host, because "no host configured" and "refuses to check anything" both
+    # fail. Measured: mutating the guard on :219 to `-n`, and separately to
+    # `||`, left this whole file green. Neither mutant is dead code. Every
+    # caller is the same shape -- `if ! is_ssh_available; then SKIP` in
+    # check-env-backup.sh, check-dns-duplicates.sh and check-uptime-monitors.sh
+    # -- so a guard stuck at 1 does not fail a check, it makes three of them
+    # skip silently on a NAS that is up.
+    #
+    # `timeout` EXECs its argument (docs/TEST-HARDENING-LOG.md §8), so the stub
+    # has to be a real executable; a shell function would never be reached.
+    # Having it on PATH is also what keeps this hermetic: the /dev/tcp connect
+    # is never run, and the test passes with no network and no NAS.
+    fake_root
+    printf 'SSH: leoleg@mynas.local\n' > "$FAKE/.claude/config.local.md"
+    stub_init
+    stub_tool timeout 'exit 0'
+
+    run is_ssh_available
+    assert_success
+    # And on the argv, not just the status: a stub handed no host at all would
+    # produce the same success, which is the mutant's other half.
+    assert_stub_called timeout 'mynas.local'
+}
+
 @test "common: DEFECT - the host is data to bash -c, never code" {
     # The host was interpolated into the string bash -c parses, so bash saw it
     # before /dev/tcp did. Nothing but load_nas_config's grep stood between a

@@ -76,3 +76,24 @@ mutation restart-stack-usage-omits-a-target \
   --test "restart-stack: the usage line names every target the dispatcher accepts" \
   --why "drops a target from the usage line. A usage string is documentation that lives inside the code it documents, and this is exactly how it goes stale: magnetio was added to the dispatcher in one edit and the usage line was not" \
   --apply 'sed -i "s@|magnetio|all]@|all]@" "$F"'
+
+mutation restart-stack-compose-file-flag-typo \
+  --file scripts/restart-stack.sh \
+  --bats tests/restart-stack.bats \
+  --test "restart-stack: each target hands compose its own file, with -f" \
+  --why "turns the -f that names the compose file into -e. docker has no -e flag at the compose level, so the call fails with 'unknown shorthand flag' before it selects a service, and under set -e the all arm aborts at its FIRST file: the command someone reaches for when the house has no DNS restarts nothing at all and says only FAILED. Applied with perl rather than sed -i so the entry replays on macOS too" \
+  --apply 'perl -pi -e "s@docker compose -f @docker compose -e @" "$F"'
+
+mutation restart-stack-compose-output-suppressed \
+  --file scripts/restart-stack.sh \
+  --bats tests/restart-stack.bats \
+  --test "restart-stack: compose's own output is printed when there is any" \
+  --why "inverts the guard on printing what compose said. A stack that fails then reports 'FAILED (exit 1)' with no cause anywhere in the run, and the stacks that had nothing to say get a blank line instead - the operator is left reading an exit code where the compose error used to be" \
+  --apply 'perl -pi -e "s@if \[ -n @if [ -z @" "$F"'
+
+mutation restart-stack-failure-line-on-stdout \
+  --file scripts/restart-stack.sh \
+  --bats tests/restart-stack.bats \
+  --test "restart-stack: a failure is reported on stderr, not on stdout" \
+  --why "moves the FAILED line from stderr to stdout. It is the one line of this script's output that is not compose's own text, and it is the only signal the operator gets that a stack did not come back: on stdout it merges into whatever the run printed, and any caller that captured stdout - to a log, to a variable, to a pipe - has no way left to separate the failure from the noise. This is the same class the 2026-09-02 arr-fixer sweep found nine of, and run merging the two streams is why none of them were caught" \
+  --apply 'perl -pi -e "s@ >&2\$@@" "$F"'

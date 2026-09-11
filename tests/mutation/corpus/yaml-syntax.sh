@@ -40,3 +40,18 @@ mutation yaml-fallback-never-runs \
   --test "yaml-syntax: without PyYAML a leading tab is an error" \
   --why "hardcodes has_pyyaml=true, so on a machine without PyYAML the parse silently fails for every file and the grep fallback - the only check those machines get - is never reached" \
   --apply 'sed -i "s@^    local has_pyyaml=false\$@    local has_pyyaml=true@" "$F"'
+
+# --- Entries below close gaps the generative sweep found, not gaps anyone
+# --- thought of first.
+
+# \x24 rather than \$ in the --apply below: the value is inside single quotes, so
+# a backslash before $ survives the shell and perl then reads $repo_root as one of
+# its OWN variables, expands it to nothing, and leaves a pattern matching no line -
+# an inert mutation, which the runner scores ERROR rather than a kill. \x24 is the
+# same character and means nothing to either shell.
+mutation yaml-existence-test-not-regular-file \
+  --file scripts/lib/check-yaml-syntax.sh \
+  --bats tests/lib-yaml-syntax.bats \
+  --test "yaml-syntax: a staged symlink to a directory is skipped, not called invalid YAML" \
+  --why "swaps the regular-file guard for an existence one in both arms, so a staged path that exists but is not a regular file reaches the parser. The PyYAML arm hands it to python3 whatever it is and open() on a directory raises IsADirectoryError before yaml sees it, so the check reports 'Invalid YAML syntax in <name>' and returns 1 - which scripts/pre-commit:91 counts as an ERROR and blocks the commit on. git indexes symlinks, so a symlinked .yml pointing at a directory is a path anyone can stage" \
+  --apply 'perl -pi -e "s/\[\[ -f \"\x24repo_root\/\x24file\" \]\] \|\| continue/[[ -e \"\x24repo_root\/\x24file\" ]] || continue/" "$F"'

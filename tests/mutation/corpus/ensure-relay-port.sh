@@ -55,3 +55,10 @@ mutation relay-port-failed-apply-reads-as-success \
   --test "ensure-relay-port: a failed re-apply exits 1 and says so on stderr" \
   --why "exits 0 after a failed re-apply. The header of this script documents exit 1 as its one failure signal, and it is the only thing that would ever surface in the timer's journal - without it the unit reports success while the port stays unset and Android clients keep failing to relay" \
   --apply 'sed -i "/FAILED to re-apply/{n;s@^  exit 1@  exit 0@}" "$F"'
+
+mutation relay-port-failure-line-moved-to-stdout \
+  --file scripts/ensure-tailscale-relay-port.sh \
+  --bats tests/ensure-relay-port.bats \
+  --test "ensure-relay-port: the FAILED line is on stderr and not on stdout" \
+  --why "moves the one failure this script can report onto stdout, where every other line already goes. It is the only thing that separates a reportable failure from ordinary output for a caller that reads the streams apart - an out=\$(...) capture, 2>/dev/null, or a stdout-only logger all lose the message - and the test named for that stream could not see it, because bats' run merges the two streams" \
+  --apply 'perl -pi -e '"'"'s/" >&2$/"/'"'"' "$F"'

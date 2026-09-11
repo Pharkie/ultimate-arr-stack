@@ -17,6 +17,11 @@
 # status 99 rather than by letting the call through -- node 1 carries SSH and
 # the UGOS admin UI, and it is not a thing to touch from a test.
 
+# `run --separate-stderr` is a 1.5.0 feature, and the stderr test at the bottom
+# needs it: `run` on its own merges the two streams, which is what let a `>&2`
+# be deleted here without a single test going red.
+bats_require_minimum_version 1.5.0
+
 setup() {
     load helpers/setup
     load helpers/stubs
@@ -173,6 +178,21 @@ assert_not_recognised() {
     run reapply_tail
     [ "$status" -eq 1 ]
     assert_output --partial "FAILED to re-apply"
+}
+
+@test "ensure-relay-port: the FAILED line is on stderr and not on stdout" {
+    # The test above is named for the stream and cannot see it: `run` merges
+    # stdout and stderr into $output, so it passes identically with and without
+    # the `>&2` on that echo. Every other line this script prints goes to
+    # stdout, so the failure line is the only thing that separates "the timer
+    # did its job" from the one failure it can report, for any caller that
+    # reads the streams separately -- `out=$(...)`, `2>/dev/null`, or a
+    # `| logger` on stdout alone all lose the message if it moves.
+    docker() { return 7; }
+    run --separate-stderr reapply_tail
+    [ "$status" -eq 1 ]
+    [[ "$stderr" == *"FAILED to re-apply"* ]]
+    [[ "$output" != *"FAILED to re-apply"* ]]
 }
 
 reapply_tail() {

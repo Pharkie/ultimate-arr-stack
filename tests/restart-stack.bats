@@ -94,6 +94,53 @@ setup() {
     [ "$(grep -c -- '--force-recreate' "$STUB_LOG")" -eq 6 ]
 }
 
+@test "restart-stack: each target hands compose its own file, with -f" {
+    # `-f` is the flag that makes the path mean anything. `docker compose -e
+    # <file>` is not a flag docker has -- measured against docker 29.6.2, the
+    # CLI exits 1 with "unknown shorthand flag: 'e' in -e" before it selects
+    # anything -- and under `set -e` that aborts the `all` arm at its FIRST
+    # file. So a typo here is not a broken restart, it is no restart at all, on
+    # the command someone reaches for when the house has no DNS.
+    #
+    # Nothing looked at the flag before. forbid() stops the script at its first
+    # compose call, and every dispatcher test above reads $CALLS from an
+    # overridden restart_compose, so the argv docker was actually handed was
+    # only ever grepped for --force-recreate, `down` and --remove-orphans. A
+    # flag can rot in there unnoticed.
+    while read -r target file; do
+        : > "$STUB_LOG"
+        rm -f "$STUB_FORBIDDEN"
+        run "$REPO_ROOT/scripts/restart-stack.sh" "$target"
+        [ "$status" -eq 99 ] || { echo "target '$target' exited $status, not 99"; return 1; }
+        assert_forbidden "verb: compose up" || return 1
+        assert_stub_called docker "-f $file" || return 1
+    done <<'MAP'
+arr docker-compose.arr-stack.yml
+traefik docker-compose.traefik.yml
+cloudflared docker-compose.cloudflared.yml
+utilities docker-compose.utilities.yml
+magnetio docker-compose.magnetio.yml
+MAP
+}
+
+@test "restart-stack: a failure is reported on stderr, not on stdout" {
+    # The FAILED line is the operator-facing signal that a stack did not come
+    # back, and it is the one line of this script's output that is not compose's
+    # own text. On stdout it is indistinguishable from the output of the command
+    # the operator is running, and it disappears into anything that captured the
+    # run -- `./scripts/restart-stack.sh all >/tmp/restart.log` would show the
+    # failure only if someone reads the log. `run` merges the two streams by
+    # default, which is why nothing here noticed: the streams have to be split
+    # deliberately to see it.
+    local out="$BATS_TEST_TMPDIR/out" err="$BATS_TEST_TMPDIR/err"
+    run bash -c '"$1" arr >"$2" 2>"$3"' _ "$REPO_ROOT/scripts/restart-stack.sh" "$out" "$err"
+    [ "$status" -eq 99 ]
+    grep -q "arr-stack FAILED (exit 99)" "$err" \
+        || fail "the failure line is not on stderr; stderr held:"$'\n'"$(cat "$err")"
+    ! grep -q "FAILED" "$out" \
+        || fail "the failure line is on stdout:"$'\n'"$(cat "$out")"
+}
+
 # Evaluate the real `case` block with restart_compose replaced by a logger.
 # The extracted text is the file's own, so a change to the dispatcher is
 # reflected here without the test being edited - and a change that breaks the
@@ -237,4 +284,36 @@ MAP
             echo "usage line never mentions '$target': $output"; return 1
         }
     done
+}
+
+# restart_compose itself, extracted from the file and eval'd with docker
+# replaced by a shell function. Same idiom as dispatch() above, for the other
+# half of the function: forbid() kills the script at its FIRST compose call, so
+# every test that runs the real script sees only the argv that was refused and
+# nothing downstream of it -- which is where the captured output is printed and
+# where the success line is written. The PATH stub stays installed underneath,
+# so an extraction that went wrong still cannot reach a live daemon.
+restart_one() {
+    local body
+    body=$(awk '/^restart_compose\(\) \{/,/^\}$/' "$REPO_ROOT/scripts/restart-stack.sh")
+    [ -n "$body" ] || { echo "extracted an empty restart_compose"; return 1; }
+    eval "$body"
+    restart_compose "$@"
+}
+
+@test "restart-stack: compose's own output is printed when there is any" {
+    # The output is captured rather than streamed so the "restarted" line can be
+    # conditional on what compose said, and printing it is the whole point of
+    # holding it. The guard on that print is `[ -n "$out" ]`; inverted, a stack
+    # that fails reports "FAILED (exit 1)" with no cause anywhere in the run's
+    # output, and the script prints a blank line instead on the stacks that
+    # produced nothing to say.
+    #
+    # Both of compose's streams matter here: the call captures 2>&1, so what
+    # reaches the operator is whatever docker wrote, warning or error alike.
+    docker() { printf 'Container pihole  Started\n'; printf 'compose wrote this to stderr\n' >&2; return 0; }
+    run restart_one docker-compose.arr-stack.yml arr-stack
+    assert_success
+    assert_output --partial "Container pihole  Started"
+    assert_output --partial "compose wrote this to stderr"
 }

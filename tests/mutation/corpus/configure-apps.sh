@@ -167,3 +167,10 @@ mutation configure-apps-qbit-cookie-left-behind \
   --test "configure-apps: the session cookie is removed once qBittorrent is configured" \
   --why "leaves the live session cookie on disk once qBittorrent is configured. main's EXIT trap is the backstop, not the plan - configure_qbittorrent is also called on its own, and a cleanup that only happens when someone else remembers is not a cleanup" \
   --apply 'sed -i "/^    rm -f \"\$QBIT_COOKIE\"\$/d" "$F"'
+
+mutation configure-apps-sabnzbd-name-substring-match \
+  --file scripts/configure-apps.sh \
+  --bats tests/configure-apps.bats \
+  --test "configure-apps: a container whose name merely contains sabnzbd is not sabnzbd" \
+  --why "drops -x from the SABnzbd check, so any running container whose name contains 'sabnzbd' counts. SABNZBD_RUNNING gates both the API-key lookup and the manual step in the summary, so an unrelated container turns an optional service into one this script reaches into and reports a failure for - the same substring-match defect as the required-container check above, and the same one that reached production twice already" \
+  --apply 'perl -pi -e "s/grep -qx \"sabnzbd\"/grep -q \"sabnzbd\"/" "$F"'

@@ -299,6 +299,18 @@ EOF
     assert_output --partial "SAB=true"
 }
 
+@test "configure-apps: a container whose name merely contains sabnzbd is not sabnzbd" {
+    # The same substring-match defect as the required-container check above: with
+    # `grep -q` instead of `-qx`, any name containing "sabnzbd" counts. This flag
+    # gates the SABnzbd API-key lookup and the manual step in the summary, so
+    # an unrelated container (sabnzbd-exporter, a sabnzbd-sidecar) turns an
+    # optional service into one the script reaches into and reports a failure
+    # for. This repo has already shipped this exact matcher twice.
+    printf '%s\n' sabnzbd-exporter >> "$FIX/running"
+    run "$DRIVER" eval 'check_prerequisites >/dev/null; echo "SAB=$SABNZBD_RUNNING"'
+    assert_output --partial "SAB=false"
+}
+
 # ------------------------------------------------------------ API-key discovery
 
 @test "configure-apps: each arr key is read out of that service's own config.xml" {

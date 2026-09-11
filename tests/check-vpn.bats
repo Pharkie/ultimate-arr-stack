@@ -42,6 +42,43 @@ if [ -f "$IPS/$2" ]; then cat "$IPS/$2"; else exit 1; fi
 ip()      { printf '%s\n' "$2" > "$IPS/$1"; }
 unreachable() { rm -f "$IPS/$1"; }
 
+# The egress command is a `sh -c` string handed to the container, and which of
+# curl and wget runs inside it is decided by the shell in the container. A stub
+# that answers `docker exec` with an IP off the fixture never executes that
+# string, so `||` and `&&` between the two clients were indistinguishable to
+# every test in this file. These run it for real, with a fake client directory
+# on PATH and the answers coming from the same fixtures:
+#
+#   $IPS/<container>        what wget answers (absent = wget is not installed)
+#   $IPS/curl-<container>   what curl answers (absent = curl is not installed)
+with_real_egress_clients() {
+    local bindir="$BATS_TEST_TMPDIR/egress-clients"
+    mkdir -p "$bindir"
+    cat > "$bindir/curl" <<'FAKE_CURL'
+#!/bin/bash
+[ -n "${CURL_IP:-}" ] || exit 127
+printf '%s\n' "$CURL_IP"
+FAKE_CURL
+    cat > "$bindir/wget" <<'FAKE_WGET'
+#!/bin/bash
+printf '%s\n' "${WGET_IP:-}"
+FAKE_WGET
+    chmod +x "$bindir/curl" "$bindir/wget"
+    stub_docker '
+        [ "$1" = exec ] || { echo "unexpected docker argv: $*" >&2; exit 125; }
+        CURL_IP="$(cat "$IPS/curl-$2" 2>/dev/null)"
+        WGET_IP="$(cat "$IPS/$2" 2>/dev/null)"
+        export CURL_IP WGET_IP
+        PATH="'"$bindir"':$PATH" sh -c "$5"
+    '
+}
+
+curl_ip() { printf '%s\n' "$2" > "$IPS/curl-$1"; }
+
+# Every container the script asks for an egress IP: Gluetun, the WAN reference,
+# and the tunneled list read out of the script rather than restated here.
+all_containers() { { echo gluetun; echo sonarr; bash_tunneled; } | sort -u; }
+
 # The service lists, read from the files that own them rather than restated
 # here -- a copy in this file would drift exactly as the two production lists
 # already did.
@@ -91,6 +128,36 @@ ts_list() {
     run "$SCRIPT"
     assert_failure
     assert_output --partial "Empty response"
+}
+
+@test "check-vpn: the wget fallback still answers when curl is not installed" {
+    # egress_ip's own comment records the case: Gluetun has no curl, only wget.
+    # `||` is what makes wget a fallback rather than a second requirement. With
+    # `&&` it runs only after curl has already succeeded, so Gluetun's egress
+    # becomes unreadable and every run ends at "Could not reach an IP-check
+    # service through Gluetun" -- while the bridge-only containers, which do
+    # have curl, keep answering normally and make the breakage look partial.
+    with_real_egress_clients
+    run "$SCRIPT"
+    assert_success
+    assert_output --partial "VPN IP: 185.107.56.9"
+    assert_output --partial "OK: qbittorrent egress IP matches Gluetun"
+}
+
+@test "check-vpn: a working curl is not followed by wget" {
+    # The other half of the same `||`. With `&&` the fallback stops being a
+    # fallback: wget runs after a curl that already answered, and egress_ip
+    # returns both answers on two lines, so the reported VPN IP and every
+    # comparison made below it are made against a two-line string. The second
+    # answer showing up in the report is the only thing that says so.
+    with_real_egress_clients
+    local c
+    while read -r c; do curl_ip "$c" "$(cat "$IPS/$c")"; done < <(all_containers)
+    while read -r c; do ip "$c" "198.51.100.7"; done < <(all_containers)
+    run "$SCRIPT"
+    assert_success
+    assert_output --partial "VPN IP: 185.107.56.9"
+    refute_output --partial "198.51.100.7"
 }
 
 @test "check-vpn: a missing WAN reference SKIPS that comparison, loudly" {

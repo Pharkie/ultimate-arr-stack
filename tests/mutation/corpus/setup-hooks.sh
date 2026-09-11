@@ -47,3 +47,13 @@ mutation setup-hooks-post-merge-not-installed \
   --test "setup-hooks: it installs exactly the hooks this repo actually ships" \
   --why "installs pre-commit but not post-merge, while the closing summary still claims both. post-merge is what syncs main to the NAS after a merge, so its absence means merges land locally and the NAS quietly keeps running the previous commit - indistinguishable from a deployed one" \
   --apply 'sed -i "/^ln -s \"\$SCRIPT_DIR\/scripts\/post-merge\"/d" "$F"'
+
+# --- Entries below close gaps the generative sweep found, not gaps anyone
+# --- thought of first.
+
+mutation setup-hooks-errexit-dropped \
+  --file setup-hooks.sh \
+  --bats tests/setup-hooks.bats \
+  --test "setup-hooks: a replacement that fails is fatal, not a success report" \
+  --why "replaces the file's set -e with a no-op, which is the only thing that makes any step below it fatal. rm is refused on a path that is not a removable file and the ln -s that follows then fails with 'File exists'; with errexit gone the script prints 'Created symlink: ...' for a path it never replaced and then 'Done! Hooks installed: pre-commit, post-merge.' - exit 0, no hook installed, and the output says the opposite" \
+  --apply 'perl -pi -e "s/^set -e\$/true/" "$F"'

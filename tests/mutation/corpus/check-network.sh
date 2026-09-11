@@ -63,3 +63,10 @@ mutation check-network-removal-never-reached \
   --test "check-network: answering y reaches docker network rm" \
   --why "turns the removal into an echo. The test that drives the y path asserts the harness STOPPED a real call, so without this entry it would pass just as happily against a script that never removes anything - proving the test observes the destructive call rather than merely surviving it" \
   --apply 'sed -i "s@^        docker network rm \"\$net\"\$@        echo docker network rm \"\$net\"@" "$F"'
+
+mutation check-network-failed-inspect-kills-the-run \
+  --file scripts/check-network.sh \
+  --bats tests/check-network.bats \
+  --test "check-network: a container-list inspect that fails does not kill the report" \
+  --why "makes a failed container-list inspect fatal. The existence check and the templated check are two separate docker calls and they can disagree - the network can be removed between them, or the daemon can fail the second one - and a half-finished cleanup is the state this script is run in. Under set -e the whole run then exits 1 having said nothing about that network and never looks at the rest of the list, so an orphan further down is reported by nobody" \
+  --apply 'perl -pi -e '"'"'s{ 2>/dev/null \|\| true\)}{ 2>/dev/null && true)}'"'"' "$F"'

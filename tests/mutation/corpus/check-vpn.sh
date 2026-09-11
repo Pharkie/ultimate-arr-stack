@@ -61,3 +61,14 @@ mutation check-vpn-reference-is-itself-tunneled \
   --test "check-vpn: the WAN reference container is one the e2e spec calls bridge-only" \
   --why "points the WAN reference at a container that is behind Gluetun. The headline check then compares the VPN against itself: the two IPs are always equal, so every single run reports a leak - or, had the comparison been written the other way round, none ever would. Either way the reference stops being a reference and nothing in the script's own output says so" \
   --apply 'sed -i "s@^BRIDGE_REF=\"\${BRIDGE_REF:-sonarr}\"\$@BRIDGE_REF=\"\${BRIDGE_REF:-qbittorrent}\"@" "$F"'
+
+# Two tests, one operator: the fallback test is the one named here, and
+# 'a working curl is not followed by wget' pins the same `||` from the other
+# side - with `&&` a successful curl is followed by wget, so the egress IP is
+# two answers concatenated and the comparisons below are made against both.
+mutation check-vpn-wget-fallback-becomes-a-requirement \
+  --file scripts/check-vpn.sh \
+  --bats tests/check-vpn.bats \
+  --test "check-vpn: the wget fallback still answers when curl is not installed" \
+  --why "turns the wget fallback into a second requirement. Gluetun has no curl, only wget - the comment above egress_ip says so and that is the only reason it can read an IP from the VPN side at all - so with && the fallback runs only after curl has already succeeded, every run ends at 'Could not reach an IP-check service through Gluetun', and the bridge-only containers keep answering normally, which makes the whole thing look like one unreachable container rather than a broken check" \
+  --apply 'perl -pi -e '"'"'s/\|\| wget -qO-/&& wget -qO-/'"'"' "$F"'

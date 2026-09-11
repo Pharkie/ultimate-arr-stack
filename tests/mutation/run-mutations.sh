@@ -46,6 +46,7 @@ shift $((OPTIND - 1))
 # also provides ROOT, WORK, CURRENT_FILE/CURRENT_BACKUP and the EXIT trap.
 # shellcheck source=tests/mutation/lib-mutate.sh
 source "$ROOT/tests/mutation/lib-mutate.sh"
+mutate_require_bound run-mutations
 
 TOTAL=0; KILLED=0; SURVIVED=0; ERRORED=0; SKIPPED=0; TIMEDOUT=0
 

@@ -701,6 +701,60 @@ RUNNER
     }
 }
 
+@test "run_tests still bounds the oracle where GNU timeout is absent" {
+    # macOS ships no `timeout`. Until this fallback existed, the budget went
+    # straight to it, the command substitution came back 127 ("command not
+    # found"), and both runners read any non-zero status as a failed test -- so
+    # EVERY mutant on macOS was scored KILLED. Measured 2026-09-11: all 19
+    # entries of the check-image-versions corpus reported KILLED there, and
+    # replaying them with a `timeout` shim on PATH turned one back into
+    # SURVIVED. A harness that invents kills is worse than one that finds
+    # nothing, because the ledger it writes is believed.
+    #
+    # The absence is reproduced with a PATH holding only what this path needs:
+    # bash and sleep for the fake oracle, grep for run_tests' own TAP parse,
+    # dirname, mktemp and rm for the library's own WORK directory and the exit
+    # trap that cleans it up, perl for the fallback itself. Nothing is
+    # uninstalled and nothing outside BATS_TEST_TMPDIR is touched.
+    command -v perl >/dev/null 2>&1 || skip "no perl on this machine to fall back to"
+    mkdir -p "$FX/nobin" "$FX/fakeroot/tests"
+    local tool
+    for tool in bash sleep grep perl dirname mktemp rm; do
+        ln -sf "$(command -v "$tool")" "$FX/nobin/$tool"
+    done
+    cat > "$FX/fakeroot/tests/run-tests.sh" <<'RUNNER'
+#!/bin/bash
+echo "1..1"
+bash -c 'sleep 5'
+RUNNER
+    chmod +x "$FX/fakeroot/tests/run-tests.sh"
+    run bash -c "
+        PATH='$FX/nobin'
+        source '$REPO_ROOT/tests/mutation/lib-mutate.sh'
+        ROOT='$FX/fakeroot'
+        start=\$SECONDS
+        res=\$(run_tests /dev/null '^x' 1)
+        echo \"bound=[\$MUTATE_BOUND] res=[\$res] elapsed=\$(( SECONDS - start ))\"
+    "
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    # Without this the test could pass on a host that has `timeout` and never
+    # reach the fallback at all -- the shape of assertion that reads as coverage
+    # while testing nothing.
+    [[ "$output" == *"bound=[perl]"* ]] || {
+        echo "this did not exercise the perl fallback, so it says nothing about it:"
+        echo "$output"; return 1
+    }
+    [[ "$output" == *"res=[124 "* ]] || {
+        echo "an oracle that never finished did not come back as a timeout:"
+        echo "$output"; return 1
+    }
+    local elapsed="${output##*elapsed=}"
+    [ "$elapsed" -le 3 ] || {
+        echo "the fallback reported 124 after ${elapsed}s, so nothing was actually bounded"
+        echo "$output"; return 1
+    }
+}
+
 @test "run_tests leaves the oracle unbounded when no budget is given" {
     # The other half. A bound that fires unconditionally would pass the test
     # above while scoring every slow-but-passing oracle as a kill.

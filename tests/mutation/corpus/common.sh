@@ -86,3 +86,28 @@ mutation common-staged-includes-deletions \
   --test "common: get_staged_files returns only staged additions and modifications" \
   --why "drops --diff-filter=ACM, so deleted paths join the list every content check then tries to read. read_file_content returns 1 on a missing file, and two of those checks are called BARE under set -e" \
   --apply 'sed -i "s@--diff-filter=ACM @@" "$F"'
+
+# The pair below is one guard read two ways, and each entry is here because the
+# other would not have caught it. Both leave the file green without the test
+# named in --test: the only is_ssh_available test there asserted the no-host
+# path, and a guard that returns 1 unconditionally fails that path exactly as a
+# correct guard does.
+#
+# The `'"'"'` sequences are only so this value can be single-quoted in a file
+# that bash sources AND single-quoted again for `bash -c` at replay time; the
+# `\$` is what makes perl see a literal $nas_host instead of interpolating an
+# empty variable and matching nothing.
+
+mutation common-ssh-available-rejects-configured-host \
+  --file scripts/lib/common.sh \
+  --bats tests/lib-common.bats \
+  --test "common: is_ssh_available is true when the host is set and the port answers" \
+  --why "is_ssh_available now returns 1 for a host that IS configured, so it can never report an open port. Every caller is the same shape - 'if ! is_ssh_available; then SKIP' in check-env-backup.sh, check-dns-duplicates.sh and check-uptime-monitors.sh - so the NAS checks do not fail, they report OK without looking, on a NAS that is up" \
+  --apply 'perl -pi -e '"'"'s/\[\[ -z "\$nas_host" \]\] && return 1/\[\[ -n "\$nas_host" \]\] && return 1/'"'"' "$F"'
+
+mutation common-ssh-available-guard-negated \
+  --file scripts/lib/common.sh \
+  --bats tests/lib-common.bats \
+  --test "common: is_ssh_available is true when the host is set and the port answers" \
+  --why "the same always-fails outcome reached from the other side: '|| return 1' fires whenever the host is NOT empty, and falls through to a connect on the empty string when it is (which fails anyway). A test that only ever asserts failure cannot tell a guard that works from a guard that always fires" \
+  --apply 'perl -pi -e '"'"'s/\[\[ -z "\$nas_host" \]\] && return 1/\[\[ -z "\$nas_host" \]\] || return 1/'"'"' "$F"'

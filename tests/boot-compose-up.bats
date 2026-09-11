@@ -95,6 +95,24 @@ exit 0
     assert_stub_not_called docker "compose"
 }
 
+@test "boot-compose-up: the give-up budget is the 5 minutes its message claims" {
+    # The loop sleeps 5s per attempt and gives up once the counter EXCEEDS 60,
+    # so the budget is 61 attempts and 60 sleeps -- the 300s the give-up line
+    # names. `-ge 60` is one attempt and 5 seconds short of that, and the window
+    # it removes is not hypothetical: cron fires this at @reboot precisely
+    # because dockerd is not up yet, so a daemon that becomes ready at 296s gets
+    # every stack reconciled by the real script and none by the mutant, with a
+    # log line still claiming 5 minutes.
+    stub_docker '[ "$1" = info ] && exit 1; exit 0'
+    run "$SCRIPT"
+    assert_failure
+    local attempts sleeps
+    attempts=$(grep -c '^docker'$'\t''info' "$STUB_LOG")
+    sleeps=$(grep -c '^sleep'$'\t' "$STUB_LOG")
+    [ "$attempts" -eq 61 ] || fail "docker info was tried $attempts times, not 61"
+    [ "$sleeps" -eq 60 ] || fail "the wait loop slept $sleeps times, not 60"
+}
+
 @test "boot-compose-up: an oversized log is trimmed to its last 500 lines" {
     # No logrotate on this NAS, so an untrimmed log grows until the volume does
     # not. The trim must also not leave its own .tmp behind on every run.
@@ -108,6 +126,29 @@ exit 0
     [ "$(head -1 "$BOOT_LOG" | cut -d' ' -f1)" = "1501" ] \
         || fail "expected the trim to keep lines 1501-2000, log starts: $(head -1 "$BOOT_LOG" | cut -c1-20)"
     [ ! -e "$BOOT_LOG.tmp" ] || fail "the trim left $BOOT_LOG.tmp behind"
+}
+
+@test "boot-compose-up: a log of exactly the limit is left alone" {
+    # `-gt 1000000`, not `-ge`: the trim is for a log that has outgrown its
+    # bound, and a file sitting exactly on the bound has not. Bend it to `-ge`
+    # and this fixture is rewritten to its last 500 lines -- the oldest entries
+    # dropped by an inclusive comparison, in a file whose entire purpose is to
+    # still hold the reboot someone is asking about.
+    local i
+    { printf 'ANCIENT FIRST LINE\n'
+      for i in $(seq 1 998); do
+          printf '%s %s\n' "$i" "$(head -c 900 < /dev/zero | tr '\0' 'x')"
+      done
+    } > "$BOOT_LOG"
+    local pad
+    pad=$((1000000 - $(wc -c < "$BOOT_LOG") - 1))
+    [ "$pad" -gt 0 ] || skip "the fixture overshot the limit before padding"
+    { head -c "$pad" < /dev/zero | tr '\0' 'x'; printf '\n'; } >> "$BOOT_LOG"
+    [ "$(wc -c < "$BOOT_LOG")" -eq 1000000 ] || skip "could not build a 1000000-byte fixture"
+
+    run "$SCRIPT"
+    [ "$(head -1 "$BOOT_LOG")" = "ANCIENT FIRST LINE" ] \
+        || fail "a log of exactly 1000000 bytes was trimmed; the guard is -gt, not -ge"
 }
 
 @test "boot-compose-up: a log under the limit is left alone" {
@@ -209,6 +250,12 @@ exit 0
     # name, so every container from the other files looks like an orphan to each
     # individual file. --remove-orphans took out 11 containers on 2026-08-01.
     run "$SCRIPT"
-    assert_stub_not_called docker -- "--remove-orphans"
+    # Two arguments, not three. As `assert_stub_not_called docker -- "--remove-orphans"`
+    # this passed `--` as the pattern and dropped the flag it names: the helper
+    # takes (tool, pattern), so the search was for a bare `--` and would have
+    # fired on any legitimate one. It still went red against its corpus entry,
+    # because `--` is a substring of `--remove-orphans` -- a wrong-reason
+    # assertion hiding inside a right-reason failure.
+    assert_stub_not_called docker "--remove-orphans"
     assert_stub_not_called docker "down"
 }

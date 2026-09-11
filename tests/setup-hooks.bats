@@ -99,6 +99,22 @@ setup() {
     [ -L "$HOOKS/pre-commit" ]
 }
 
+@test "setup-hooks: a replacement that fails is fatal, not a success report" {
+    # "Installed, correctly linked and inert" is this script's recorded failure
+    # mode, so the status it exits with has to mean something. Removal is not
+    # guaranteed to work: `rm` refuses a directory, and when the rm fails the
+    # ln -s eight lines later fails too ("File exists"). The file's own set -e is
+    # what stops there. With errexit gone the script walks to the end and prints
+    # "Created symlink: ..." for a path it never replaced, then
+    # "Done! Hooks installed: pre-commit, post-merge." -- exit 0, no pre-commit
+    # hook, and nothing in the output saying so.
+    mkdir "$HOOKS/pre-commit"
+    run "$CO/setup-hooks.sh"
+    assert_failure
+    refute_output --partial "Done! Hooks installed"
+    refute_output --partial "Created symlink"
+}
+
 @test "setup-hooks: in a worktree the hooks land in the common git dir" {
     # The whole reason this script uses --git-common-dir rather than [[ -d .git ]].
     # In a worktree .git is a FILE, so the naive check reads "not a git repo",

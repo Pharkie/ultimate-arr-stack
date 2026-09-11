@@ -68,3 +68,17 @@ mutation boot-remove-orphans \
   --test "boot-compose-up: --remove-orphans and 'down' never appear in any argv" \
   --why "adds --remove-orphans to the boot bring-up. The stack's services are split across compose files sharing one project name, so every container defined by the other files looks like an orphan to each individual file. This took out 11 containers on 2026-08-01; at boot it would do it to all of them in sequence" \
   --apply 'sed -i "s@docker compose -f \"\$(basename \"\$f\")\" up -d@docker compose -f \"\$(basename \"\$f\")\" up -d --remove-orphans@" "$F"'
+
+mutation boot-log-trim-boundary-inclusive \
+  --file scripts/boot-compose-up.sh \
+  --bats tests/boot-compose-up.bats \
+  --test "boot-compose-up: a log of exactly the limit is left alone" \
+  --why "makes the trim fire AT the limit instead of above it. A log sitting exactly on the bound is rewritten to its last 500 lines, so the oldest entries - the ones from the boot someone is asking about - are dropped by an inclusive comparison, in the one file that records what a reboot did. The sibling script needed the same boundary closed, and the same class is what the 2026-09-01 sweep found surviving elsewhere: -gt to -ge changes no exit status, only what gets rewritten" \
+  --apply 'perl -pi -e "s@-gt 1000000 \]@-ge 1000000 ]@" "$F"'
+
+mutation boot-wait-budget-off-by-one \
+  --file scripts/boot-compose-up.sh \
+  --bats tests/boot-compose-up.bats \
+  --test "boot-compose-up: the give-up budget is the 5 minutes its message claims" \
+  --why "stops the wait one attempt early. The loop sleeps 5s per attempt and gives up once the counter exceeds 60, which is the 300s the give-up line names; -ge 60 makes that 295s, so a dockerd that becomes ready in the window between gets every stack reconciled by the real script and none by this one - after a reboot, which is the one moment nobody is watching the log that still claims 5 minutes" \
+  --apply 'perl -pi -e "s@-gt 60 \]@-ge 60 ]@" "$F"'

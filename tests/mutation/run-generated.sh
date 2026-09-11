@@ -30,6 +30,7 @@ set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 # shellcheck source=tests/mutation/lib-mutate.sh
 source "$ROOT/tests/mutation/lib-mutate.sh"
+mutate_require_bound run-generated
 
 # Overridable so a test can exercise the ledger-merge rules without writing to
 # the repo's real one. It used to be hardcoded, and tests/mutation-framework.bats

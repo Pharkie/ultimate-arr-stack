@@ -788,3 +788,38 @@ write-up in `tests/mutation/README.md`; these are the one-line forms.
   Fixed by wrapping the guarded commands in a brace group and redirecting the group:
   `{ cmds...; } 2>&1`, so the group's own exit status (the last real command run
   inside it) is what reaches `$?`.
+
+## 9. The bound that was not there, 2026-09-11
+
+Found while triaging the first full generated sweep, in the tool doing the
+triaging rather than in the code it was judging.
+
+`run_tests()` hands the oracle's wall-clock budget to `timeout`. `timeout` is
+GNU coreutils, and the machine this session ran on is macOS, where it does not
+exist. The command substitution therefore came back **127, command not found**. That status is non-zero
+and 127 is non-zero, and both runners score any non-zero oracle as a **kill**.
+Every mutant examined on that host was reported KILLED, including the ones the
+suite genuinely cannot see.
+
+It was caught by replaying a corpus file whose answer was already known: all 19
+entries of `tests/mutation/corpus/image-versions.sh` reported KILLED, then
+reported a different verdict for one of them once a `timeout` shim was put on
+`PATH`. Every "proved able to fail" claim made on that host before the shim is
+worthless, which is the real cost: the ledger's whole purpose is that its rows
+are believed.
+
+The same shape as this document's opening defect class, one level up: not a test
+that cannot fail, but a **harness that cannot report failure**. Both make a gap
+look covered. Two things keep it from recurring:
+
+- the bound command is resolved once (`timeout`, `gtimeout`, or a `perl`
+  fallback) and both runners **refuse to start** (exit 77) on a host with none,
+  so "cannot judge" is never silently the same as "judged, and it died";
+- the fallback forks and kills the **process group**, because the bound is only
+  real if the grandchild dies too. Dropping that was worth 30 seconds of wall
+  clock against a 1-second budget, and is now the corpus entry
+  `oracle-bound-fallback-loses-the-process-group`.
+
+The general form is worth keeping: when a tool's verdict depends on an external
+binary, a missing binary is not a missing feature, it is a **wrong answer**. Test
+the absence, not just the presence.

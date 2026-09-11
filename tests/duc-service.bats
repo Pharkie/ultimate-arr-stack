@@ -110,6 +110,24 @@ duc_fails_with() { echo "$1" > "$DUC_RC_FILE"; }
     assert_output --partial "(exit code: 4)"
 }
 
+@test "duc: a scan whose log cannot be written is not reported as a success" {
+    # The log is the only record a scan leaves behind, and tee failing means
+    # there is none. errexit is what turns that into a non-zero exit: pipefail
+    # carries tee's failure out of the pipeline and errexit exits on it, before
+    # the script reaches the explicit `exit "${PIPESTATUS[0]}"` below - which
+    # reads the INDEX's status, 0 here, and would report a scan that recorded
+    # nothing as a success. That pipeline is the only unguarded command in the
+    # file, so a tee that cannot open its log is the one way this shows.
+    #
+    # A directory at the log path provokes it without depending on the uid the
+    # suite runs as: tee cannot open a directory for appending, whoever it is.
+    rm -f "$DUC_LOG_FILE"
+    mkdir -p "$DUC_LOG_FILE"
+    run "$APP/scan.sh"
+    assert_stub_called duc "index"
+    assert_failure
+}
+
 @test "duc: scan.sh reports the index's status, not tee's" {
     duc_fails_with 1
     run "$APP/scan.sh"
@@ -211,6 +229,23 @@ duc_fails_with() { echo "$1" > "$DUC_RC_FILE"; }
     assert_success
     assert_output --partial "A scan is already in progress"
     assert_output --partial "(no log yet)"
+}
+
+@test "duc: the cgi does not report a queued scan when the marker cannot be created" {
+    # Dropping errexit from this file is invisible until the mkdir fails, and
+    # then the cgi answers "A scan will be started within one minute" for a
+    # request that was never queued. Nothing consumes a missing marker - the
+    # poller branches on it - so the user is told a scan is coming and no scan
+    # ever runs.
+    #
+    # A regular file at the marker path is the one state `mkdir -p` cannot
+    # resolve, which makes this hermetic and independent of the uid the suite
+    # runs as; it stands in for any mkdir failure, a full /tmp or a read-only
+    # mount among them.
+    : > "$DUC_REQUEST_DIR"
+    run "$APP/manual_scan.cgi"
+    assert_failure
+    refute_output --partial "A scan will be started within one minute"
 }
 
 @test "duc: the log cgi serves the log with a content type" {
@@ -321,4 +356,22 @@ run_main() {
     assert_success
     assert_output --partial "Initial scan failed (exit 7)"
     assert_output --partial "webserver started"
+}
+
+@test "duc: startup does not come up when the cron daemon cannot start" {
+    # Every scan this container runs is a crontab entry, so a cron that will not
+    # start leaves a UI whose button queues requests nothing will ever consume.
+    # errexit is what makes that fatal: the bare "$CRON_BIN" call aborts main()
+    # before start_webserver, the container exits, and restart: always turns it
+    # into a visible crash loop. The line before it in main() is the assertion
+    # that the abort happened at the cron step and not somewhere earlier.
+    #
+    # The initial scan directly above is deliberately tolerant of failure; this
+    # one is deliberately not, and dropping -e erases the difference.
+    export SCHEDULE="0 4 * * *"
+    export DUC_CRON_BIN=false
+    run_main
+    assert_failure
+    assert_output --partial "Creating cron schedule: 0 4 * * *"
+    refute_output --partial "webserver started"
 }

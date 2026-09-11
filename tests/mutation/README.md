@@ -413,6 +413,25 @@ Two implementation details are load-bearing and both are asserted:
 `ORACLE_BUDGET_FLOOR` exists only so that the timeout-scoring branch can be
 watched firing in seconds instead of a minute. Nothing outside `tests/` sets it.
 
+### Which tool does the bounding
+
+`timeout` is GNU coreutils, and macOS does not ship it. `lib-mutate.sh` resolves
+one of `timeout`, `gtimeout`, or a `perl` fallback at source time, and the
+runners refuse to start (exit 77) if a host has none of the three, because the
+alternative is not "no bound", it is a **lie**: the budget went to a missing
+binary, the command substitution came back 127 (*command not found*), and both
+runners read any non-zero status as a failing test and scored the mutant
+KILLED. Measured 2026-09-11: all 19 entries of the `check-image-versions` corpus
+reported KILLED on a macOS host, and replaying them with a `timeout` shim on
+`PATH` turned one back into SURVIVED.
+
+The fallback is not a one-line `alarm` + `exec`. It forks, puts the child in its
+own process group, and kills the group. The second load-bearing detail above
+applies to it exactly as it applies to GNU `timeout`, and dropping it was worth
+30 seconds of wall clock against a 1-second budget in the replay that found it
+(`tests/mutation/corpus/oracle-bound.sh`). It exits 124 on timeout so the
+scoring branch needs no translation.
+
 ## Adding a mutation
 
 A corpus file is an ordinary shell script calling `mutation`. There is no
