@@ -1,0 +1,34 @@
+# Trivy findings this repository has looked at and decided against.
+#
+# Read by the `supply chain (trivy and sbom)` job in .github/workflows/ci.yml,
+# which runs `trivy fs --scanners vuln,misconfig --severity HIGH,CRITICAL
+# --exit-code 1`. Suppression is by rule id, and a bare id silences that rule
+# everywhere, so each entry below carries the reason it is here and what would
+# remove it. Anything not listed is a finding, and a finding fails the job.
+#
+# The file exists because the first run of that gate produced six findings and
+# none of them was a defect in a deployed image. Two were real enough to fix
+# instead (DS-0029 in .devcontainer/Dockerfile, and a comment on the ENV line
+# DS-0031 flags in stremio-jellyfin/Dockerfile). The rest are below.
+
+# DS-0002: last USER is root, or no USER at all.
+#
+# All four are containers that have to be root, and three of them are this
+# repository's own test tooling rather than anything a NAS runs.
+#
+#   tests/e2e     writes to the mounted checkout on the runner and reads
+#                 /var/run/docker.sock to reach the daemon. Both are root-owned
+#                 on the runner; a non-root user would fail at the first write
+#                 or the first docker call, which is what these images are for.
+#   tests/mutation  runs the containerised mutation oracle, which mutates files
+#                 in its own copy of the tree.
+#   tests/toolkit   the pytest and kcov image, same shape: it writes reports
+#                 into a mounted directory.
+#   duc-service     a real deployed image, and the one worth revisiting. nginx
+#                 binds port 80 inside it and startup.sh drives dpkg-installed
+#                 cron; both want root. The fix is setcap on the nginx binary
+#                 plus dropping privileges in startup.sh, which changes how a
+#                 live service starts. Worth doing deliberately, with the duc
+#                 container healthy in front of you, not as a side effect of
+#                 adding a scanner.
+DS-0002

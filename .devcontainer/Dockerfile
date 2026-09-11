@@ -1,8 +1,20 @@
+# Development container. Deliberately NOT pinned, and this comment is the
+# exception the image policy requires (CONTRIBUTING.md, "Image pinning").
+#
+# Nothing here is deployed: this file builds a contributor's editor container,
+# and the stack it works on runs from docker-compose.*.yml, whose images ARE
+# pinned and are asserted by tests/compose-validation.bats. Pinning it would mean
+# chasing `npm@latest` and the Claude Code package on every release for no
+# runtime benefit. It floats on purpose, and a bad upstream release is a broken
+# devcontainer, not a broken NAS.
 FROM mcr.microsoft.com/devcontainers/base:ubuntu
 
-# Node.js (for Claude Code + Playwright)
+# Node.js (for Claude Code + Playwright).
+# `--no-install-recommends` matches every other install in this file. Trivy's
+# DS-0029 caught its absence here: without it the NodeSource script drags in the
+# recommended set, which this container never uses.
 RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
-    && apt-get install -y nodejs \
+    && apt-get install -y --no-install-recommends nodejs \
     && rm -rf /var/lib/apt/lists/*
 
 # Docker CLI + Compose plugin (to manage the project's docker-compose stack)

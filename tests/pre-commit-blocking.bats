@@ -61,6 +61,14 @@ setup() {
     git -C "$FX" config user.email t@example.com
     git -C "$FX" config user.name t
     git -C "$FX" config commit.gpgsign false
+    # Host hooks off, for the fixture only. `core.hooksPath` can be set globally
+    # (this machine sets it), and git then reads hooks from there INSTEAD of
+    # .git/hooks -- so the seed commit below ran a style gate that has nothing
+    # to do with this repository, failed on the copied scripts/, and left six
+    # tests in this file red on that machine while CI stayed green. A test
+    # fixture that a contributor's global git config can decide the outcome of
+    # is not testing what it says.
+    git -C "$FX" config core.hooksPath /dev/null
     cp -r "$REPO_ROOT/scripts" "$FX/scripts"
 
     # `zqxhost` is deliberately a string that appears NOWHERE in scripts/.

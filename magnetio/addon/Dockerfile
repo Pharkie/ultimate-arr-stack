@@ -17,6 +17,10 @@ RUN apt-get update \
     ca-certificates \
     build-essential \
     python3-setuptools \
+  # Unpinned on purpose: ffsubsync is a build-time convenience for the addon's
+  # subtitle handling, not a service this stack exposes, and floating it here
+  # matches the npm install below. The base image is pinned; see CONTRIBUTING.md,
+  # "Image pinning".
   && python3 -m pip install --no-cache-dir --break-system-packages ffsubsync \
   && rm -rf /var/lib/apt/lists/*
 

@@ -6,9 +6,19 @@ name: CI
 # live-router assertion all belong to nas-auto-deploy.yml -- or skip themselves
 # with a stated reason, which the census in the bats job prints.
 #
-# main is protected (pull requests required, enforced for admins), so this file
-# is the only automated check a PR can carry. It is deliberately not a required
-# status check yet: that is a policy decision, not a workflow one.
+# main is protected: pull requests required, enforced for admins, and the three
+# per-push jobs below -- `bats suite`, `mutation guards for this change` and
+# `workflow and terraform lint` -- are required status checks, so a merge cannot
+# skip any of them, admins included. This comment used to say the opposite
+# ("deliberately not a required status check yet"); that policy decision had
+# already been made in the repository settings, and the stale sentence misled two
+# readers before it was caught. The branch-protection API is the source of truth,
+# not this file:
+#
+#   gh api repos/<owner>/<repo>/branches/main/protection
+#
+# The nightly-only job is deliberately NOT required: it is a discovery tool, and
+# gating every PR on a sweep that runs for an hour buys no defect detection.
 on:
   pull_request:
     branches: [main]
@@ -17,8 +27,13 @@ on:
   workflow_dispatch: {}
   schedule:
     # The expensive halves run nightly rather than per push: the regression
-    # corpus is 276 entries and runs its oracle twice each, and the discovery
-    # sweep generates hundreds of mutants per target. 03:23 UTC.
+    # corpus runs each entry's oracle twice, and the discovery sweep generates
+    # hundreds of mutants per target. 03:23 UTC.
+    #
+    # No entry count here on purpose. This comment said 276 while the corpus had
+    # grown to 323, which is the same stale-number failure CONTRIBUTING.md warns
+    # about; `ls tests/mutation/corpus/*.sh` and the run summary are the numbers,
+    # and neither needs editing.
     - cron: '23 3 * * *'
 
 concurrency:
@@ -111,6 +126,64 @@ jobs:
         # init and belongs in the nightly job if it is wanted at all.
         run: docker run --rm -v "$PWD/terraform:/tf" -w /tf hashicorp/terraform:1.9.8 fmt -check -recursive
 
+  supply-chain:
+    name: supply chain (trivy and sbom)
+    # Pinned tools, run from their images rather than installed on the host --
+    # the same rule actionlint and terraform follow above, and the reason
+    # CLAUDE.md keeps the host and CI tool lists separate. Both are pinned by
+    # digest: a scanner that floats changes what "clean" means about the same
+    # commit, which is the one thing a supply-chain gate must not do.
+    #
+    # Deliberately NOT a required status check yet. It is a new gate on a
+    # scanner whose database is upstream, and a transient DB failure blocking
+    # every merge is the failure mode that gets a check disabled. Watch it run
+    # for a while, then make it required with:
+    #   gh api -X PATCH repos/<owner>/<repo>/branches/main/protection/required_status_checks \
+    #     -f 'contexts[]=supply chain (trivy and sbom)' ... (or the UI)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: SBOM (syft)
+        # A software bill of materials for this commit: what is in the tree, in
+        # SPDX and CycloneDX. Generated every push, kept as an artifact.
+        run: |
+          set -e
+          docker run --rm -v "$PWD:/repo" -w /repo \
+            anchore/syft:v1.51.1@sha256:95fe0835e5bebc6f8b1f8acef68d47d63d594ef4c0f25c097ff853b23cbac74c \
+            dir:. -o spdx-json=/repo/sbom.spdx.json -o cyclonedx-json=/repo/sbom.cyclonedx.json
+
+      - name: Upload the SBOM
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom
+          path: |
+            sbom.spdx.json
+            sbom.cyclonedx.json
+          if-no-files-found: error
+
+      - name: Trivy (dependencies and misconfiguration)
+        # `--scanners vuln,misconfig` and not `secret`: secret pattern scanning
+        # belongs to scripts/lib/check-secrets.sh, which owns the allowlist for
+        # this repo's placeholders. A second scanner for the same question is how
+        # two answers start disagreeing. (An earlier version of this comment
+        # claimed gitleaks covered pre-commit and this workflow. It does not run
+        # in either place -- nothing tracked invokes it -- so adding this scanner
+        # here would duplicate nothing and change the verdict in CI. Recorded in
+        # docs/QUALITY-CONTROL-MAP.md rather than fixed in passing.)
+        #
+        # HIGH and CRITICAL only: the misconfiguration rules below that are noise
+        # for a single-host compose stack, and a gate people learn to ignore is
+        # worse than no gate.
+        #
+        # This is the check that fails CI on a high-severity dependency finding.
+        run: |
+          set -e
+          docker run --rm -v "$PWD:/repo" -w /repo \
+            aquasec/trivy:0.74.0@sha256:62b1e65e8869bc4b4c6aa4fa2b21595256c7c2f6018a9d9ad61caf87187c1969 \
+            fs --scanners vuln,misconfig --severity HIGH,CRITICAL \
+               --exit-code 1 --no-progress .
+
   heavy:
     name: full corpus and discovery sweep
     # Nightly, or on demand. Not per push: minutes to tens of minutes.
@@ -148,6 +221,52 @@ jobs:
         # README says it is not a gate, so it must not fail the run.
         continue-on-error: true
         run: timeout 20m ./tests/toolkit/coverage.sh
+
+      - name: Container images (trivy, a diagnostic)
+        # The images are the dependency surface this stack actually runs. The
+        # filesystem scan in the per-push job sees almost none of it: no lockfile
+        # is committed for the Node subprojects, and the compose files pin images
+        # by tag rather than vendoring them. Nightly and non-blocking for the same
+        # reason the sweep is -- it pulls every image, and its database is
+        # upstream. `docker compose config` is deliberately not the input here:
+        # trivy's misconfig scanner reads the compose files directly, and the
+        # per-push job already runs it.
+        #
+        # The list is the registry images only. `:local` tags are this repo's own
+        # builds (four of them, each with a `build:` block) and pulling one from a
+        # registry is a failure, not a finding; an image named by a variable is
+        # not resolved here on purpose, because resolving it would make this step
+        # depend on `.env`, which the runner does not have.
+        continue-on-error: true
+        run: |
+          set -e
+          mkdir -p trivy-images
+          grep -hE '^[[:space:]]+image:[[:space:]]+[^$]' docker-compose*.yml \
+            | sed 's/.*image:[[:space:]]*//' | tr -d '"' | sort -u \
+            | grep -v ':local$' > /tmp/images.txt
+          while read -r img; do
+            [ -n "$img" ] || continue
+            echo "== $img"
+            docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+              -v "$PWD/trivy-images:/out" \
+              aquasec/trivy:0.74.0@sha256:62b1e65e8869bc4b4c6aa4fa2b21595256c7c2f6018a9d9ad61caf87187c1969 \
+              image --severity CRITICAL --ignore-unfixed --no-progress \
+              --format json --output "/out/$(printf '%s' "$img" | tr '/:' '__').json" "$img" || true
+          done < /tmp/images.txt
+          # The last line is the step's evidence, so it goes in the log: which
+          # reports exist and how big they are. `find`, not `ls`, because the
+          # file names come from image references and carry characters a shell
+          # glob would read as patterns. The format string is double-quoted on
+          # purpose -- nothing in it is meant to expand.
+          find trivy-images -type f -name '*.json' -printf "%10s  %p\n" | sort -k2
+
+      - name: Upload the image scan reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-images
+          path: trivy-images/
+          if-no-files-found: warn
 
       - name: Publish the survivor ledger
         if: always()
