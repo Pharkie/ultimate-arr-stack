@@ -6,16 +6,19 @@ name: CI
 # live-router assertion all belong to nas-auto-deploy.yml -- or skip themselves
 # with a stated reason, which the census in the bats job prints.
 #
-# main is protected: pull requests required, enforced for admins, and the three
-# per-push jobs below -- `bats suite`, `mutation guards for this change` and
-# `workflow and terraform lint` -- are required status checks, so a merge cannot
-# skip any of them, admins included. This comment used to say the opposite
-# ("deliberately not a required status check yet"); that policy decision had
-# already been made in the repository settings, and the stale sentence misled two
-# readers before it was caught. The branch-protection API is the source of truth,
-# not this file:
+# main is protected: pull requests required, enforced for admins, and all four
+# per-push jobs below -- `bats suite`, `mutation guards for this change`,
+# `workflow and terraform lint` and `supply chain (trivy and sbom)` -- are
+# required status checks, so a merge cannot skip any of them, admins included.
+# This comment used to say the opposite ("deliberately not a required status
+# check yet"); that policy decision had already been made in the repository
+# settings, and the stale sentence misled two readers before it was caught. The
+# branch-protection API is the source of truth, not this file:
 #
 #   gh api repos/<owner>/<repo>/branches/main/protection
+#
+# The supply-chain job was added 2026-09-11 and made required the same day, after
+# it went green on a branch and on main.
 #
 # The nightly-only job is deliberately NOT required: it is a discovery tool, and
 # gating every PR on a sweep that runs for an hour buys no defect detection.
@@ -134,12 +137,15 @@ jobs:
     # digest: a scanner that floats changes what "clean" means about the same
     # commit, which is the one thing a supply-chain gate must not do.
     #
-    # Deliberately NOT a required status check yet. It is a new gate on a
-    # scanner whose database is upstream, and a transient DB failure blocking
-    # every merge is the failure mode that gets a check disabled. Watch it run
-    # for a while, then make it required with:
-    #   gh api -X PATCH repos/<owner>/<repo>/branches/main/protection/required_status_checks \
-    #     -f 'contexts[]=supply chain (trivy and sbom)' ... (or the UI)
+    # Required, as of 2026-09-11. It was left optional for its first runs on
+    # purpose -- a new gate on a scanner whose database is upstream can block
+    # every merge on a transient DB failure, which is how a check gets disabled
+    # rather than fixed -- and it came back green, so it now gates.
+    #
+    # The scanner's database is still upstream, and a database outage shows up
+    # here as a failed step rather than a skipped one. If that ever happens, the
+    # answer is to re-run the job, not to drop the check: `trivy --skip-db-update`
+    # would gate on a stale database instead, which is worse than not gating.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7

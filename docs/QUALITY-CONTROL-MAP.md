@@ -82,7 +82,8 @@ files guarding the changed paths and refuses an unresolvable base or a run where
 everything selected was `SKIPPED`. `workflow and terraform lint` runs actionlint
 and `terraform fmt -check`, both from pinned images. `supply chain (trivy and
 sbom)` runs syft into an artifact and trivy at `HIGH,CRITICAL` with
-`--exit-code 1`. All four run on every push to any branch and every PR.
+`--exit-code 1`. All four run on every push to any branch and every PR, and
+as of 2026-09-11 all four are required status checks on `main`.
 
 Nightly, the `heavy` job: the full blocking corpus, a time-bounded
 `run-generated.sh` sweep and `coverage.sh`, all three non-blocking except the

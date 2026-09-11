@@ -245,7 +245,7 @@ a lockfile that is not in the tree, so a fresh clone cannot build it.
 
 **Verified.** The merge at the end of the job runs `gh pr merge`, which asks
 GitHub to merge server-side, so branch protection applies to it exactly as it
-does to a merge request from the UI. The three required contexts are present and
+does to a merge request from the UI. All four required contexts are present and
 name-for-name identical to the job names in `ci.yml`:
 
 ```bash
@@ -254,8 +254,10 @@ gh api repos/leonardoazeredo/ultimate-arr-stack/branches/main/protection \
 ```
 
 That returns `bats suite`, `mutation guards for this change`,
-`workflow and terraform lint`, `true`, `true`. The contexts match
-`name:` on the `bats`, `mutation-guards` and `lint` jobs. `enforce_admins` is
+`workflow and terraform lint`, `supply chain (trivy and sbom)`, `true`, `true`.
+The contexts match `name:` on the `bats`, `mutation-guards`, `lint` and
+`supply-chain` jobs. The supply-chain one was added the day that job was, once
+it had been watched on a branch and on `main`. `enforce_admins` is
 on, so the owner is not exempt, and `required_conversation_resolution` is on as
 well, so an unresolved review thread blocks the merge too.
 
