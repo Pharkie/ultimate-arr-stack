@@ -1,0 +1,145 @@
+name: CI
+
+# The deterministic half of this repo's tooling: everything that can be judged
+# from the tree alone, on a runner that has git and docker. Nothing here reaches
+# the NAS. The e2e suite, the deploy pipeline, and tests/network-segmentation.bats'
+# live-router assertion all belong to nas-auto-deploy.yml -- or skip themselves
+# with a stated reason, which the census in the bats job prints.
+#
+# main is protected (pull requests required, enforced for admins), so this file
+# is the only automated check a PR can carry. It is deliberately not a required
+# status check yet: that is a policy decision, not a workflow one.
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: ['**']
+  workflow_dispatch: {}
+  schedule:
+    # The expensive halves run nightly rather than per push: the regression
+    # corpus is 276 entries and runs its oracle twice each, and the discovery
+    # sweep generates hundreds of mutants per target. 03:23 UTC.
+    - cron: '23 3 * * *'
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  bats:
+    name: bats suite
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # The mutation job diffs against origin/main, and several suites ask
+          # git for tracked files -- a shallow clone answers both wrongly.
+          fetch-depth: 0
+
+      - name: Submodules and hooks
+        # tests/hooks-installed.bats asserts the symlinks ./setup-hooks.sh
+        # creates. A fresh checkout has neither, which is exactly how this step
+        # failed on the pipeline's first run -- see CLAUDE.md's live-dispatch log.
+        run: |
+          set -e
+          git submodule update --init --recursive tests/bats-core tests/bats-support tests/bats-assert
+          ./setup-hooks.sh
+
+      - name: Run the suite
+        # pipefail so a red suite fails the step while tee keeps the output for
+        # the census below. This is the whole suite: compose validity, ports and
+        # IPs, secret hygiene, env documentation, doc links, YAML, shellcheck,
+        # systemd units, every operational script through the stub harness, the
+        # containerised pytest run, the mutation corpus freshness check, and the
+        # mutation runner's own tests.
+        run: |
+          set -o pipefail
+          ./tests/run-tests.sh 2>&1 | tee "$RUNNER_TEMP/bats.log"
+
+      - name: Census
+        if: always()
+        # The runner reports executed/skipped/failed and why each skip happened.
+        # In a job summary that is the difference between "green" and "green
+        # having run nothing" -- the defect class this repo has closed four times.
+        run: |
+          {
+            echo '## bats census'
+            echo '```'
+            sed -n '/=== census/,$p' "$RUNNER_TEMP/bats.log" || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  mutation-guards:
+    name: mutation guards for this change
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Corpus entries that guard the changed files
+        # run-mutations.sh is this repo's proof that its guards can fail, and it
+        # is far too slow to run whole on every push. This selects the corpus
+        # files that guard the files this change touched, and refuses two ways:
+        # an unresolvable base, and a run where every selected mutation was
+        # SKIPPED -- which run-mutations.sh itself exits 0 on.
+        run: ./tests/mutation/check-changed-guards.sh origin/main
+
+  lint:
+    name: workflow and terraform lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: actionlint (the workflows themselves)
+        # Pinned image, matching this repo's pattern for tools a host lacks.
+        # Lints both workflow files, including this one.
+        run: docker run --rm -v "$PWD:/repo" -w /repo rhysd/actionlint:1.7.7
+
+      - name: terraform fmt -check
+        # Formatting only: no init, no providers, no credentials. terraform/ is
+        # the devopsarr config-as-code tree; `terraform validate` needs a network
+        # init and belongs in the nightly job if it is wanted at all.
+        run: docker run --rm -v "$PWD/terraform:/tf" -w /tf hashicorp/terraform:1.9.8 fmt -check -recursive
+
+  heavy:
+    name: full corpus and discovery sweep
+    # Nightly, or on demand. Not per push: minutes to tens of minutes.
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Submodules
+        run: git submodule update --init --recursive tests/bats-core tests/bats-support tests/bats-assert
+
+      - name: Full regression corpus (blocking)
+        # Every recorded defect must still be caught. This is the gate the
+        # per-push job samples from.
+        run: ./tests/mutation/run-mutations.sh
+
+      - name: Discovery sweep (non-blocking, by design)
+        # universalmutator hunts for code no test guards. Some mutants are
+        # equivalent and can never be killed, so this exits 0 whatever it finds
+        # and files its survivors in the ledger artifact below.
+        continue-on-error: true
+        run: ./tests/mutation/run-generated.sh
+
+      - name: Coverage (a diagnostic, not a gate)
+        # kcov reports BLIND rather than 0% for the awk-and-eval idiom; its own
+        # README says it is not a gate, so it must not fail the run.
+        continue-on-error: true
+        run: ./tests/toolkit/coverage.sh
+
+      - name: Publish the survivor ledger
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: survivors
+          path: tests/mutation/survivors.tsv
+          if-no-files-found: warn
