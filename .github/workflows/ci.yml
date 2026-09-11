@@ -22,8 +22,14 @@ on:
     - cron: '23 3 * * *'
 
 concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  # The event name is part of the group on purpose. Keyed on the ref alone, a
+  # push to main cancelled the in-flight nightly dispatch that was still running
+  # against it -- observed, not theorised, on the first dispatch: the merge that
+  # followed the dispatch killed the sweep mid-run. Per-event groups mean a push
+  # can only ever cancel another push, and a scheduled run is never cancelled by
+  # anything.
+  group: ci-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: ${{ github.event_name != 'schedule' }}
 
 permissions:
   contents: read
@@ -123,18 +129,25 @@ jobs:
         # per-push job samples from.
         run: ./tests/mutation/run-mutations.sh
 
-      - name: Discovery sweep (non-blocking, by design)
+      - name: Discovery sweep (non-blocking, time-bounded)
         # universalmutator hunts for code no test guards. Some mutants are
         # equivalent and can never be killed, so this exits 0 whatever it finds
         # and files its survivors in the ledger artifact below.
+        #
+        # Bounded, because the per-mutant oracle budget bounds each mutant and not
+        # the sweep: 13 targets generating hundreds of mutants each, with a
+        # containerised oracle, can run for hours against a six-hour job ceiling.
+        # A partial sweep is safe by design -- the ledger merge carries untouched
+        # targets' verdicts through -- so a timeout costs coverage of the targets
+        # that did not run, not the ledger.
         continue-on-error: true
-        run: ./tests/mutation/run-generated.sh
+        run: timeout 150m ./tests/mutation/run-generated.sh
 
       - name: Coverage (a diagnostic, not a gate)
         # kcov reports BLIND rather than 0% for the awk-and-eval idiom; its own
         # README says it is not a gate, so it must not fail the run.
         continue-on-error: true
-        run: ./tests/toolkit/coverage.sh
+        run: timeout 20m ./tests/toolkit/coverage.sh
 
       - name: Publish the survivor ledger
         if: always()
