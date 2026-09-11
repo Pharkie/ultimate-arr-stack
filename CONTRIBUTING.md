@@ -108,6 +108,25 @@ This project separates public documentation from private configuration:
 | **Private config** | `.claude/config.local.md` | No | Actual hostnames, IPs, usernames |
 | **Credentials** | `.env` | No | Passwords, API tokens, private keys |
 
+### Reporting counts
+
+Any number this repository quotes about its own tree counts **first-party files
+only**, and says what it excluded. Three things inflate a naive walk:
+
+- `tests/bats-core`, `tests/bats-support` and `tests/bats-assert` are vendored
+  submodules, and they are the majority of the shell files in a checkout;
+- `.claude/worktrees/` holds throwaway copies of the tree from past sessions;
+- `tests/fixtures/` holds inputs that tests read, not source files.
+
+A raw walk roughly doubles every shell-file, shell-line, shebang and
+safety-pattern count against the first-party figure, so state the exclusion next
+to the number. Better, derive it at run time: the CI census counts what the suite
+actually executed, and `tests/shellcheck.bats` derives the unswept-file list from
+`TARGETS` rather than from anything written down. Stale hand-written counts are
+this repository's most repeated documentation defect: `CLAUDE.md`'s old "14
+tests" claim and `ci.yml`'s corpus-entry count both outlived the thing they
+described.
+
 ### Config File Pattern
 
 Files requiring domain customization use the `.example` pattern:
@@ -236,7 +255,7 @@ Every version-changing release follows this order. Doing it as one unbroken flow
    ```bash
    npm run test:e2e
    ```
-   This logs into each service, takes screenshots of every dashboard, and asserts root folders and media libraries are present. All 14 tests must pass. Screenshots are saved to `tests/e2e/screenshots/` for visual review.
+   This logs into each service, takes screenshots of every dashboard, and asserts root folders and media libraries are present. Every test must pass. Screenshots are saved to `tests/e2e/screenshots/` for visual review.
 
 ### Tagging and Publishing
 

@@ -6,9 +6,19 @@ name: CI
 # live-router assertion all belong to nas-auto-deploy.yml -- or skip themselves
 # with a stated reason, which the census in the bats job prints.
 #
-# main is protected (pull requests required, enforced for admins), so this file
-# is the only automated check a PR can carry. It is deliberately not a required
-# status check yet: that is a policy decision, not a workflow one.
+# main is protected: pull requests required, enforced for admins, and the three
+# per-push jobs below -- `bats suite`, `mutation guards for this change` and
+# `workflow and terraform lint` -- are required status checks, so a merge cannot
+# skip any of them, admins included. This comment used to say the opposite
+# ("deliberately not a required status check yet"); that policy decision had
+# already been made in the repository settings, and the stale sentence misled two
+# readers before it was caught. The branch-protection API is the source of truth,
+# not this file:
+#
+#   gh api repos/<owner>/<repo>/branches/main/protection
+#
+# The nightly-only job is deliberately NOT required: it is a discovery tool, and
+# gating every PR on a sweep that runs for an hour buys no defect detection.
 on:
   pull_request:
     branches: [main]
@@ -17,8 +27,13 @@ on:
   workflow_dispatch: {}
   schedule:
     # The expensive halves run nightly rather than per push: the regression
-    # corpus is 276 entries and runs its oracle twice each, and the discovery
-    # sweep generates hundreds of mutants per target. 03:23 UTC.
+    # corpus runs each entry's oracle twice, and the discovery sweep generates
+    # hundreds of mutants per target. 03:23 UTC.
+    #
+    # No entry count here on purpose. This comment said 276 while the corpus had
+    # grown to 323, which is the same stale-number failure CONTRIBUTING.md warns
+    # about; `ls tests/mutation/corpus/*.sh` and the run summary are the numbers,
+    # and neither needs editing.
     - cron: '23 3 * * *'
 
 concurrency:
