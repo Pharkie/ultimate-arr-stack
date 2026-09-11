@@ -285,7 +285,9 @@ scripts/
     ├── check-uptime-monitors.sh   # Verify Uptime Kuma monitors
     ├── check-dns-duplicates.sh # Detect duplicate .lan domains
     ├── check-domains.sh        # Verify domain accessibility
-    └── check-image-versions.sh # Check for stale Docker image tags
+    ├── check-image-versions.sh # Check for stale Docker image tags
+    ├── configure-helpers.sh    # HTTP layer + output helpers for configure-apps.sh
+    └── bazarr-language-plan.py # Decides Bazarr's subtitle-profile changes (pure; unit-tested)
 ```
 
 The `common.sh` library provides shared functions used by all checks:

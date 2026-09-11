@@ -251,7 +251,7 @@ HTTP 406  "sonarr.only_monitored must is_type_of <class 'bool'> but it is True"
 
 > A `406` is the good outcome when you're probing an unfamiliar field: it proves the request reached Bazarr's validator, and the message names the field and the type it wanted. A `204` proves nothing — it's also what a silently-discarded JSON body returns.
 
-**Every successful write makes Bazarr restart itself**, leaving the container unhealthy for roughly 40 seconds. Read the current values and compare first; only POST when something actually differs.
+**Bazarr applies a write inside the POST** — in memory, then to `config.yaml` — and never restarts its process for it (read from v1.6.0: the only restarts on that path are its Sonarr/Radarr SignalR clients, which it bounces in-request when their connection settings change). Two writes are expensive rather than disruptive: any POST that changes the Sonarr/Radarr connection blocks until Bazarr can reach them — forever, if it can't, which is why `configure-apps.sh` bounds every request — and any POST carrying `languages-profiles` makes Bazarr rescan the whole library before answering. Read the current values and compare first; only POST when something actually differs, and only send `languages-profiles` when a profile changed.
 
 ### Sub-Zero mods use a separate key space
 
