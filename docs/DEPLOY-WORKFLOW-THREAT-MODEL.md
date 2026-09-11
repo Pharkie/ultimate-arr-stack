@@ -296,7 +296,33 @@ is what was done for `17f6859`.
 | 4 | e2e container holds the Docker socket and host networking, running freshly resolved npm code | same privileges the session already has; one admin | a lockfile is wanted for reproducibility anyway, or the socket mount is no longer needed |
 | 5 | A dispatcher can run a branch's Dockerfile as a `docker`-group user | that is what deploying a branch means | a second collaborator gets write access |
 
-All five shrink to one: **the workflow trusts whoever can dispatch it, and today
+One more, found by auditing the e2e suite on 2026-09-11 and recorded here
+because it is the same class of assumption: **`docker-socket-proxy` is not the
+boundary its configuration reads as.** `EXEC=0` gates only the GET endpoints
+(`/exec/{id}/json`, `/exec/{id}/start`); creating an exec instance is
+`POST /containers/{id}/exec`, and `POST=1` is enabled wholesale for
+gluetun-recover's `docker restart`. Measured against the live proxy: a
+well-formed POST returns `201` with an exec id. The flow cannot be completed
+through this proxy only because *starting* the instance is one of the GET-gated
+paths. And listing container names is permitted, so the target set is
+enumerable.
+
+Whoever can reach `172.20.0.21:2375` -- anything on `arr-core`, and the e2e
+container by design -- can therefore also `POST /containers/{id}/kill`,
+`/stop` and `DELETE /containers/{id}`. On this host that is a denial-of-service
+capability, not a host escape, because the daemon still refuses to exec: the
+privilege escalation needs `start`, and that is out of reach. It is still a
+wider surface than the three consumers who need it, and the fix is to stop
+serving the Docker API over TCP at all: give `gluetun-recover`,
+`gluetun-rotator` and `deunhealth` a socket mount each, which is the privilege
+they already exercise through the proxy, and leave the proxy serving read-only
+to Traefik and diun.
+
+| # | risk | accepted because | would stop being acceptable if |
+| --- | --- | --- | --- |
+| 6 | Anything on `arr-core` can stop, restart or delete any container through the socket proxy, and can create (but not start) exec instances | it is a denial-of-service inside one host for one admin, and the three consumers genuinely need writes | a service is added to `arr-core` that does not need to be there, or the proxy gains a published port |
+
+All six shrink to one: **the workflow trusts whoever can dispatch it, and today
 that is exactly one person.** Nothing in this document is a finding against the
 current setup. It is the list of assumptions that setup rests on, so that adding
 a collaborator or a runner is a deliberate change rather than a discovery.

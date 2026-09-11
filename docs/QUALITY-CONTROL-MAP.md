@@ -181,6 +181,15 @@ Suppressing by rule id is deliberately blunt: DS-0002 is silenced everywhere,
 so a new Dockerfile that runs as root will not be reported. That is the trade
 this file makes, and it is why each entry carries what would remove it.
 
+**One security assumption in the stack is not what it reads as.** The e2e audit
+on 2026-09-11 found that `docker-socket-proxy`'s `EXEC=0` gates the GET exec
+endpoints only, while creating an exec instance is a POST and `POST=1` is
+enabled for gluetun-recover's restart. A well-formed POST returns 201 with an
+exec id. `tests/e2e/operations.spec.ts` asserts the reachable half and carries a
+`PROXY-EXEC-REACHABLE` marker, so the test fails with an instruction rather than
+passing silently if the proxy is ever fixed. The full finding, including what it
+does and does not allow, is in `docs/DEPLOY-WORKFLOW-THREAT-MODEL.md` section 9.
+
 **BSD userland: two guards were fixed, one constraint remains.** The suite is
 meant to give the same verdict on the Mac, on pi1 and on the NAS, but the Mac is
 the only one of the three with BSD userland, and two tests had picked up

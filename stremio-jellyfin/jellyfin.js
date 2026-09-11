@@ -10,7 +10,16 @@ const itemsLimit = 20
 export class JellyfinApi {
 
     async authenticate() {
-        console.log(`Connecting to Jellyfin server: ${server} with username: ${user} and password: ${password}`)
+        // The password never goes to the log. These three lines used to
+        // interpolate it, which put the Jellyfin credential into `docker logs`
+        // on every restart -- and this service restarts in a loop whenever
+        // Jellyfin is unreachable or refusing it, so the log filled up with it.
+        // A credential in a log survives the password being changed, is copied
+        // into any bug report that pastes logs, and is readable by anything
+        // that can reach the Docker API. Server and username are enough to
+        // diagnose a login failure; whether the password is set at all is
+        // visible from `docker inspect`'s env block.
+        console.log(`Connecting to Jellyfin server: ${server} with username: ${user}`)
         this.auth = await axios.post(`${server}/Users/authenticatebyname`,
             {Username: user, Pw: password}, {
                 headers: {
@@ -20,9 +29,9 @@ export class JellyfinApi {
             }).then(it => it.data)
             .catch(err => {
                 if (err?.response) {
-                    console.log(`Error caught while Jellyfin authentication, server response: '${err?.response?.status}' and data: '${err?.response?.data || "<empty>" }' (server: '${server}' with username: '${user}' and password: '${password}')`)
+                    console.log(`Error caught while Jellyfin authentication, server response: '${err?.response?.status}' and data: '${err?.response?.data || "<empty>" }' (server: '${server}' with username: '${user}')`)
                 } else {
-                    console.log(`Error connecting to Jellyfin (server: '${server}' with username: '${user}' and password: '${password}'). Error message: '${err?.message}'`)
+                    console.log(`Error connecting to Jellyfin (server: '${server}' with username: '${user}'). Error message: '${err?.message}'`)
                     // anything else
                 }
                 console.info("Exiting. Please check your configuration and Jellyfin connection.")

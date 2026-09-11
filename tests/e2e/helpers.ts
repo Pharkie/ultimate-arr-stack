@@ -43,12 +43,21 @@ export function url(service: keyof typeof PORTS, pathStr = '') {
 // place to forget.
 // Network name is the bare "arr-core" (an externally-created network), not a
 // compose-project-prefixed "<project>_arr-core" — confirmed live 2026-08-29.
+// Cached per run: each lookup shells out to `docker inspect`, and a spec that
+// asks for the same service's URL in several tests paid that cost every time.
+// An IP cannot change without the container being recreated, and a recreate
+// mid-run is not something these tests need to observe.
+const bridgeIpCache = new Map<string, string>();
+
 export function bridgeIp(container: string): string {
+  const cached = bridgeIpCache.get(container);
+  if (cached) return cached;
   const ip = dockerInspect(
     container,
     '{{ (index .NetworkSettings.Networks "arr-core").IPAddress }}',
   );
   if (!ip) throw new Error(`no arr-core bridge IP for container "${container}"`);
+  bridgeIpCache.set(container, ip);
   return ip;
 }
 

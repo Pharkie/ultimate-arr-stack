@@ -3,22 +3,54 @@ import { HOST, url, screenshotPath, addHeaderToAllRequests } from './helpers';
 
 test.describe('UI screenshots', () => {
   test('Jellyfin — login and screenshot home', async ({ page, context }) => {
-    test.setTimeout(60_000);
+    // Why this test is written the way it is.
+    //
+    // Its job is to prove a human can log in and that the library then renders,
+    // and to leave a screenshot behind for the README. It ran for months at
+    // ~28s and then timed out at 60s on 2026-09-11 with no change to the stack,
+    // which is the signature of a test whose budget is a guess rather than a
+    // sum. Three things made it one:
+    //
+    //   1. `waitForLoadState('networkidle')`, three times. Jellyfin's web client
+    //      holds a websocket open and keeps fetching thumbnails, so "no request
+    //      for 500ms" is not a state this page reliably reaches. When it does
+    //      not, the wait does not fail -- it burns the remaining test budget,
+    //      and the failure surfaces as "Test timeout of 60000ms exceeded" with
+    //      no indication of which line.
+    //   2. Up to 8s of waiting per unresolved image, summed over every image on
+    //      a full-page screenshot of a media library. One slow poster grid and
+    //      the loop alone could exceed the budget.
+    //   3. Fixed sleeps (3s + 1s + a 200ms-per-step vertical scroll) that were
+    //      generous when written and are pure cost now.
+    //
+    // So: wait for named states instead of for quiet, bound every wait, and set
+    // a budget that matches the real work. The screenshot is still the
+    // assertion that matters -- a login that lands on an error page renders no
+    // carousels, and that is checked before the shot.
+    test.setTimeout(180_000);
+
     const username = process.env.JELLYFIN_USERNAME;
     const password = process.env.JELLYFIN_PASSWORD;
     test.skip(!username || !password, 'JELLYFIN_USERNAME / JELLYFIN_PASSWORD not set');
 
-    await page.goto(url('jellyfin'));
-    await page.waitForLoadState('networkidle');
+    // Bounded and non-fatal: a page that never goes quiet is not a failure, it
+    // is a reason to stop waiting. `catch` because the timeout is expected.
+    const settle = (ms = 5_000) =>
+      page.waitForLoadState('networkidle', { timeout: ms }).catch(() => undefined);
+
+    await page.goto(url('jellyfin'), { waitUntil: 'domcontentloaded', timeout: 30_000 });
+    await settle();
 
     // Click "Manual Login" if the user selection screen appears
     const manualLogin = page.getByText('Manual Login');
     if (await manualLogin.isVisible({ timeout: 3_000 }).catch(() => false)) {
       await manualLogin.click();
-      await page.waitForLoadState('networkidle');
+      await settle();
     }
 
-    // Fill login form
+    // Fill login form when one is present. If it is not, the client either
+    // remembered a session or runs with auth disabled -- both fine, and both
+    // caught by the URL assertion below.
     const usernameInput = page.locator('input[id="txtManualName"], input[name="username"], input[placeholder*="ser"]').first();
     const passwordInput = page.locator('input[id="txtManualPassword"], input[type="password"]').first();
 
@@ -26,18 +58,26 @@ test.describe('UI screenshots', () => {
       await usernameInput.fill(username!);
       await passwordInput.fill(password!);
       await page.locator('button[type="submit"], button:has-text("Sign in")').first().click();
-      await page.waitForLoadState('networkidle');
-      // Wait for redirect away from login
-      await page.waitForFunction(() => !window.location.hash.includes('login'), { timeout: 10_000 });
-      await page.waitForLoadState('networkidle');
+      await page.waitForFunction(() => !window.location.hash.includes('login'), { timeout: 20_000 });
+      await settle();
     }
 
     // Verify we're NOT on a login page
-    const pageUrl = page.url();
-    expect(pageUrl).not.toContain('login');
+    expect(page.url()).not.toContain('login');
 
-    // Wait for media sections to render
-    await page.waitForTimeout(3_000);
+    // The real proof that the library rendered, rather than a sleep followed by
+    // a screenshot of whatever was there.
+    //
+    // `#indexPage` is the home screen's own wrapper: it exists as soon as the
+    // client has authenticated and is what the carousels are built into. The
+    // first attempt at this asserted `.itemsContainer` instead, because that is
+    // the class the scroll step below loops over -- but `.first()` matched
+    // `<div id="divUsers" class="itemsContainer ...">`, the user-selection list
+    // on the login screen, which is still in the DOM and hidden once you are
+    // through. The test then failed on a page that had loaded perfectly, with
+    // "locator resolved to ... unexpected value hidden" and no hint that the
+    // selector was the problem.
+    await expect(page.locator('#indexPage')).toBeVisible({ timeout: 30_000 });
 
     // Remove lazy loading BEFORE scrolling so images load immediately when visible
     await page.evaluate(() => {
@@ -54,24 +94,27 @@ test.describe('UI screenshots', () => {
       const step = Math.max(200, window.innerHeight / 2);
       for (let y = 0; y < document.body.scrollHeight; y += step) {
         window.scrollTo(0, y);
-        await delay(200);
+        await delay(120);
       }
       window.scrollTo(0, document.body.scrollHeight);
-      await delay(500);
+      await delay(300);
 
       // Scroll each horizontal carousel to the end and back
       const scrollers = document.querySelectorAll('.itemsContainer, .scrollSlider, [class*="scroller"]');
       for (const scroller of scrollers) {
         if (scroller.scrollWidth > scroller.clientWidth) {
           scroller.scrollLeft = scroller.scrollWidth;
-          await delay(500);
+          await delay(300);
           scroller.scrollLeft = 0;
-          await delay(200);
+          await delay(120);
         }
       }
     });
 
-    // Force-reload any images that still haven't loaded
+    // Nudge images that are not loaded yet, then wait for the whole set against
+    // ONE deadline instead of one timeout per image. The screenshot is taken
+    // whatever the result: a poster that did not load is worth a slightly
+    // incomplete screenshot, not a failed run.
     await page.evaluate(async () => {
       document.querySelectorAll('img').forEach(img => {
         if (!img.complete || img.naturalWidth === 0) {
@@ -80,19 +123,13 @@ test.describe('UI screenshots', () => {
           img.src = src;
         }
       });
-      // Wait for all images to finish loading
-      await Promise.all(
-        Array.from(document.querySelectorAll('img'))
-          .filter(img => img.src)
-          .map(img => {
-            if (img.complete && img.naturalWidth > 0) return Promise.resolve();
-            return new Promise<void>(resolve => {
-              img.onload = () => resolve();
-              img.onerror = () => resolve();
-              setTimeout(resolve, 8_000);
-            });
-          })
-      );
+      const pending = Array.from(document.querySelectorAll('img'))
+        .filter(img => img.src && !(img.complete && img.naturalWidth > 0));
+      const done = Promise.all(pending.map(img => new Promise<void>(resolve => {
+        img.addEventListener('load', () => resolve(), { once: true });
+        img.addEventListener('error', () => resolve(), { once: true });
+      })));
+      await Promise.race([done, new Promise<void>(r => setTimeout(r, 20_000))]);
     });
 
     // Hide blurhash canvas overlays so actual loaded images show through
@@ -104,7 +141,7 @@ test.describe('UI screenshots', () => {
 
     // Scroll back to top for screenshot
     await page.evaluate(() => window.scrollTo(0, 0));
-    await page.waitForTimeout(1_000);
+    await page.waitForTimeout(500);
 
     await page.screenshot({ path: screenshotPath('jellyfin'), fullPage: true });
   });
