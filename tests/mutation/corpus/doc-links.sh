@@ -2,9 +2,11 @@
 # (sourced by run-mutations.sh, never executed - hence a directive, not a shebang)
 # Mutations for scripts/lib/check-doc-links.sh.
 #
-# Safe to run: every test in tests/lib-doc-links.bats builds a throwaway docs
-# tree under $BATS_TEST_TMPDIR and overrides both `git ls-files` and
-# get_repo_root, so no mutation here reads or writes the repo's own markdown.
+# Safe to run: the tests in tests/lib-doc-links.bats build a throwaway docs tree
+# under $BATS_TEST_TMPDIR and override both `git ls-files` and get_repo_root, so
+# no mutation here reads the repo's own markdown -- except the entry at the
+# bottom, which deliberately does: it breaks a link in a real doc, and the
+# runner restores that file from a byte copy like any other target.
 
 mutation doc-links-count-as-exit-status \
   --file scripts/lib/check-doc-links.sh \
@@ -47,3 +49,11 @@ mutation doc-links-external-links-checked \
   --test "doc-links: external and mailto links are never checked" \
   --why "removes the external-URL skip, so an https URL ending in .md is resolved as a repo-relative path and every documentation link to another project is reported broken. A check that cries wolf on correct links is worse than no check: it trains the reader to pass --no-verify" \
   --apply 'perl -0pi -e "s/                    http:\/\/\*\|https:\/\/\*\|mailto:\*\) continue ;;\n/                    :) continue ;;\n/" "$F"'
+
+mutation doc-links-this-repos-own-markdown \
+  --file docs/REFERENCE.md \
+  --bats tests/lib-doc-links.bats \
+  --test "doc-links: every link in this repository's own markdown resolves" \
+  --why "appends a link to a file that does not exist. Nothing else in the suite reads this repo's own markdown, so before that test existed the only thing that would have noticed a broken doc link was scripts/pre-commit -- which runs on a developer's commit and never in the deploy workflow, while the NAS cannot run it at all because it enumerates with git ls-files and has no host git" \
+  --apply 'printf "\n[bogus](no-such-file-xyz.md)\n" >> "$F"'
+
