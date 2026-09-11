@@ -11,8 +11,9 @@
 # rather than failing, the same gate pattern tests/e2e/helpers.ts uses for Docker.
 #
 # The allow-list mirrors the router rules `vlan20-to-nas-svcs`,
-# `vlan20-to-pihole-dns` and `vlan20-to-traefik`. If you change a rule, change
-# this file in the same commit — a silent divergence here is worse than no test.
+# `vlan20-to-pihole-dns`, `vlan20-to-traefik` and `vlan20-to-nas-timemachine`.
+# If you change a rule, change this file in the same commit — a silent
+# divergence here is worse than no test.
 #
 # NOT asserted, deliberately: the router's own :22 is reachable from this host.
 # That is `Allow-pi1-router-mgmt`, an INPUT rule with no `dest`, so it matches
@@ -29,8 +30,10 @@ TRAEFIK_VLAN10_IP="${TRAEFIK_VLAN10_IP:-192.168.110.250}"
 # Ports VLAN20 is meant to reach. 53 is here because `vlan20-to-pihole-dns`
 # grants it; it is asserted over BOTH transports, since that rule is `tcpudp`
 # and a TCP-only probe would pass while UDP resolution — the transport DNS
-# actually uses — was broken.
-SEG_ALLOWED_NAS="${SEG_ALLOWED_NAS:-22 53 5055 8096}"
+# actually uses — was broken. 445 is `vlan20-to-nas-timemachine`: the Mac's
+# Time Machine destination is an SMB share on the NAS, and the Mac is on VLAN20
+# while the NAS is on VLAN10, so backups cross this boundary.
+SEG_ALLOWED_NAS="${SEG_ALLOWED_NAS:-22 53 445 5055 8096}"
 SEG_ALLOWED_TRAEFIK="${SEG_ALLOWED_TRAEFIK:-80 443}"
 
 # A name Pi-hole is authoritative for, used to prove UDP/53 end to end rather
