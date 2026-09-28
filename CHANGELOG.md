@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.14.1] - 2026-09-28
+
+The three things meant to announce image updates had all been silent. This fixes the two that live in the repo.
+
+### Changed
+- **Seerr v3.4.1 → v3.5.0.** Its one breaking change is to direct callers of `GET /settings/{plex,jellyfin}/library` with `sync`/`enable`; nothing here uses them. It also sends Jellyfin the `Authorization` header Jellyfin 12 requires. Config volume backed up first; the 1.13.5 start command still applies (same `npm start`, same `DOCKER` marker).
+- **Renovate never auto-merges, and every PR it opens says to test on the NAS first.** The patch auto-merge rule for LinuxServer images would have put untested bumps on `main`. Renovate itself has never run here: `renovate.json` landed in March, but the Renovate GitHub App was never installed, so there has never been a PR or a dependency dashboard. Installing the app is the one step the repo can't take for you.
+
+### Fixed
+- **The image check read one page of a GHCR tag listing.** GHCR lists tags oldest first, so Seerr's first page stopped at v3.1.0 and v3.5.0 went unreported while the check cached "current". It now follows the `Link: rel="next"` header, requires every page to be a real answer, never sends the token off `ghcr.io`, and reports a listing too long to finish as a named skip rather than "current".
+- **Image-check cache entries now expire on their own clock.** The 24 h TTL was the cache file's age, and every write rewrote the file, so any new entry renewed all the stale ones. Entries now carry a timestamp; old-format lines are re-checked.
+- **Docs caught up with the code:** combined compose commands that put Cloudflared or Tailscale in the same call as the core files, which runs the stack under the wrong project name; Radarr's SABnzbd host and Pi-hole's upstream in APP-CONFIG; Prowlarr → Sonarr/Radarr addresses in the VPN migration guide; WireGuard leftovers in REFERENCE; backup/restore details; and more (commit `f8ab5dc`).
+
 ## [1.14.0] - 2026-09-28
 
 Twelve image bumps, and three things that had been quietly broken for months: configarr, duc's web UI, and the image check's view of dnscrypt-proxy.
