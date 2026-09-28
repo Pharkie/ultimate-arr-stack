@@ -348,6 +348,24 @@ test.describe('API assertions', () => {
     expect(providers.anime, 'Seerr takes anime metadata from TMDB; run configure-apps.sh --only seerr').toBe('tvdb');
   });
 
+  // Seerr reports appData=false, and its UI warns that "All data will be
+  // cleared", whenever /app/config/DOCKER exists. The image ships that marker
+  // and Docker copies it into a new named volume, so every fresh install got
+  // the warning (issue #49). The compose command deletes it on start; this
+  // fails if the marker survives a start.
+  test('Seerr — config volume passes its own mount check', async ({ request }) => {
+    requireStackReachable(test.skip);
+
+    const res = await request.get(url('seerr', '/api/v1/status/appdata'));
+    expect(res.ok(), `could not read Seerr's appdata status (HTTP ${res.status()})`).toBeTruthy();
+    const status: { appData: boolean; appDataPath: string } = await res.json();
+    expect(
+      status.appData,
+      `Seerr says ${status.appDataPath} is not mounted properly — /app/config/DOCKER is back; ` +
+        'check the seerr command in docker-compose.arr-stack.yml',
+    ).toBe(true);
+  });
+
   test("Bazarr — the Sonarr/Radarr keys it stores are the current ones", async ({ request }) => {
     const bazarrKey = process.env.BAZARR_API_KEY;
     const sonarrKey = process.env.SONARR_API_KEY;

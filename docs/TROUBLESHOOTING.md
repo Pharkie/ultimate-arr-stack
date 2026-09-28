@@ -411,27 +411,29 @@ Current Pi-hole versions chown files back to `pihole` after each gravity run, so
 
 ## Seerr: "/app/config volume mount was not configured properly"
 
-**Symptom:** Seerr container starts but logs `The /app/config volume mount was not configured properly` (or similar) and the web UI is unreachable.
+**Symptom:** Seerr's setup wizard (or its settings pages) shows a banner: *The /app/config volume mount was not configured properly. All data will be cleared when the container is stopped or restarted.*
 
-**Cause:** Seerr does a strict check on `/app/config` at startup and is fussier than Jellyseerr was. Usually triggered by a half-initialised `seerr-config` volume from an interrupted earlier start — failed `up -d`, container OOM, Ctrl+C mid-init, etc.
+**Cause:** A false alarm; your data is in the `seerr-config` volume and survives restarts. Seerr's only check is whether a file called `/app/config/DOCKER` exists. The image ships that marker so a missing mount gets noticed, but Docker copies image contents into a new named volume, marker included. Up to v1.13.4 every fresh install saw the banner.
 
 **Diagnose:**
 ```bash
-docker logs seerr --tail 30
+docker exec seerr ls /app/config   # DOCKER in the list = this
 ```
 
-**Fix:** Wipe and re-init the volume.
+**Fix:** From v1.13.5 the compose file deletes the marker each time Seerr starts. Pull and recreate Seerr:
 
 ```bash
-docker compose -f docker-compose.arr-stack.yml stop seerr
-docker volume rm arr-stack_seerr-config
+git pull
 docker compose -f docker-compose.arr-stack.yml up -d seerr
-docker logs seerr --tail 30
 ```
 
-> **⚠️ Destructive.** Safe on a fresh install before you've configured Seerr. Once you've added Sonarr/Radarr connections, users, or requests, this wipes them — back up `/var/lib/docker/volumes/arr-stack_seerr-config/_data/` first if you need to preserve state.
+On an older checkout, delete it by hand; reload the page and the banner is gone:
 
-If a fresh wipe still hits the same error, post `docker logs seerr` output as a GitHub issue.
+```bash
+docker exec seerr rm /app/config/DOCKER
+```
+
+Don't wipe the volume to fix this. A new volume gets the marker copied in again, and you lose your Seerr settings. If Seerr's web UI won't load at all, that's a different problem: start with `docker logs seerr --tail 30`.
 
 ## Jellyfin: Video Stutters/Freezes Every Few Minutes
 

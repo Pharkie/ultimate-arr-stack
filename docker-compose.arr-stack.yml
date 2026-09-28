@@ -530,6 +530,12 @@ services:
         ipv4_address: 172.20.0.8
     volumes:
       - seerr-config:/app/config
+    # Seerr shows "/app/config volume mount was not configured properly" while
+    # /app/config/DOCKER exists. The image ships that marker so a missing mount
+    # gets noticed, but Docker copies image contents into a new named volume,
+    # marker included, so every fresh install saw the warning. The data does
+    # persist. Delete the marker on start; `npm start` is the image's own CMD.
+    command: ["sh", "-c", "rm -f /app/config/DOCKER && exec npm start"]
     restart: always
     logging: *default-logging
     healthcheck:
