@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { url, requireStackReachable, dockerExec } from './helpers';
+import { url, requireStackReachable, dockerExec, assertDownloadClientsHealthy, readSeerrApiKey } from './helpers';
 
 // Split out of the former stack.spec.ts on 2026-08-16, alongside
 // ui-screenshots.spec.ts.
@@ -73,6 +73,22 @@ test.describe('API assertions', () => {
     const series = await res.json();
     expect(series.length).toBeGreaterThan(0);
   });
+
+  // Sonarr and Radarr reach qBittorrent and SABnzbd through gluetun
+  // (gluetun:8085, gluetun:8080), so a VPN-side fault surfaces here first:
+  // the client is unreachable, grabs fail, and only the app's own pages say
+  // so. This runs each app's own client test.
+  for (const [app, name, keyVar] of [
+    ['sonarr', 'Sonarr', 'SONARR_API_KEY'],
+    ['radarr', 'Radarr', 'RADARR_API_KEY'],
+  ] as const) {
+    test(`${name} — every enabled download client passes its own test`, async ({ request }) => {
+      const apiKey = process.env[keyVar];
+      test.skip(!apiKey, `${keyVar} not set`);
+      await assertDownloadClientsHealthy(request, app, apiKey!);
+    });
+  }
+
   // Prowlarr's own download clients serve only its search page — the one
   // route this stack has for something that is neither TV nor a movie. Added
   // 2026-09-10 after that page's download button turned out to do nothing at
@@ -181,5 +197,138 @@ test.describe('API assertions', () => {
     expect(general.movie_default_enabled, 'movie default profile not enabled').toBe(true);
     expect(Number(general.serie_default_profile), 'series default points at a different profile').toBe(english!.profileId);
     expect(Number(general.movie_default_profile), 'movie default points at a different profile').toBe(english!.profileId);
+  });
+
+  // RSS is how Sonarr and Radarr notice new releases by themselves. With it
+  // off on every indexer, a search still works when asked, so nothing looks
+  // broken, but a new episode or a newly released movie is never picked up.
+  for (const [app, name, keyVar] of [
+    ['sonarr', 'Sonarr', 'SONARR_API_KEY'],
+    ['radarr', 'Radarr', 'RADARR_API_KEY'],
+  ] as const) {
+    test(`${name} — at least one indexer has RSS enabled`, async ({ request }) => {
+      const apiKey = process.env[keyVar];
+      test.skip(!apiKey, `${keyVar} not set`);
+
+      const res = await request.get(url(app, '/api/v3/indexer'), { headers: { 'X-Api-Key': apiKey! } });
+      expect(res.ok(), `could not list ${name}'s indexers (HTTP ${res.status()})`).toBeTruthy();
+      const indexers: Array<{ name: string; enableRss: boolean }> = await res.json();
+      expect(
+        indexers.filter((i) => i.enableRss).map((i) => i.name),
+        `no ${name} indexer has RSS enabled; have: ${indexers.map((i) => i.name).join(', ') || 'none'}`,
+      ).not.toEqual([]);
+    });
+  }
+
+  // Each app's own health check already knows about an unreachable download
+  // client, a missing root folder or every indexer failing, but says so only
+  // on its System page. Error level only: warnings (one indexer in backoff, an
+  // update available) come and go on a healthy stack.
+  for (const [app, name, keyVar, api] of [
+    ['sonarr', 'Sonarr', 'SONARR_API_KEY', '/api/v3'],
+    ['radarr', 'Radarr', 'RADARR_API_KEY', '/api/v3'],
+    ['prowlarr', 'Prowlarr', 'PROWLARR_API_KEY', '/api/v1'],
+  ] as const) {
+    test(`${name} — no health check at error level`, async ({ request }) => {
+      const apiKey = process.env[keyVar];
+      test.skip(!apiKey, `${keyVar} not set`);
+
+      const res = await request.get(url(app, `${api}/health`), { headers: { 'X-Api-Key': apiKey! } });
+      expect(res.ok(), `could not read ${name}'s health (HTTP ${res.status()})`).toBeTruthy();
+      const checks: Array<{ type: string; source: string; message: string }> = await res.json();
+      const errors = checks.filter((c) => c.type === 'error').map((c) => `${c.source}: ${c.message}`);
+      expect(errors, `${name} reports health errors`).toEqual([]);
+    });
+  }
+
+  // Credentials copied between apps. Each app below holds its own copy of
+  // another app's API key, taken at setup. Regenerate a key or rebuild a
+  // config volume and the copy goes stale, and only the app holding it
+  // notices, in its own logs.
+
+  // Prowlarr pushes its indexers to Sonarr and Radarr through these
+  // applications. No application at all means they get no indexers from it.
+  // testall skips an application whose sync is disabled, so results are
+  // matched by id: a missing result is a failure, not a pass.
+  test('Prowlarr — every application it syncs to passes its own test', async ({ request }) => {
+    const apiKey = process.env.PROWLARR_API_KEY;
+    test.skip(!apiKey, 'PROWLARR_API_KEY not set');
+    const headers = { 'X-Api-Key': apiKey! };
+
+    const listRes = await request.get(url('prowlarr', '/api/v1/applications'), { headers });
+    expect(listRes.ok(), `could not list Prowlarr's applications (HTTP ${listRes.status()})`).toBeTruthy();
+    const apps: Array<{ id: number; name: string; enable: boolean }> = await listRes.json();
+    expect(apps.map((a) => a.name), 'Prowlarr has no applications, so Sonarr and Radarr get no indexers from it').not.toEqual([]);
+
+    const testRes = await request.post(url('prowlarr', '/api/v1/applications/testall'), { headers, timeout: 60_000 });
+    expect([200, 400], `applications testall answered HTTP ${testRes.status()}`).toContain(testRes.status());
+    const results: Array<{ id: number; isValid: boolean; validationFailures: Array<{ errorMessage: string; isWarning?: boolean }> }> =
+      await testRes.json();
+
+    const failures = apps.flatMap((a) => {
+      const result = results.find((r) => r.id === a.id);
+      if (!result) return [`${a.name}: not tested${a.enable ? '' : ' (sync is disabled)'}`];
+      if (result.isValid) return [];
+      return [`${a.name}: ${result.validationFailures.filter((f) => !f.isWarning).map((f) => f.errorMessage).join('; ')}`];
+    });
+    expect(failures, 'Prowlarr applications failing their own test').toEqual([]);
+  });
+
+  // Seerr hands requests to Radarr and Sonarr with the keys it stored at
+  // setup; with a stale one, requests show "Failed" in Seerr while every app
+  // is up. Probed through Seerr's own test endpoint, so it is Seerr's copy of
+  // the key and Seerr's route to the app that get tested. Server ids are
+  // Seerr's own and change when a server is re-added, so every listed server
+  // is probed rather than a fixed id.
+  for (const [kind, name, media] of [
+    ['radarr', 'Radarr', 'movie'],
+    ['sonarr', 'Sonarr', 'TV'],
+  ] as const) {
+    test(`Seerr — every ${name} server it knows answers with the settings Seerr stored`, async ({ request }) => {
+      requireStackReachable(test.skip);
+      const headers = { 'X-Api-Key': readSeerrApiKey() };
+
+      const listRes = await request.get(url('seerr', `/api/v1/settings/${kind}`), { headers });
+      expect(listRes.ok(), `could not list Seerr's ${name} servers (HTTP ${listRes.status()})`).toBeTruthy();
+      const servers: Array<{ id: number; name: string }> = await listRes.json();
+      expect(servers.map((s) => s.name), `Seerr has no ${name} server, so ${media} requests have nowhere to go`).not.toEqual([]);
+
+      const failures: string[] = [];
+      for (const server of servers) {
+        const probe = await request.post(url('seerr', `/api/v1/settings/${kind}/test`), {
+          headers,
+          data: server,
+          timeout: 30_000,
+        });
+        if (!probe.ok()) failures.push(`${server.name} (id ${server.id}): HTTP ${probe.status()}`);
+      }
+      expect(failures, `Seerr cannot reach ${name} with the settings it has stored`).toEqual([]);
+    });
+  }
+
+  // Bazarr keeps its own copy of the Sonarr and Radarr keys. With a stale one
+  // it stops syncing that library: no new subtitles, and its lists quietly
+  // age. Compared with the key each app reports now. Booleans only, so a
+  // failure never prints a key.
+  test('Bazarr — its stored Sonarr and Radarr API keys are the current ones', async ({ request }) => {
+    const bazarrKey = process.env.BAZARR_API_KEY;
+    const keys = { sonarr: process.env.SONARR_API_KEY, radarr: process.env.RADARR_API_KEY };
+    test.skip(!bazarrKey || !keys.sonarr || !keys.radarr, 'BAZARR_API_KEY, SONARR_API_KEY and RADARR_API_KEY are all needed');
+
+    const settingsRes = await request.get(url('bazarr', '/api/system/settings'), { headers: { 'X-API-KEY': bazarrKey! } });
+    expect(settingsRes.ok(), `could not read Bazarr's settings (HTTP ${settingsRes.status()})`).toBeTruthy();
+    const settings: Record<'sonarr' | 'radarr', { apikey?: string }> = await settingsRes.json();
+
+    for (const [app, name] of [['sonarr', 'Sonarr'], ['radarr', 'Radarr']] as const) {
+      const hostRes = await request.get(url(app, '/api/v3/config/host'), { headers: { 'X-Api-Key': keys[app]! } });
+      expect(hostRes.ok(), `could not read ${name}'s current API key (HTTP ${hostRes.status()})`).toBeTruthy();
+      const current: unknown = (await hostRes.json()).apiKey;
+      // Or two missing keys would compare equal.
+      expect(typeof current === 'string' && current !== '', `${name} did not report an API key`).toBe(true);
+      expect(
+        settings[app]?.apikey === current,
+        `Bazarr's stored ${name} API key is not ${name}'s current one; update it in Bazarr → Settings → ${name}`,
+      ).toBe(true);
+    }
   });
 });
