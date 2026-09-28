@@ -42,7 +42,9 @@ source "$SCRIPT_DIR/lib/check-domains.sh"
 source "$SCRIPT_DIR/lib/check-image-versions.sh"
 source "$SCRIPT_DIR/lib/check-doc-links.sh"
 
-# Track results
+# Track results. Count with ERRORS=$((ERRORS + 1)), never ((ERRORS++)): the
+# latter evaluates to 0 on the first error, and under set -e bash >= 4.1 exits
+# right there, skipping every later check and the summary.
 ERRORS=0
 
 echo ""
@@ -65,7 +67,7 @@ echo -e "${BLUE}1. Checking for secrets...${NC}"
 if check_secrets; then
     echo -e "    ${GREEN}OK${NC}: No secrets detected"
 else
-    ((ERRORS++))
+    ERRORS=$((ERRORS + 1))
 fi
 echo ""
 
@@ -80,7 +82,7 @@ else
     # `[[ $? -ne 0 ]]` after the `fi` reads the exit status of the *if
     # statement*, which is 0 whenever the condition was false and there is no
     # else — so the check never once blocked a commit.
-    ((ERRORS++))
+    ERRORS=$((ERRORS + 1))
 fi
 echo ""
 
@@ -92,7 +94,7 @@ echo -e "${BLUE}3. Checking YAML syntax...${NC}"
 # used and whether it in fact validated anything. A blanket "OK" here used to
 # be printed even when the check had silently done nothing at all.
 if ! check_yaml_syntax; then
-    ((ERRORS++))
+    ERRORS=$((ERRORS + 1))
 fi
 echo ""
 
@@ -103,15 +105,19 @@ echo -e "${BLUE}4. Checking for port/IP conflicts...${NC}"
 if check_conflicts; then
     echo -e "    ${GREEN}OK${NC}: No conflicts detected"
 else
-    ((ERRORS++))
+    ERRORS=$((ERRORS + 1))
 fi
 echo ""
 
 # ==========================================
-# CHECK 5: Hardcoded Domain (WARNS)
+# CHECK 5: Hardcoded Domain (WARNS; the NAS hostname BLOCKS)
 # ==========================================
 echo -e "${BLUE}5. Checking for hardcoded domain...${NC}"
-check_hardcoded_domain
+# Called bare, its return 1 for the NAS hostname tripped set -e: the hook
+# died here, before checks 6-11 and without its summary.
+if ! check_hardcoded_domain; then
+    ERRORS=$((ERRORS + 1))
+fi
 echo ""
 
 # ==========================================
@@ -166,7 +172,7 @@ echo -e "${BLUE}11. Checking documentation links...${NC}"
 if check_doc_links; then
     echo -e "    ${GREEN}OK${NC}: All internal links valid"
 else
-    ((ERRORS++))
+    ERRORS=$((ERRORS + 1))
 fi
 echo ""
 

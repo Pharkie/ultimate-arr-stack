@@ -345,9 +345,9 @@ check_image_versions() {
         if [[ -n "$cached_latest" ]]; then
             if [[ "$cached_latest" != "$tag" && "$cached_latest" != "current" ]]; then
                 echo -e "      ${YELLOW:-}UPDATE${NC:-}: $image $tag → $cached_latest available"
-                ((updates++))
+                updates=$((updates + 1))
             fi
-            ((checked++))
+            checked=$((checked + 1))
             continue
         fi
 
@@ -367,7 +367,7 @@ check_image_versions() {
         esac
 
         if [[ $query_rc -ne 0 || -z "$tags_list" ]]; then
-            ((skipped++))
+            skipped=$((skipped + 1))
             local reason="registry did not answer"
             [[ $query_rc -eq 0 ]] && reason="registry answered, but with no version tags"
             [[ $query_rc -eq 2 ]] && reason="tag listing runs past ${_GHCR_MAX_PAGES} pages, newest tags unread"
@@ -388,11 +388,11 @@ check_image_versions() {
         if [[ -n "$latest" ]]; then
             echo -e "      ${YELLOW:-}UPDATE${NC:-}: $image $tag → $latest available"
             _cache_set "$image_ref" "$latest"
-            ((updates++))
+            updates=$((updates + 1))
         else
             _cache_set "$image_ref" "current"
         fi
-        ((checked++))
+        checked=$((checked + 1))
     done
 
     if [[ $updates -eq 0 ]]; then

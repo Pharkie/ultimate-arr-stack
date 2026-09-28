@@ -367,3 +367,69 @@ run_image_check() {
     assert_output --partial "SKIP: ghcr.io/example/paged:v3.4.1 not checked - tag listing runs past"
     refute_output --partial "All 1 checked images are up to date"
 }
+
+# --- the hook as a whole ---------------------------------------------------
+#
+# scripts/pre-commit runs under set -e and counted with ((ERRORS++)), as did
+# the warning-only libs with ((warnings++)). A post-increment from 0 evaluates
+# to 0, which is exit status 1, and bash >= 4.1 exits on it. So on CI's bash 5
+# the first blocking failure ended the hook with no later checks and no
+# summary, and a warning-only hit blocked the commit before printing the
+# warning. macOS /bin/bash 3.2 never exits on a failed (( )), which is why it
+# went unseen. These drive the real hook in a throwaway repo under the bash
+# running the suite. On 3.2 they cannot tell the old code from the new, so
+# they skip rather than pass.
+
+hook_temp_repo() {
+    (( BASH_VERSINFO[0] > 4 || (BASH_VERSINFO[0] == 4 && BASH_VERSINFO[1] >= 1) )) \
+        || skip "bash $BASH_VERSION does not exit on a failed (( )) under set -e; CI's bash 5 runs this"
+    HOOK_T=$(mktemp -d)
+    git -C "$HOOK_T" init -q
+}
+
+run_hook() {
+    git -C "$HOOK_T" add -A
+    run bash -c "cd '$HOOK_T' && '$BASH' '$REPO_ROOT/scripts/pre-commit'"
+    rm -rf "$HOOK_T"
+}
+
+@test "pre-commit: a blocking failure still runs every later check and the summary" {
+    hook_temp_repo
+    # Fails CHECK 1 (the fixture key, under a name the scanner does not
+    # exempt) and CHECK 11 (a broken doc link), the first and last checks.
+    cp "$REPO_ROOT/tests/fixtures/compose-with-secrets.yml" "$HOOK_T/leak.txt"
+    printf '# Doc\n\nSee [the guide](docs/MISSING.md).\n' > "$HOOK_T/README.md"
+    run_hook
+    assert_failure
+    assert_output --partial "WireGuard private key"
+    assert_output --partial "broken link to 'docs/MISSING.md'"
+    assert_output --partial "BLOCKED: 2 error(s) found"
+}
+
+@test "pre-commit: a warning-only hit does not block the commit" {
+    hook_temp_repo
+    printf 'DOMAIN=example-custom.test\n' > "$HOOK_T/.env"
+    printf '.env\n' > "$HOOK_T/.gitignore"
+    printf 'served at example-custom.test\n' > "$HOOK_T/notes.txt"
+    run_hook
+    assert_success
+    assert_output --partial "WARNING: Your domain 'example-custom.test' is hardcoded"
+    assert_output --partial "PASSED: All checks passed"
+}
+
+# check_hardcoded_domain returns 1 when it finds the NAS hostname, and the hook
+# called it bare, so set -e ended the hook there on every bash: no checks 6-11,
+# no summary. It must block AND let the rest run.
+@test "pre-commit: the NAS hostname blocks, and every later check still runs" {
+    HOOK_T=$(mktemp -d)
+    git -C "$HOOK_T" init -q
+    mkdir -p "$HOOK_T/.claude"
+    printf 'NAS: mybox-nas.local\n' > "$HOOK_T/.claude/config.local.md"
+    printf '.claude/\n' > "$HOOK_T/.gitignore"
+    printf 'ssh mybox-nas\n' > "$HOOK_T/notes.txt"
+    run_hook
+    assert_failure
+    assert_output --partial "NAS hostname 'mybox-nas' found"
+    assert_output --partial "11. Checking documentation links"
+    assert_output --partial "BLOCKED: 1 error(s) found"
+}
