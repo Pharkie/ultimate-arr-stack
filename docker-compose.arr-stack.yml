@@ -511,10 +511,10 @@ services:
     image: ghcr.io/seerr-team/seerr:v3.4.1
     init: true
     container_name: seerr
+    # No cap_add: the image runs as node (UID 1000), and a non-root process
+    # gets no effective capabilities from cap_add. Docker copies the image's
+    # node-owned /app/config into a new volume, so Seerr can write it anyway.
     <<: *default-security
-    cap_add:
-      - CHOWN           # Create config subdirs on first run
-      - DAC_OVERRIDE    # Write to root-owned volume directories
     depends_on:
       gluetun:
         condition: service_healthy  # Needs gluetun to reach Sonarr/Radarr

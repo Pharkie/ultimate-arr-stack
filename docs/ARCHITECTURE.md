@@ -167,7 +167,7 @@ Two YAML anchors define security profiles in each compose file:
 | `x-security` | All non-LSIO services | None by default (services add back only what they need) |
 | `x-security-lsio` | Sonarr, Radarr, Prowlarr, qBittorrent, SABnzbd, Bazarr | `CHOWN`, `SETUID`, `SETGID`, `DAC_OVERRIDE` (s6-overlay needs these to switch users during init) |
 
-Services that write to Docker volumes as root add back `CHOWN` + `DAC_OVERRIDE` (Jellyfin, Seerr, Uptime Kuma, DUC, Beszel, DIUN, Configarr). Services with read-only or no volumes don't need any (FlareSolverr, Cloudflared, Traefik, Deunhealth, Beszel-agent).
+Services that write to Docker volumes as root add back `CHOWN` + `DAC_OVERRIDE` (Jellyfin, Uptime Kuma, DUC, Beszel, DIUN, Configarr). Services with read-only or no volumes don't need any (FlareSolverr, Cloudflared, Traefik, Deunhealth, Beszel-agent). Nor does Seerr: it runs as a non-root user, which gets no effective capabilities from `cap_add`, and its volume is created with that user's ownership.
 
 Additional requirements:
 - **Gluetun** — adds `NET_ADMIN` (required to create VPN tunnel interfaces)
