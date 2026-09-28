@@ -173,12 +173,14 @@ EOF
 
 # --- image versions --------------------------------------------------------
 #
-# curl is replaced by a stub on PATH that serves canned Docker Hub answers, so
+# curl is replaced by a stub on PATH that serves canned registry answers, so
 # these run offline and cannot pass just because the live registry happened to
-# answer well. The stub answers the unfiltered newest-100 query from
-# first.json and any name-filtered query from filtered.json, falling back to
-# first.json; a <name>.fail file makes that query fail the way a dead
-# connection does.
+# answer well. For Docker Hub the stub answers the unfiltered newest-100 query
+# from first.json and any name-filtered query from filtered.json, falling back
+# to first.json. For GHCR it hands out a token, then answers the first page of
+# the tag listing from ghcr1.json and any later page (?last=), on any host,
+# from ghcr2.json; a ghcrN.link file becomes that page's Link header. A
+# <name>.fail file makes that query fail the way a dead connection does.
 #
 # The fallback matters: with a missing filtered.json the stub's cat failed, so
 # the rate-limit case "passed" as did-not-answer even with the "results" guard
@@ -191,19 +193,50 @@ hub_listing() {
     echo "$out]}"
 }
 
+# One page of a GHCR tags listing containing the given tag names.
+ghcr_listing() {
+    local out='{"name":"example/paged","tags":[' sep='' t
+    for t in "$@"; do out+="$sep\"$t\""; sep=','; done
+    echo "$out]}"
+}
+
 image_check_setup() {
     IMG_T=$(mktemp -d)
     mkdir -p "$IMG_T/bin" "$IMG_T/repo"
     git -C "$IMG_T/repo" init -q
     cat > "$IMG_T/bin/curl" <<STUB
 #!/bin/bash
-for url in "\$@"; do :; done
+hdrs="" auth=""
+while [[ \$# -gt 1 ]]; do
+    case "\$1" in
+        -D) hdrs="\$2"; shift ;;
+        -H) auth="\$2"; shift ;;
+    esac
+    shift
+done
+url="\$1"
 case "\$url" in
     https://hub.docker.com) exit 0 ;;
+    https://ghcr.io/token*) echo '{"token":"anon"}'; exit 0 ;;
+    # Any host: a check that followed a link off ghcr.io must visibly succeed.
+    */tags/list[?]last=*) f=ghcr2 ;;
+    https://ghcr.io/v2/*) f=ghcr1 ;;
     *name=*) f=filtered ;;
     *) f=first ;;
 esac
 [[ -f "$IMG_T/\$f.fail" ]] && exit 7
+if [[ "\$f" == ghcr* ]]; then
+    # Real GHCR refuses every page, not just the first, without the token.
+    if [[ "\$auth" != "Authorization: Bearer anon" ]]; then
+        echo '{"errors":[{"code":"UNAUTHORIZED","message":"authentication required"}]}'
+        exit 0
+    fi
+    if [[ -n "\$hdrs" ]]; then
+        { printf 'HTTP/2 200\r\ncontent-type: application/json\r\n'
+          [[ -f "$IMG_T/\$f.link" ]] && printf 'link: %s\r\n' "\$(cat "$IMG_T/\$f.link")"
+          printf '\r\n'; } > "\$hdrs"
+    fi
+fi
 [[ -f "$IMG_T/\$f.json" ]] || f=first
 cat "$IMG_T/\$f.json"
 STUB
@@ -260,4 +293,77 @@ run_image_check() {
     assert_success
     assert_output --partial "SKIP: example/ci-flooded:2.1.17 not checked - registry answered, but with no version tags"
     refute_output --partial "did not answer"
+}
+
+# GHCR pages its tag listing and lists tags in push order, so the newest
+# releases are on the LAST page. seerr's first page stopped at v3.1.0 while
+# v3.5.0 sat on page 3, and the check cached "current" for v3.4.1.
+@test "check_image_versions: follows GHCR's tag listing onto the next page" {
+    image_check_setup
+    ghcr_listing develop v3.1.0 v3.4.1 sha-0b8f872 > "$IMG_T/ghcr1.json"
+    echo '</v2/example/paged/tags/list?last=sha-0b8f872&n=1000>; rel="next"' > "$IMG_T/ghcr1.link"
+    ghcr_listing sha-cd8aa1f v3.5.0 v3.5 v3.6.0-beta.1 > "$IMG_T/ghcr2.json"
+    run_image_check ghcr.io/example/paged:v3.4.1
+    rm -rf "$IMG_T"
+    assert_success
+    assert_output --partial "UPDATE: paged v3.4.1 → v3.5.0 available"
+    refute_output --partial "SKIP"
+}
+
+@test "check_image_versions: a GHCR next page that cannot be read fails the whole listing" {
+    local body
+    # Page 1 alone says "current"; that must not stand in for the full listing.
+    # A dead connection, a rate-limit answer, and a next link off ghcr.io.
+    for body in FAIL '{"errors":[{"code":"TOOMANYREQUESTS","message":"rate limited"}]}' OFFSITE; do
+        image_check_setup
+        ghcr_listing v3.4.1 sha-0b8f872 > "$IMG_T/ghcr1.json"
+        echo '</v2/example/paged/tags/list?last=sha-0b8f872&n=1000>; rel="next"' > "$IMG_T/ghcr1.link"
+        ghcr_listing v3.5.0 > "$IMG_T/ghcr2.json"
+        case "$body" in
+            FAIL) touch "$IMG_T/ghcr2.fail" ;;
+            OFFSITE) echo '<https://elsewhere.example/v2/example/paged/tags/list?last=sha-0b8f872>; rel="next"' > "$IMG_T/ghcr1.link" ;;
+            *) echo "$body" > "$IMG_T/ghcr2.json" ;;
+        esac
+        run_image_check ghcr.io/example/paged:v3.4.1
+        rm -rf "$IMG_T"
+        assert_success
+        assert_output --partial "SKIP: ghcr.io/example/paged:v3.4.1 not checked - registry did not answer"
+        refute_output --partial "All 1 checked images are up to date"
+    done
+}
+
+# The TTL was the cache FILE's age, and every write rewrites the file, so a
+# stale "current" lived on as long as any other image kept being written.
+@test "check_image_versions: an expired cache entry is re-checked even when the cache file is fresh" {
+    image_check_setup
+    ghcr_listing v3.4.1 v3.5.0 > "$IMG_T/ghcr1.json"
+    printf '%s\n' "ghcr.io/example/paged:v3.4.1=current|$(( $(date +%s) - 90000 ))" \
+        "ghcr.io/example/other:v1.0.0=current|$(date +%s)" > "$IMG_T/cache"
+    run_image_check ghcr.io/example/paged:v3.4.1
+    rm -rf "$IMG_T"
+    assert_success
+    assert_output --partial "UPDATE: paged v3.4.1 → v3.5.0 available"
+}
+
+@test "check_image_versions: a cache line without a timestamp is re-checked, not trusted" {
+    image_check_setup
+    ghcr_listing v3.4.1 v3.5.0 > "$IMG_T/ghcr1.json"
+    echo "ghcr.io/example/paged:v3.4.1=current" > "$IMG_T/cache"
+    run_image_check ghcr.io/example/paged:v3.4.1
+    rm -rf "$IMG_T"
+    assert_success
+    assert_output --partial "UPDATE: paged v3.4.1 → v3.5.0 available"
+}
+
+@test "check_image_versions: a GHCR listing that never ends is a named skip, not 'current'" {
+    image_check_setup
+    ghcr_listing v3.4.1 > "$IMG_T/ghcr1.json"
+    echo '</v2/example/paged/tags/list?last=v3.4.1&n=1000>; rel="next"' > "$IMG_T/ghcr1.link"
+    ghcr_listing sha-0b8f872 > "$IMG_T/ghcr2.json"
+    echo '</v2/example/paged/tags/list?last=sha-0b8f872&n=1000>; rel="next"' > "$IMG_T/ghcr2.link"
+    run_image_check ghcr.io/example/paged:v3.4.1
+    rm -rf "$IMG_T"
+    assert_success
+    assert_output --partial "SKIP: ghcr.io/example/paged:v3.4.1 not checked - tag listing runs past"
+    refute_output --partial "All 1 checked images are up to date"
 }
