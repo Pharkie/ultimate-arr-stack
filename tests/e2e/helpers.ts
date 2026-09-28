@@ -52,10 +52,11 @@ export async function addHeaderToAllRequests(page: Page, name: string, value: st
 
 // ─── Services in gluetun's network namespace ────────────────────────────────
 
-// Every service with `network_mode: "service:gluetun"` in
-// docker-compose.arr-stack.yml. The VPN egress and namespace checks iterate
-// over this, so a service missing here is one nobody checks for a leak. Keep
-// it on one line: a script compares it against the compose file.
+// Every service the compose files bind into gluetun's namespace
+// (`network_mode: "service:gluetun"` or `"container:gluetun"`), by container
+// name. The VPN egress and namespace checks iterate over this, so a service
+// missing here is one nobody checks for a leak. Keep it on one line:
+// tests/vpn-zombies.bats fails unless it names exactly those services.
 export const GLUETUN_NAMESPACE_SERVICES = ['qbittorrent', 'sabnzbd', 'prowlarr', 'flaresolverr'] as const;
 
 // ─── Running commands on the NAS ────────────────────────────────────────────

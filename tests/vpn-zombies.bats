@@ -1,6 +1,7 @@
 #!/usr/bin/env bats
-# Unit tests for scripts/detect-vpn-zombies.sh, plus the guard that keeps its
-# TUNNELED list in step with the compose files.
+# Unit tests for scripts/detect-vpn-zombies.sh, plus the guards that keep its
+# TUNNELED list, and the e2e suite's GLUETUN_NAMESPACE_SERVICES, in step with
+# the compose files.
 #
 # Docker is faked by a `docker` shim first on PATH. It answers only
 # `docker inspect [--type container] -f FORMAT REF`, from one file per
@@ -305,6 +306,102 @@ fixture_script() {
     fixture_compose "$BATS_TEST_TMPDIR/c.yml" plain other
     fixture_script "$BATS_TEST_TMPDIR/s.sh" 'TUNNELED=(qbittorrent)'
     run tunneled_drift "$BATS_TEST_TMPDIR/s.sh" "$BATS_TEST_TMPDIR/c.yml"
+    assert_failure
+    assert_output --partial "no gluetun-bound service found"
+}
+
+# ---------------------------------------------------------------------------
+# Drift guard: GLUETUN_NAMESPACE_SERVICES in tests/e2e/helpers.ts is what the
+# e2e egress and namespace checks iterate over. It must name exactly the
+# services the compose files bind into gluetun: one missing is never checked
+# for a leak, and a stale one points the e2e run at a container that isn't
+# tunnelled.
+# ---------------------------------------------------------------------------
+
+# Names in FILE's one-line `export const GLUETUN_NAMESPACE_SERVICES = [...]`.
+# Prints nothing if the line is missing or spread over several lines.
+e2e_tunnelled_list() {
+    sed -n 's/^export const GLUETUN_NAMESPACE_SERVICES = \[\([^]]*\)\].*$/\1/p' "$1" |
+        tr -d "\"' \t" | tr ',' '\n' | sed '/^$/d'
+}
+
+# Succeeds if FILE's GLUETUN_NAMESPACE_SERVICES and the compose bindings are
+# the same set of whole names. Fails, saying why, if they differ or if either
+# list comes out empty.
+e2e_tunnelled_drift() {
+    local ts="$1" declared bound svc missing="" extra=""
+    shift
+    declared="$(e2e_tunnelled_list "$ts" | sort -u)"
+    bound="$(compose_tunnelled "$@" | sort -u)"
+    [ -n "$declared" ] || { echo "no one-line GLUETUN_NAMESPACE_SERVICES = [...] in $ts"; return 1; }
+    [ -n "$bound" ] || { echo "no gluetun-bound service found in: $*"; return 1; }
+    for svc in $bound; do
+        printf '%s\n' "$declared" | grep -qxF "$svc" || missing="$missing $svc"
+    done
+    for svc in $declared; do
+        printf '%s\n' "$bound" | grep -qxF "$svc" || extra="$extra $svc"
+    done
+    [ -n "$missing$extra" ] || return 0
+    [ -z "$missing" ] || echo "bound to gluetun in compose but missing from GLUETUN_NAMESPACE_SERVICES:$missing"
+    [ -z "$extra" ] || echo "in GLUETUN_NAMESPACE_SERVICES but not bound to gluetun in any compose file:$extra"
+    return 1
+}
+
+fixture_ts() {
+    printf '%s\n' "import { x } from './y';" "$2" "export const OTHER = ['qbittorrent'] as const;" > "$1"
+}
+
+@test "drift guard: e2e GLUETUN_NAMESPACE_SERVICES equals the compose gluetun bindings" {
+    run e2e_tunnelled_drift "$REPO_ROOT/tests/e2e/helpers.ts" "$REPO_ROOT"/docker-compose*.yml
+    assert_success
+    assert_output ""
+}
+
+@test "e2e drift guard FAILS: a bound service missing from GLUETUN_NAMESPACE_SERVICES" {
+    fixture_compose "$BATS_TEST_TMPDIR/c.yml" qbittorrent:service:gluetun sabnzbd:service:gluetun dl:container:gluetun plain
+    fixture_ts "$BATS_TEST_TMPDIR/h.ts" "export const GLUETUN_NAMESPACE_SERVICES = ['qbittorrent', 'sabnzbd'] as const;"
+    run e2e_tunnelled_drift "$BATS_TEST_TMPDIR/h.ts" "$BATS_TEST_TMPDIR/c.yml"
+    assert_failure
+    assert_output "bound to gluetun in compose but missing from GLUETUN_NAMESPACE_SERVICES: dl"
+}
+
+@test "e2e drift guard FAILS: a name no compose file binds" {
+    fixture_compose "$BATS_TEST_TMPDIR/c.yml" qbittorrent:service:gluetun plain
+    fixture_ts "$BATS_TEST_TMPDIR/h.ts" "export const GLUETUN_NAMESPACE_SERVICES = ['qbittorrent', 'plain'] as const;"
+    run e2e_tunnelled_drift "$BATS_TEST_TMPDIR/h.ts" "$BATS_TEST_TMPDIR/c.yml"
+    assert_failure
+    assert_output "in GLUETUN_NAMESPACE_SERVICES but not bound to gluetun in any compose file: plain"
+}
+
+@test "e2e drift guard FAILS: names must match whole, not as substrings" {
+    fixture_compose "$BATS_TEST_TMPDIR/c.yml" qbittorrent:service:gluetun sabnzbd:service:gluetun
+    fixture_ts "$BATS_TEST_TMPDIR/h.ts" 'export const GLUETUN_NAMESPACE_SERVICES = ["qbit", "sabnzbd"] as const;'
+    run e2e_tunnelled_drift "$BATS_TEST_TMPDIR/h.ts" "$BATS_TEST_TMPDIR/c.yml"
+    assert_failure
+    assert_output "bound to gluetun in compose but missing from GLUETUN_NAMESPACE_SERVICES: qbittorrent
+in GLUETUN_NAMESPACE_SERVICES but not bound to gluetun in any compose file: qbit"
+}
+
+@test "e2e drift guard FAILS: an empty GLUETUN_NAMESPACE_SERVICES" {
+    fixture_compose "$BATS_TEST_TMPDIR/c.yml" qbittorrent:service:gluetun
+    fixture_ts "$BATS_TEST_TMPDIR/h.ts" "export const GLUETUN_NAMESPACE_SERVICES = [] as const;"
+    run e2e_tunnelled_drift "$BATS_TEST_TMPDIR/h.ts" "$BATS_TEST_TMPDIR/c.yml"
+    assert_failure
+    assert_output --partial "no one-line GLUETUN_NAMESPACE_SERVICES = [...]"
+}
+
+@test "e2e drift guard FAILS: GLUETUN_NAMESPACE_SERVICES spread over several lines" {
+    fixture_compose "$BATS_TEST_TMPDIR/c.yml" qbittorrent:service:gluetun
+    fixture_ts "$BATS_TEST_TMPDIR/h.ts" "$(printf "export const GLUETUN_NAMESPACE_SERVICES = [\n  'qbittorrent',\n] as const;")"
+    run e2e_tunnelled_drift "$BATS_TEST_TMPDIR/h.ts" "$BATS_TEST_TMPDIR/c.yml"
+    assert_failure
+    assert_output --partial "no one-line GLUETUN_NAMESPACE_SERVICES = [...]"
+}
+
+@test "e2e drift guard FAILS: compose files with no gluetun binding found" {
+    fixture_compose "$BATS_TEST_TMPDIR/c.yml" plain other
+    fixture_ts "$BATS_TEST_TMPDIR/h.ts" "export const GLUETUN_NAMESPACE_SERVICES = ['qbittorrent'] as const;"
+    run e2e_tunnelled_drift "$BATS_TEST_TMPDIR/h.ts" "$BATS_TEST_TMPDIR/c.yml"
     assert_failure
     assert_output --partial "no gluetun-bound service found"
 }

@@ -34,7 +34,7 @@ For each part of the stack: which check covers it, where that check runs, whethe
 | CVEs in the images | | | | reports | | | |
 | **VPN** | | | | | | | |
 | Download clients inside gluetun's namespace (compose)⁴ | | fails | blocks | | | | |
-| Scripts' tunnelled lists match compose⁵ | | fails | blocks | | | | |
+| Scripts' and e2e's tunnelled lists match compose⁵ | | fails | blocks | | | | |
 | OpenVPN tunnel comes up with the granted capabilities | | fails | blocks | | | | |
 | Egress: gluetun ≠ NAS, each tunnelled service = gluetun, Sonarr/Radarr ≠ gluetun | | | | | fails | | cron `check-vpn.sh` |
 | Dependents on gluetun's current namespace | | | | | fails | | `detect-vpn-zombies.sh` |
@@ -54,6 +54,7 @@ For each part of the stack: which check covers it, where that check runs, whethe
 | **Scripts** | | | | | | | |
 | `arr-backup.sh` naming, encryption, rotation (docker, gpg stubbed) | | fails | blocks | | | | |
 | `configure-apps.sh` HTTP helpers, Bazarr plan, command line | | fails | blocks | | | | |
+| Duplicate `.lan` detection: hook check 8 and `check-dns-duplicates.sh` (SSH, docker and a grep without `-P` faked) | | fails | blocks | | | | |
 | **Live stack** | | | | | | | |
 | App settings and health through their APIs⁸ | | | | | fails | | |
 | UIs log in and render | | | | | fails | | |
@@ -72,7 +73,7 @@ For each part of the stack: which check covers it, where that check runs, whethe
 2. Only lines of the form `- "HOST:CONTAINER"` with nothing after them. See [gaps](#gaps).
 3. No `privileged`, docker socket `:ro`, no `env_file`, no `SYS_TIME`, Traefik `no-new-privileges`, Jellyfin media `:ro` (`tests/security.bats`).
 4. Read from the rendered model. A client is matched by service name (`qbittorrent`, `sabnzbd`) or by an image token (qbittorrent, transmission, deluge, rtorrent, rutorrent, aria2, sabnzbd, nzbget). Prowlarr and FlareSolverr aren't clients; footnote 5 holds them.
-5. `TUNNELED` in `detect-vpn-zombies.sh`, and what `check-vpn.sh --list-tunnelled` derives, must equal the compose `service:`/`container:gluetun` bindings in both directions (`tests/vpn-zombies.bats`).
+5. `TUNNELED` in `detect-vpn-zombies.sh`, what `check-vpn.sh --list-tunnelled` derives, and `GLUETUN_NAMESPACE_SERVICES` in `tests/e2e/helpers.ts` (which the e2e egress and namespace tests iterate over) must each equal the compose `service:`/`container:gluetun` bindings in both directions (`tests/vpn-zombies.bats`).
 6. The hook scans every tracked and staged file except `*.md`, `tests/fixtures/`, `scripts/lib/check-*.sh` and `common.sh`. Its two patterns labelled WARNING still count as errors and block. bats runs `check_secrets` on throwaway repos, not on the tree, and scans `.env.example` itself; CI's other secret check is trivy's own ruleset.
 7. Relative links to `.md` files and `#anchors`, outside fenced code. Links to other file types and external URLs aren't followed.
 8. Root folders, qBittorrent and SABnzbd categories, every enabled download client passing its app's own test, RSS indexers, no error-level health checks, Prowlarr's synced apps, Seerr's metadata source and stored servers, Bazarr's profile and stored API keys.
@@ -84,6 +85,7 @@ For each part of the stack: which check covers it, where that check runs, whethe
 - The link `setup-hooks.sh` makes is absolute, so every worktree runs the `scripts/pre-commit` and `scripts/lib/` of the checkout that last ran it, against its own files.
 - The hostname block, the domain warning and checks 6–9 read untracked files from the committing checkout: `.claude/config.local.md`, `.env` or `.env.nas.backup`. A fresh clone, a git worktree and CI have none of them, so those checks skip.
 - Checks 6–8 skip when the NAS doesn't answer ping, port 22 is closed, SSH auth fails, or there is no `timeout` command on `PATH` (it's what probes the port). Check 9 also needs `dig` and `NAS_IP` in `.env.nas.backup`.
+- Check 8 compares `02-local-dns.conf` only with itself when it can't read `pihole.toml` from the `pihole` container, and its OK line then says `pihole.toml not compared`.
 - Check 10 skips offline. Each registry that doesn't answer is named as a SKIP. It stops at 30 s only when `timeout` or `gtimeout` exists.
 
 **bats, local and CI**
@@ -113,7 +115,6 @@ For each part of the stack: which check covers it, where that check runs, whethe
 Things nothing checks, or checks that can't see what they're meant to. Each was confirmed in the code.
 
 - **Port conflicts see 3 of the 18 published host ports.** The hook and `tests/port-conflicts.bats` share a regex that needs the line to end right after `"HOST:CONTAINER"`, so a trailing comment, `/udp` or a host-IP prefix hides the line. Moving Pi-hole's web UI onto qBittorrent's `8085` passes both, and `docker compose config` too.
-- **The e2e list of tunnelled services is compared with nothing.** `GLUETUN_NAMESPACE_SERVICES` in `tests/e2e/helpers.ts` says a script checks it against compose; none does. A newly tunnelled service gets no egress or namespace test until someone adds it by hand.
 - **The NAS-first rule is enforced by nothing.** CI can't reach the NAS, and nothing records that e2e ran for a commit.
 - **Hostname and domain leaks are never checked in CI or in a worktree.** Only a checkout holding the untracked config runs them. The hook's secret patterns (WireGuard, OpenVPN, Cloudflare, bcrypt) never run over the tree in CI, and never over `*.md` anywhere.
 - **No IPv6 or DNS-leak test.** Every egress probe is IPv4-only. `check-vpn.sh` checks that DNS resolves inside gluetun, not where the queries go.
@@ -125,7 +126,7 @@ Things nothing checks, or checks that can't see what they're meant to. Each was 
 - **Update discovery rests on hook check 10.** This repository has no Renovate PR, branch or Dependency Dashboard issue, so nothing shows the app is installed. Nothing reports new versions of the digest-pinned CI tool images in `ci.yml`.
 - **YAML outside the compose files is parsed only by the hook, and only when staged.** The `*.yml.example` templates and `renovate.json` are never validated, and the YAML check has no negative test.
 - **Some code is never type-checked or linted.** Playwright strips the e2e specs' types without checking them, and CI never loads the specs at all. The `*.bats` files and the two Python helpers aren't linted.
-- **Untested scripts** (shellcheck at `error` only): `check-network.sh`, `check-dns-duplicates.sh`, `fix-radarr-paths.sh`, `fix-sonarr-folders.sh`, `queue-cleanup.sh`, `restart-stack.sh`, `scan-executables.sh`. Hook checks 3 and 6–9 have no tests either.
+- **Untested scripts** (shellcheck at `error` only): `check-network.sh`, `fix-radarr-paths.sh`, `fix-sonarr-folders.sh`, `queue-cleanup.sh`, `restart-stack.sh`, `scan-executables.sh`. Hook checks 3, 6, 7 and 9 have no tests either.
 - **The three executable-extension lists** in `configure-apps.sh`, `scan-executables.sh` and `media-hygiene.spec.ts` must match, and nothing compares them.
 - **Backups:** a volume that fails to copy prints an error (and posts to `HA_WEBHOOK_URL` if set), but the script still exits 0, and no test covers that path. The volume list is hard-coded and never compared with the compose files. Nothing checks that the scheduled backup ran.
 - **No live test for** cloudflared, Tailscale, dnscrypt-proxy, diun, deunhealth or configarr. The utilities get only their optional `.lan` routes, and the tunnel only hook check 9's two external names.
