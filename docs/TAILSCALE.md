@@ -45,19 +45,14 @@ Three one-time settings at [login.tailscale.com/admin](https://login.tailscale.c
 
 ### Optional: use the NAS as an exit node
 
-The compose file also advertises the NAS as an **exit node** (`--advertise-exit-node`), which lets a device send *all* its internet traffic through your home connection rather than just LAN traffic. Useful if you'd rather Tailscale be your "encrypt my traffic on untrusted WiFi" VPN than run a second always-on VPN app.
+An exit node carries *all* of a device's internet traffic out through your home connection, not just its `.lan` traffic. That makes Tailscale your VPN on untrusted Wi-Fi. The compose file already offers the NAS as one (`--advertise-exit-node`); nothing changes until you approve it.
 
-**Advertising it does nothing on its own** — like the subnet route, it stays inert until approved.
+1. **Approve it.** Admin console → *Machines* → the NAS → *Edit route settings* → under *Exit node*, tick `0.0.0.0/0`, plus `::/0` if IPv6 forwarding is on (see below).
+2. **Turn it on per device**, in that device's Tailscale app.
 
-**Approve it** (same *Machines* page as the subnet route): click your NAS → *Edit route settings* → under *Exit node*, tick both `0.0.0.0/0` and `::/0` → Save.
+> Phones generally hold one VPN connection at a time, so Tailscale and another always-on VPN app keep displacing each other. On a phone, use the exit node *instead of* the other app.
 
-**Then enable it per-device**, in that device's Tailscale app settings.
-
-> ⚠️ **Most mobile OSes run only one VPN at a time.** On Android in particular, an always-on VPN app and Tailscale will kick each other off the system tunnel — including with that app's own split-tunnelling enabled, since that only decides which traffic uses an *already-active* tunnel, not whether two apps can hold the tunnel at once. Using the NAS as an exit node is meant to **replace** that other app on such devices, not run alongside it.
-
-**Exit nodes need IP forwarding**, and the two protocols are separate. Subnet routing already working does *not* mean an exit node will — verified on a UGREEN NAS where `net.ipv4.ip_forward` was `1` (so `.lan` routing was fine) while `net.ipv6.conf.all.forwarding` was `0`. Approving `0.0.0.0/0` worked; `::/0` would have silently failed to forward.
-
-Check both, on the host and inside the container:
+**Check forwarding for both IP versions.** The kernel has to forward packets, and IPv4 and IPv6 are switched on separately. On a UGREEN NAS we found IPv4 forwarding on (so `.lan` routing worked) and IPv6 forwarding off: `0.0.0.0/0` worked, and `::/0` would have failed without a word.
 
 ```bash
 cat /proc/sys/net/ipv4/ip_forward                      # want 1
@@ -65,9 +60,9 @@ docker exec tailscale sh -c 'cat /proc/sys/net/ipv4/ip_forward; cat /proc/sys/ne
 docker exec tailscale tailscale status --json | grep -i -A2 health
 ```
 
-Tailscale reports this as *"Subnet routing is enabled, but IP forwarding is disabled"* — which reads as though subnet routing is broken when it may only be the IPv6 half that's missing. If you need IPv6, enable it on the host (`sysctl -w net.ipv6.conf.all.forwarding=1`, then persist in `/etc/sysctl.d/`); if you're IPv4-only, approve just `0.0.0.0/0` and ignore the warning.
+Tailscale's warning *"Subnet routing is enabled, but IP forwarding is disabled"* can mean only the IPv6 half is off. For IPv6, enable it on the host (`sysctl -w net.ipv6.conf.all.forwarding=1`, persisted under `/etc/sysctl.d/`). IPv4-only? Approve `0.0.0.0/0` alone and ignore the warning.
 
-**To confirm approval actually landed, compare what the node *advertises* against what the tailnet *allows*:**
+**Check the approval took effect.** Compare what the NAS offers with what the tailnet accepted:
 
 ```bash
 docker exec tailscale tailscale status --json \
@@ -76,11 +71,9 @@ docker exec tailscale tailscale debug prefs \
   | python3 -c "import sys,json; print('offered   :', json.load(sys.stdin).get('AdvertiseRoutes'))"
 ```
 
-`AdvertiseRoutes` is what this machine *claims*; it contains `0.0.0.0/0` and `::/0` the moment you add the flag, approved or not. **`AllowedIPs` is what the coordination server has actually accepted** — if `0.0.0.0/0` appears there, approval landed.
+`AdvertiseRoutes` is the offer: it lists `0.0.0.0/0` and `::/0` as soon as the flag is set, approved or not. `AllowedIPs` is what the coordination server accepted, so `0.0.0.0/0` there means approval went through. `ExitNodeOption` answers a different question (is the node advertising and able to forward?) and says nothing about approval.
 
-> Don't use `ExitNodeOption` for this. It reads `true` once the node is advertising and forwarding correctly, which is not the same as approved, so it can mislead in both directions.
-
-If a client reports "no exit nodes found" while `AllowedIPs` looks right, check the *client* is actually connected (`tailscale status` on that device) — a stopped client has no netmap and can't see anything on the tailnet.
+A client that reports "no exit nodes found" while `AllowedIPs` looks right is usually just disconnected: check `tailscale status` on that device.
 
 ## 4. Install Tailscale on your devices
 

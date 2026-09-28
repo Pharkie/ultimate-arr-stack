@@ -58,11 +58,9 @@ services:
       - TS_AUTHKEY=${TS_AUTHKEY:-}
       # Advertises your LAN subnet (LAN_SUBNET from .env) so tailnet peers can
       # reach the whole network. Add extra subnets with TS_EXTRA_ROUTES if needed.
-      # --advertise-exit-node offers the NAS as an exit node, letting a tailnet
-      # device route ALL its internet traffic through your home connection, not
-      # just LAN traffic. Advertising is inert until you approve it in the admin
-      # console (Machines -> your NAS -> Edit route settings -> tick 0.0.0.0/0
-      # and ::/0), so adding the flag changes nothing on its own.
+      # --advertise-exit-node lets a tailnet device send all its internet traffic
+      # out through this NAS, not just LAN traffic. It stays switched off until you
+      # approve it in the Tailscale admin console; see docs/TAILSCALE.md.
       - TS_EXTRA_ARGS=--advertise-routes=${LAN_SUBNET}${TS_EXTRA_ROUTES:+,${TS_EXTRA_ROUTES}} --accept-routes --advertise-exit-node
     healthcheck:
       test: ["CMD", "tailscale", "status", "--peers=false"]
