@@ -66,27 +66,44 @@ DIUN monitors all running containers and sends a webhook when a newer image vers
 
 ### Step 1: Create HA Automation
 
+Pick a webhook ID nobody could guess (e.g. `diun-image-updates-` plus a random string) and use it in both places. DIUN sends the image under a top-level `image` field, with `status` (`new`: a newer tag appeared; `update`: the pinned tag's digest changed), `hub_link` (may be empty) and `hostname`.
+
 ```yaml
 alias: DIUN - Arr Stack Image Update Notification
-trigger:
-  - platform: webhook
-    webhook_id: diun-updates
+mode: queued
+triggers:
+  - trigger: webhook
+    webhook_id: diun-image-updates-CHANGE-ME
     allowed_methods:
       - POST
-action:
-  - service: persistent_notification.create
+    local_only: true
+actions:
+  - action: persistent_notification.create
     data:
-      title: "Arr Stack - Docker Image Update"
-      message: "{{ trigger.json.diun_entry.image }} has a new version"
+      notification_id: "diun_{{ trigger.json.image | slugify }}"
+      title: "Image update available"
+      message: >
+        {{ trigger.json.image }} ({{ trigger.json.status }}) on {{ trigger.json.hostname }}
+        {% if trigger.json.hub_link %}{{ trigger.json.hub_link }}{% endif %}
 ```
+
+Add a `notify.mobile_app_your_phone` action for push notifications. The `notification_id` makes a repeat for the same image replace the earlier notice.
 
 ### Step 2: Configure .env
 
-Add the webhook URL to your `.env` on the NAS:
+Point DIUN at Home Assistant's LAN address directly, not through Traefik or Nabu Casa, so `local_only: true` holds:
 
 ```bash
-DIUN_WEBHOOK_URL=http://homeassistant.lan:8123/api/webhook/diun-updates
+DIUN_WEBHOOK_URL=http://192.168.1.20:8123/api/webhook/diun-image-updates-CHANGE-ME
 ```
+
+Then recreate DIUN (`docker compose -f docker-compose.utilities.yml up -d --no-deps diun`) and test the whole path:
+
+```bash
+docker exec diun diun notif test
+```
+
+A notice must actually appear in Home Assistant. DIUN's "Notification sent" proves nothing on its own: Home Assistant answers 200 to a webhook ID that has no automation behind it.
 
 DIUN checks registries daily at 6am by default. Customise with:
 
