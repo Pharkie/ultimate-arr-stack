@@ -1,0 +1,24 @@
+# Fixture for tests/compose-validation.bats (see the test that names this file).
+name: fixture
+x-in-vpn: &in-vpn
+  network_mode: "service:gluetun"
+services:
+  gluetun:
+    image: qmcgaw/gluetun:v3.41
+    container_name: gluetun
+  # Bound through a merge key: a line-by-line read finds no network_mode here,
+  # the rendered model does.
+  sabnzbd:
+    <<: *in-vpn
+    image: lscr.io/linuxserver/sabnzbd:5.1.3
+    container_name: sabnzbd
+  qbittorrent:
+    image: lscr.io/linuxserver/qbittorrent:5.2.3
+    container_name: qbittorrent
+    network_mode: "service:gluetun"
+  # Unbound, and only rendered when its profile is asked for: a check reading
+  # a plain `docker compose config` never sees it.
+  deluge:
+    image: lscr.io/linuxserver/deluge:2.2.0
+    container_name: deluge
+    profiles: ["extra"]
