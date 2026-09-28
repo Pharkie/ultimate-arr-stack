@@ -52,7 +52,7 @@ For each part of the stack: which check covers it, where that check runs, whethe
 | shellcheck at `warning` | | | reports | | | | |
 | Workflows (actionlint), devcontainer Dockerfile (hadolint) | | | blocks | devcontainer must build | | | |
 | **Scripts** | | | | | | | |
-| `arr-backup.sh` naming, encryption, rotation (docker, gpg stubbed) | | fails | blocks | | | | |
+| `arr-backup.sh` naming, encryption, rotation, exit status on a failed volume, Sonarr/Radarr/Jellyfin database copies and their integrity check (docker, gpg stubbed; real SQLite files) | | fails | blocks | | | | |
 | `configure-apps.sh` HTTP helpers, Bazarr plan, command line | | fails | blocks | | | | |
 | **Live stack** | | | | | | | |
 | App settings and health through their APIs⁸ | | | | | fails | | |

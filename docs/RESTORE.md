@@ -40,7 +40,9 @@ gpg --decrypt /tmp/backup.tar.gz.gpg > /tmp/backup.tar.gz
 cd /tmp
 tar -xzf backup.tar.gz
 ls arr-stack-backup-*/
-# Should show: gluetun-config/ qbittorrent-config/ prowlarr-config/ etc.
+# Should show: gluetun-config/ qbittorrent-config/ prowlarr-config/ etc.,
+# plus sonarr-config/ radarr-config/ jellyfin-config/ from backups made since
+# the databases were added
 ```
 
 ### 4. Deploy Fresh Stack
@@ -61,6 +63,8 @@ docker compose -f docker-compose.arr-stack.yml stop   # stop, never down
 cd /tmp/arr-stack-backup-*
 
 for dir in */; do
+  # These three hold databases and restore their own way (below)
+  case "${dir%/}" in sonarr-config|radarr-config|jellyfin-config) continue ;; esac
   vol="arr-stack_${dir%/}"
   echo "Restoring $vol..."
   docker run --rm \
@@ -69,6 +73,8 @@ for dir in */; do
     alpine cp -a /source/. /dest/
 done
 ```
+
+Then restore [Sonarr and Radarr](#restore-sonarr-and-radarr) and [Jellyfin](#restore-jellyfin), if the backup has them.
 
 ### 6. Start Services
 
@@ -103,6 +109,67 @@ docker run --rm \
 docker compose -f docker-compose.arr-stack.yml start seerr
 ```
 
+Not for sonarr-config, radarr-config or jellyfin-config: they follow.
+
+---
+
+## Restore Sonarr and Radarr
+
+The backup holds each app's own backup zip, e.g. `sonarr-config/sonarr_backup_v4.0.20.3014_2026.09.29_06.00.47.zip`, with `config.xml` (API key, port, login settings) and the database (series or movies, quality profiles, custom formats, naming, download clients, indexers). Restore it into the **same version of the app or a newer one**: the version is in the file name, and an older version can't open a newer database.
+
+**From the app's UI** (simplest; the app must be running):
+
+1. Copy the zip to the computer you browse from.
+2. In Sonarr, go to *System → Backup → Restore Backup*, choose the zip, and restore. On a fresh install, create the login it asks for first.
+3. Sonarr restarts on the restored database. Log in with the account from the backup.
+
+The same for Radarr, with `radarr-config/radarr_backup_*.zip`.
+
+**From the command line** (the app stopped; shown for Sonarr, for Radarr swap `sonarr` for `radarr` throughout):
+
+```bash
+cd /tmp/arr-stack-backup-*
+docker compose -f $NAS_STACK_DIR/docker-compose.arr-stack.yml stop sonarr
+
+# Remove the old database's -wal/-shm first: a leftover -wal would be replayed
+# onto the restored database and corrupt it. 1000:1000 is PUID:PGID from .env.
+docker run --rm \
+  -v "$(pwd)/sonarr-config":/backup:ro \
+  -v arr-stack_sonarr-config:/config \
+  alpine sh -c 'cd /config && rm -f sonarr.db-wal sonarr.db-shm &&
+    unzip -o /backup/sonarr_backup_*.zip config.xml sonarr.db &&
+    chown 1000:1000 config.xml sonarr.db'
+
+docker compose -f $NAS_STACK_DIR/docker-compose.arr-stack.yml start sonarr
+```
+
+Posters (`MediaCover/`) are not in the backup; the app downloads them again.
+
+---
+
+## Restore Jellyfin
+
+The backup's `jellyfin-config/` has the same layout as the volume: `config/` (server settings, users), `root/` (library definitions), `plugins/`, and `data/jellyfin.db` (items, users, watch history). Restore it into the **same Jellyfin version or a newer one**: Jellyfin migrates the database forward on start, but an older version can't open a newer one.
+
+```bash
+cd /tmp/arr-stack-backup-*
+docker compose -f $NAS_STACK_DIR/docker-compose.arr-stack.yml stop jellyfin
+
+# Remove the old database's -wal/-shm first: a leftover -wal would be replayed
+# onto the restored database and corrupt it.
+docker run --rm \
+  -v "$(pwd)/jellyfin-config":/backup:ro \
+  -v arr-stack_jellyfin-config:/config \
+  alpine sh -c 'rm -f /config/data/jellyfin.db-wal /config/data/jellyfin.db-shm &&
+    cp -a /backup/. /config/'
+
+docker compose -f $NAS_STACK_DIR/docker-compose.arr-stack.yml start jellyfin
+```
+
+This copies over what is in the backup and leaves the rest of the volume alone, so an existing `metadata/` folder stays. On a fresh install, images and metadata come back with a library scan (*Dashboard → Libraries → Scan All Libraries*).
+
+To roll back only the database, copy just `data/jellyfin.db` the same way (Jellyfin stopped, `-wal` and `-shm` removed first).
+
 ---
 
 ## Restore `.env` from Backup
@@ -124,7 +191,7 @@ Some services may need post-restore steps:
 
 | Service | Post-restore action |
 |---------|-------------------|
-| Jellyfin | Run library scan (Dashboard > Libraries > Scan) |
+| Jellyfin | Run a library scan (Dashboard > Libraries > Scan) to bring back images and metadata; users and watch history come back with the database |
 | Sonarr/Radarr | Verify download clients are connected (Settings > Download Clients > Test) |
 | Prowlarr | Sync indexers (Settings > Apps > Sync App Indexers) |
 | Pi-hole | Verify upstream DNS (Settings > DNS) |
