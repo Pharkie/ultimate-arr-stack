@@ -19,7 +19,7 @@ name: cloudflared
 
 services:
   cloudflared:
-    image: cloudflare/cloudflared:2026.9.1
+    image: cloudflare/cloudflared:2026.9.3
     container_name: cloudflared
     security_opt:
       - no-new-privileges:true

@@ -164,7 +164,7 @@ services:
   # Access: uptime.lan | NAS_IP:3001 (LAN-only, use WireGuard for remote)
   # ═══════════════════════════════════════════════════════════════════════════
   uptime-kuma:
-    image: louislam/uptime-kuma:2.5.4
+    image: louislam/uptime-kuma:2.5.5
     container_name: uptime-kuma
     <<: *default-security
     cap_add:
@@ -224,7 +224,7 @@ services:
   # Access: beszel.lan | NAS_IP:8090 (LAN-only, use WireGuard for remote)
   # ═══════════════════════════════════════════════════════════════════════════
   beszel:
-    image: henrygd/beszel:0.19
+    image: henrygd/beszel:0.20
     container_name: beszel
     <<: *default-security
     cap_add:
@@ -251,7 +251,7 @@ services:
       start_period: 30s
 
   beszel-agent:
-    image: henrygd/beszel-agent:0.19
+    image: henrygd/beszel-agent:0.20
     container_name: beszel-agent
     <<: *default-security
     restart: always
@@ -325,7 +325,7 @@ services:
   # Dry run first: docker compose -f docker-compose.utilities.yml run --rm -e DRY_RUN=true configarr
   # ═══════════════════════════════════════════════════════════════════════════
   configarr:
-    image: ghcr.io/raydak-labs/configarr:1.30.2
+    image: ghcr.io/raydak-labs/configarr:1.32.0
     container_name: configarr
     <<: *default-security
     cap_add:
