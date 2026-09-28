@@ -25,7 +25,7 @@ get_service_block() {
         skip "docker compose CLI not available"
     fi
     for f in $(get_compose_files); do
-        run docker compose -f "$f" --env-file "$TEST_DIR/fixtures/.env.test" config -q
+        run docker compose -f "$f" --env-file "$TEST_DIR/fixtures/.env.test" --profile '*' config -q
         assert_success
     done
 }
@@ -188,7 +188,9 @@ get_service_block() {
 # anchors, merge keys and ${VARS} are resolved by compose, and a line parser
 # was fooled by all of them. docker-compose.override.yml is skipped on
 # purpose — it is partial by design, and compose merges it only when no -f
-# is given.
+# is given. `--profile '*'` renders services in every profile: without it a
+# service behind `profiles:` (configarr is) is left out of the JSON, and every
+# check below would pass without having seen it.
 
 require_compose() {
     if ! docker compose version &>/dev/null; then skip "docker compose CLI not available"; fi
@@ -203,7 +205,7 @@ resolve_compose() {
         [ -e "$f" ] || continue
         n=$(basename "$f" .yml)
         case "$n" in *.override) continue ;; esac
-        docker compose -f "$f" --env-file "$TEST_DIR/fixtures/.env.test" config --format json > "$out/$n.json" \
+        docker compose -f "$f" --env-file "$TEST_DIR/fixtures/.env.test" --profile '*' config --format json > "$out/$n.json" \
             || { echo "docker compose config failed for $f" >&2; return 1; }
         found=1
     done
@@ -227,6 +229,17 @@ resolve_compose() {
     run python3 "$TEST_DIR/helpers/check-clients-tunnelled.py" "${resolved[@]}"
     assert_success
     assert_output "checked 3 client(s), all inside gluetun's namespace"
+}
+
+@test "tunnelled-clients check: sees a client that sits behind a compose profile" {
+    require_compose
+    sed 's/^    container_name: qbittorrent$/    container_name: qbittorrent\n    profiles: ["manual"]/' \
+        "$TEST_DIR/fixtures/compose-client-outside-vpn.yml" > "$BATS_TEST_TMPDIR/docker-compose.fixture.yml"
+    grep -q 'profiles: \["manual"\]' "$BATS_TEST_TMPDIR/docker-compose.fixture.yml"
+    resolved=(); while IFS= read -r line; do resolved+=("$line"); done < <(resolve_compose "$BATS_TEST_TMPDIR")
+    run python3 "$TEST_DIR/helpers/check-clients-tunnelled.py" "${resolved[@]}"
+    assert_failure
+    assert_output --partial "qbittorrent (lscr.io/linuxserver/qbittorrent:5.1.2) has network_mode unset"
 }
 
 @test "tunnelled-clients check: rejects a named client with no VPN binding" {

@@ -326,6 +326,10 @@ services:
   # ═══════════════════════════════════════════════════════════════════════════
   configarr:
     image: ghcr.io/raydak-labs/configarr:1.32.0
+    # Opt-in: a bare `up -d` of this file used to start it too, and a run
+    # creates the quality profiles its config names and (reset_unmatched_scores)
+    # zeroes any score on them it doesn't list. `run configarr` still works.
+    profiles: ["manual"]
     container_name: configarr
     <<: *default-security
     cap_add:
