@@ -35,7 +35,7 @@ check_hardcoded_domain() {
                 local count
                 count=$(echo "$content" | grep -ci "$domain" 2>/dev/null || echo 0)
                 files_with_domain+="      - $file ($count occurrences)"$'\n'
-                ((warnings++))
+                warnings=$((warnings + 1))
             fi
         done
 
@@ -70,7 +70,7 @@ check_hardcoded_domain() {
                 local count
                 count=$(echo "$content" | grep -ci "$nas_hostname" 2>/dev/null || echo 0)
                 files_with_hostname+="      - $file ($count occurrences)"$'\n'
-                ((hostname_errors++))
+                hostname_errors=$((hostname_errors + 1))
             fi
         done
 
