@@ -301,12 +301,12 @@ Lets users browse and request movies/TV shows.
    - Settings → Services → Add Radarr:
      - **Hostname:** `radarr` (Radarr is on the bridge with its own Docker DNS name)
      - **Port:** `7878`
-     - **Quality Profile:** `UHD Bluray + WEB` (ensures all requests get the best available quality)
+     - **Quality Profile:** the one you want requests to use. If you ran [Configarr](UTILITIES.md#configarr-setup), its `UHD Bluray + WEB` (4K, falling back to 1080p) is one option. Avoid the built-in `Ultra-HD`: it is 4K-only, so a title with no 4K release never downloads
      - **External URL:** `http://radarr.lan` (or `http://NAS_IP:7878`) — makes "Open in Radarr" links work in your browser
    - Settings → Services → Add Sonarr:
      - **Hostname:** `sonarr`
      - **Port:** `8989`
-     - **Quality Profile:** `Ultra-HD`
+     - **Quality Profile:** your choice again (Configarr's is `WEB-2160p`; the built-in `Ultra-HD` is 4K-only here too)
      - **External URL:** `http://sonarr.lan` (or `http://NAS_IP:8989`)
 5. **Enable Jellyfin Libraries:** Settings → Jellyfin → toggle **Movies** and **TV** on → Save
 6. **Sync Libraries:** On the same page, click **Sync Libraries** then **Start Scan**

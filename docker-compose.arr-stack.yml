@@ -516,8 +516,10 @@ services:
     # node-owned /app/config into a new volume, so Seerr can write it anyway.
     <<: *default-security
     depends_on:
+      # Not needed to reach Sonarr/Radarr: they left the VPN for the bridge in
+      # v1.7.23. Now it only orders startup and restarts with gluetun.
       gluetun:
-        condition: service_healthy  # Needs gluetun to reach Sonarr/Radarr
+        condition: service_healthy
         restart: true
     ports:
       - "5055:5055"
@@ -554,8 +556,10 @@ services:
     container_name: bazarr
     <<: *lsio-security
     depends_on:
+      # Not needed to reach Sonarr/Radarr: they left the VPN for the bridge in
+      # v1.7.23. Now it only orders startup and restarts with gluetun.
       gluetun:
-        condition: service_healthy  # Needs gluetun to reach Sonarr/Radarr
+        condition: service_healthy
         restart: true
     ports:
       - "6767:6767"

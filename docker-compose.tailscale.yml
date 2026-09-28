@@ -31,6 +31,13 @@ services:
     # network_mode: host is required for subnet routing — the daemon needs
     # to see the host's LAN interface to advertise/route its subnet.
     network_mode: host
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    # NET_ADMIN: create the tun device, routes and ip rules. NET_RAW: the
+    # image's iptables is the legacy build, which needs a raw socket to add
+    # the subnet-router/exit-node rules (without it they fail silently).
     cap_add:
       - NET_ADMIN
       - NET_RAW

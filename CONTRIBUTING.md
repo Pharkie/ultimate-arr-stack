@@ -144,7 +144,7 @@ Run the blocking checks locally before pushing: `./tests/run-tests.sh` is the wh
 
 Everything that can float is pinned, and the pin lives next to a human-readable version so a bump is one visible line:
 
-- **Compose images** — exact tags (`lscr.io/linuxserver/sonarr:4.0.15`), never `latest`; `tests/compose-validation.bats` fails on `latest` or an untagged image and checks each tag exists on its registry. A major-only tag such as `louislam/uptime-kuma:2` passes the test but still floats — prefer the full version. Renovate opens the bumps; every bump is tested on the NAS before merge.
+- **Compose images** — exact tags (`lscr.io/linuxserver/sonarr:4.0.15`), never `latest`; `tests/compose-validation.bats` fails on `latest` or an untagged image and checks each tag exists on its registry. A major-only tag (`:2` rather than `:2.5.5`) passes the test but still floats — prefer the full version. Renovate opens the bumps; every bump is tested on the NAS before merge.
 - **GitHub Actions** — commit SHAs with the version in a trailing comment (`actions/checkout@3d3c42e… # v7.0.1`). Renovate keeps them current (`helpers:pinGitHubActionDigests`).
 - **CI tool images** — tag plus digest (`aquasec/trivy:0.74.0@sha256:…`). Bumped by hand, digest and comment together: `docker buildx imagetools inspect <image> --format '{{.Manifest.Digest}}'`.
 - **The devcontainer** — deliberately tracks unpinned apt and npm packages; it is a development box, not a deployment. hadolint's version-pinning rules are ignored for it in `.hadolint.yaml`, with the reason.
@@ -258,7 +258,7 @@ Every version-changing release follows this order. Doing it as one unbroken flow
    ```bash
    npm run test:e2e
    ```
-   This logs into each service, takes screenshots of every dashboard, and asserts root folders and media libraries are present. All 14 tests must pass. Screenshots are saved to `tests/e2e/screenshots/` for visual review.
+   This logs into each service, takes screenshots of every dashboard, and asserts root folders and media libraries are present. Every test must pass; one skip is normal (the killswitch test only runs with `ALLOW_DISRUPTIVE_TESTS=1`, as it stops the live gluetun). Screenshots are saved to `tests/e2e/screenshots/` for visual review.
 
 ### Tagging and Publishing
 
