@@ -156,7 +156,7 @@ arr-stack network (172.20.0.0/24)
 
 ## Container Security
 
-All containers run with hardened defaults, except Tailscale (below):
+All containers run with hardened defaults (Pi-hole's one exception is below):
 
 - **`no-new-privileges`** — Prevents processes from gaining additional privileges via `setuid`/`setgid` binaries
 - **`cap_drop: ALL`** — Drops all Linux capabilities by default
@@ -172,7 +172,7 @@ Services that write to Docker volumes as root add back `CHOWN` + `DAC_OVERRIDE` 
 
 Additional requirements:
 - **Gluetun** — adds `NET_ADMIN` (required to create VPN tunnel interfaces), plus `CHOWN`, `DAC_OVERRIDE` and `SETUID`, which Docker's default set would have given it (gluetun chowns the OpenVPN config, and OpenVPN drops to `nonrootuser`; without `DAC_OVERRIDE` gluetun can't write `/tmp/gluetun/ip` on any VPN type)
-- **Tailscale** — no `cap_drop` or `no-new-privileges`: it runs on the host network with Docker's default capabilities plus `NET_ADMIN` and `NET_RAW`
+- **Tailscale** — adds `NET_ADMIN` (creates the `tailscale0` tun device, routes and ip rules) and `NET_RAW` (the image's `iptables` is the legacy build, which needs a raw socket; without it the subnet-router and exit-node rules silently fail). Its state files are root-owned and created by itself, so it needs no `CHOWN` or `DAC_OVERRIDE`
 - **Uptime Kuma** — adds `FOWNER` (sets ownership on created files)
 - **DUC** — adds `SETUID`, `SETGID` (nginx's workers drop to `www-data`)
 - **Pi-hole** — adds `NET_ADMIN`, `NET_RAW`, `CHOWN`, `SETUID`, `SETGID`, `SETFCAP`, `SYS_NICE`, `DAC_OVERRIDE`, and disables `no-new-privileges` (FTL uses `setcap` at startup)
