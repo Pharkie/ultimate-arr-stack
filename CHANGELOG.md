@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.13.5] - 2026-09-28
+
+### Fixed
+- **Seerr no longer warns that its config volume isn't mounted** ([#49](https://github.com/Pharkie/ultimate-arr-stack/issues/49)). The warning (*"The /app/config volume mount was not configured properly. All data will be cleared…"*) was a false alarm on every fresh install. Seerr checks for a marker file, `/app/config/DOCKER`, which its image ships so a missing mount gets noticed. Docker copies image contents into a new named volume, so the marker landed in the very volume it was meant to detect. The data always persisted. The Seerr service now deletes the marker on start (`command:` in `docker-compose.arr-stack.yml`, keeping the image's own `npm start`). A new e2e test asserts Seerr's `/api/v1/status/appdata` passes; it fails against the unpatched live stack. TROUBLESHOOTING.md said to wipe and recreate the volume. That can't work, because the new volume gets the marker too, and the documented `compose stop` leaves the stopped container holding the volume, so `docker volume rm` refuses. The section now explains the cause and the one-line fix.
+
 ## [1.13.4] - 2026-09-15
 
 ### Changed
