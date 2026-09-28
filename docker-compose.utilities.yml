@@ -212,6 +212,7 @@ services:
     volumes:
       - /volume1:/scan/volume1:ro      # NAS data (read-only)
       - duc-index:/database            # Persistent index
+      - ./duc/scan.sh:/scan.sh:ro      # Crash-safe index swap; see the script
     ports:
       - "8838:80"                      # Local network access only
     environment:
