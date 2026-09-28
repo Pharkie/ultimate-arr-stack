@@ -115,6 +115,13 @@ test.describe('UI screenshots', () => {
     await page.screenshot({ path: screenshotPath('jellyfin'), fullPage: true });
   });
 
+  // Sonarr, Radarr and Prowlarr: after login, wait for the dashboard itself, not
+  // for networkidle. Each SPA posts telemetry to its Sentry host on load, and
+  // while that host is down the post hangs until Cloudflare gives up (~20s for
+  // sentry.servarr.com on 2026-09-28), so the page cannot go idle before the
+  // test times out. The index toolbar renders only once the app's data has
+  // loaded; the URL alone changes while the page is still blank.
+
   test('Sonarr — login and screenshot dashboard', async ({ page }) => {
     const username = process.env.SONARR_USERNAME;
     const password = process.env.SONARR_PASSWORD;
@@ -125,7 +132,10 @@ test.describe('UI screenshots', () => {
     await page.fill('input[name="username"], input[id="username"]', username!);
     await page.fill('input[name="password"], input[id="password"]', password!);
     await page.click('button[type="submit"]');
-    await page.waitForLoadState('networkidle');
+    await page.waitForURL((u) => !u.pathname.startsWith('/login'), { timeout: 10_000 });
+    await expect(page.getByRole('button', { name: 'RSS Sync' })).toBeVisible({ timeout: 10_000 });
+    // Posters are still arriving when the toolbar appears
+    await page.waitForFunction(() => Array.from(document.images).every((img) => img.complete));
 
     expect(page.url()).not.toContain('login');
     await page.screenshot({ path: screenshotPath('sonarr'), fullPage: true });
@@ -141,7 +151,10 @@ test.describe('UI screenshots', () => {
     await page.fill('input[name="username"], input[id="username"]', username!);
     await page.fill('input[name="password"], input[id="password"]', password!);
     await page.click('button[type="submit"]');
-    await page.waitForLoadState('networkidle');
+    await page.waitForURL((u) => !u.pathname.startsWith('/login'), { timeout: 10_000 });
+    await expect(page.getByRole('button', { name: 'RSS Sync' })).toBeVisible({ timeout: 10_000 });
+    // Posters are still arriving when the toolbar appears
+    await page.waitForFunction(() => Array.from(document.images).every((img) => img.complete));
 
     expect(page.url()).not.toContain('login');
     await page.screenshot({ path: screenshotPath('radarr'), fullPage: true });
@@ -157,8 +170,8 @@ test.describe('UI screenshots', () => {
     await page.fill('input[name="username"], input[id="username"]', username!);
     await page.fill('input[name="password"], input[id="password"]', password!);
     await page.click('button[type="submit"]');
-    await page.waitForURL(/.*(?<!\/login)$/, { timeout: 15000 });
-    await page.waitForLoadState('domcontentloaded');
+    await page.waitForURL((u) => !u.pathname.startsWith('/login'), { timeout: 10_000 });
+    await expect(page.getByRole('button', { name: 'Add Indexer' })).toBeVisible({ timeout: 10_000 });
 
     expect(page.url()).not.toContain('login');
     await page.screenshot({ path: screenshotPath('prowlarr'), fullPage: true });
