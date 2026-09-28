@@ -34,13 +34,9 @@
         "mkoestler/duc-service"
       ],
       "groupName": "Utility images"
-    },
-    {
-      "description": "Auto-merge patch updates for stable media services",
-      "matchDatasources": ["docker"],
-      "matchPackagePatterns": ["^lscr\\.io/linuxserver/"],
-      "matchUpdateTypes": ["patch"],
-      "automerge": true
     }
+  ],
+  "prBodyNotes": [
+    "**Test on the NAS before merging.** Check out this branch on the NAS, recreate the affected services through their own compose files (never `--remove-orphans`), verify them and run `npm run test:e2e`. See CLAUDE.md, *Deploying to the NAS*."
   ]
 }
