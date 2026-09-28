@@ -110,7 +110,7 @@ Both should respond exactly as they do on home WiFi.
 The container may have re-used existing state. Force a fresh login:
 ```bash
 docker exec tailscale tailscale logout
-docker exec tailscale tailscale up --advertise-routes=192.168.1.0/24 --accept-routes
+docker exec tailscale tailscale up --advertise-routes=192.168.1.0/24 --accept-routes --advertise-exit-node
 ```
 The URL prints to that command's output.
 

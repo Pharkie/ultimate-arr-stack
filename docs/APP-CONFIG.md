@@ -21,7 +21,7 @@ See **[Quick Reference → Service Connection Guide](REFERENCE.md#service-connec
 | | Script-Assisted (Recommended) | Manual |
 |---|---|---|
 | **Time** | ~5 minutes | ~30 minutes |
-| **What happens** | Script configures qBit, Sonarr, Radarr, Prowlarr, Bazarr; you do the rest manually | You configure everything through the web UI |
+| **What happens** | Script configures qBit, Sonarr, Radarr, Prowlarr, Bazarr, plus SABnzbd's `other` category, Seerr's metadata source and Pi-hole's upstream DNS; you do the rest manually | You configure everything through the web UI |
 | **Guide** | **[APP-CONFIG-QUICK.md](APP-CONFIG-QUICK.md)** | Continue below ↓ |
 
 ---
@@ -153,7 +153,7 @@ Searches for TV shows, sends download links to qBittorrent/SABnzbd, and organize
    - Episode Metadata: ✅
    - All image options: ❌ (Jellyfin handles its own artwork)
 
-5. **Configure naming (TRaSH recommended):** Settings → Media Management → Episode Naming
+6. **Configure naming (TRaSH recommended):** Settings → Media Management → Episode Naming
    - **Rename Episodes:** ✅
    - **Standard Episode Format:** `{Series TitleYear} - S{season:00}E{episode:00} - {Episode CleanTitle} [{Custom Formats }{Quality Full}]{[MediaInfo AudioCodec}{ MediaInfo AudioChannels]}{[MediaInfo VideoDynamicRangeType]}{[Mediainfo VideoCodec]}{-Release Group}`
    - **Daily Episode Format:** `{Series TitleYear} - {Air-Date} - {Episode CleanTitle} [{Custom Formats }{Quality Full}]{[MediaInfo AudioCodec}{ MediaInfo AudioChannels]}{[MediaInfo VideoDynamicRangeType]}{[Mediainfo VideoCodec]}{-Release Group}`
@@ -203,8 +203,9 @@ Searches for movies, sends download links to qBittorrent/SABnzbd, and organizes 
 
    **SABnzbd (Usenet):** *(if configured)*
    - Add → SABnzbd
-   - Host: `localhost` (SABnzbd also runs via gluetun)
+   - Host: `gluetun` (SABnzbd is behind the VPN)
    - Port: `8080`
+   - **Note:** SABnzbd's `host_whitelist` must include `gluetun` or it returns `403 Forbidden`.
    - API Key: (from SABnzbd Config → General)
    - Category: `movies`
 
@@ -241,7 +242,7 @@ This gives Usenet a 30-minute head start before considering torrents.
 
 ### NFO Metadata
 
-> **Applies to both Sonarr (step 4 above) and Radarr (step 4 above).**
+> **Applies to both Sonarr (step 5 above) and Radarr (step 5 above).**
 >
 > **Why this matters:** Without NFO files, Jellyfin identifies media by guessing from the filename. For movies or shows with common titles shared by multiple entries on TMDB, it can match the wrong one. When the TMDB IDs don't agree between Radarr/Sonarr and Jellyfin, Seerr can't link them — so requests stay stuck at "Requested" even though the file is downloaded and playable.
 >
@@ -343,7 +344,7 @@ Automatically downloads subtitles for your media.
 
 1. **Access:** `http://NAS_IP:8081/admin`
 2. **Login:** Use password from `PIHOLE_UI_PASS` (password only, no username)
-3. **Upstream DNS:** Settings → DNS → pick upstream servers (1.1.1.1, 8.8.8.8, etc.)
+3. **Upstream DNS:** Settings → DNS → untick the preset upstream servers and set a custom one: `172.20.0.6#5053` (the stack's dnscrypt-proxy, which encrypts the queries) → Save
 
 **Optional:** Set your router's DHCP DNS to your NAS IP for network-wide ad-blocking.
 

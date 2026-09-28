@@ -92,6 +92,7 @@ arr-stack network (172.20.0.0/24)
 │ 172.20.0.10  │ Sonarr       │ TV manager (bridge, not VPN)   │ Core             │
 │ 172.20.0.11  │ Radarr       │ Movie manager (bridge, not VPN)│ Core             │
 │ 172.20.0.5   │ Pi-hole      │ DNS server                     │ Core             │
+│ 172.20.0.6   │ dnscrypt     │ Encrypted upstream for Pi-hole │ Core             │
 │ 172.20.0.2   │ Traefik      │ Reverse proxy                  │ + local DNS      │
 │ 172.20.0.12  │ Cloudflared  │ Tunnel to Cloudflare           │ + remote access (Cloudflared) │
 │ host-network │ Tailscale    │ Mesh VPN subnet router         │ + remote access (Tailscale)   │
@@ -155,12 +156,12 @@ arr-stack network (172.20.0.0/24)
 
 ## Container Security
 
-All containers run with hardened defaults:
+All containers run with hardened defaults, except Tailscale (below):
 
 - **`no-new-privileges`** — Prevents processes from gaining additional privileges via `setuid`/`setgid` binaries
 - **`cap_drop: ALL`** — Drops all Linux capabilities by default
 
-Two YAML anchors define security profiles in each compose file:
+Two YAML anchors define security profiles (`docker-compose.arr-stack.yml` has both, `docker-compose.utilities.yml` the first; the other files set the same keys inline):
 
 | Anchor | Used by | Capabilities |
 |--------|---------|-------------|
@@ -170,7 +171,8 @@ Two YAML anchors define security profiles in each compose file:
 Services that write to Docker volumes as root add back `CHOWN` + `DAC_OVERRIDE` (Jellyfin, Uptime Kuma, DUC, Beszel, DIUN, Configarr). Services with read-only or no volumes don't need any (FlareSolverr, Cloudflared, Traefik, Deunhealth, Beszel-agent). Nor does Seerr: it runs as a non-root user, which gets no effective capabilities from `cap_add`, and its volume is created with that user's ownership.
 
 Additional requirements:
-- **Gluetun** — adds `NET_ADMIN` (required to create VPN tunnel interfaces)
+- **Gluetun** — adds `NET_ADMIN` (required to create VPN tunnel interfaces), plus `CHOWN`, `DAC_OVERRIDE` and `SETUID`, which Docker's default set would have given it (gluetun chowns the OpenVPN config, and OpenVPN drops to `nonrootuser`; without `DAC_OVERRIDE` gluetun can't write `/tmp/gluetun/ip` on any VPN type)
+- **Tailscale** — no `cap_drop` or `no-new-privileges`: it runs on the host network with Docker's default capabilities plus `NET_ADMIN` and `NET_RAW`
 - **Uptime Kuma** — adds `FOWNER` (sets ownership on created files)
 - **DUC** — adds `SETUID`, `SETGID` (nginx's workers drop to `www-data`)
 - **Pi-hole** — adds `NET_ADMIN`, `NET_RAW`, `CHOWN`, `SETUID`, `SETGID`, `SETFCAP`, `SYS_NICE`, `DAC_OVERRIDE`, and disables `no-new-privileges` (FTL uses `setcap` at startup)

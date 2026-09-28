@@ -2,14 +2,15 @@
 
 ## Gluetun: Harmless Log Noise on Startup
 
-**Symptom:** Two scary-looking lines in `docker logs gluetun` even though the VPN appears to be working:
+**Symptom:** A scary-looking line in `docker logs gluetun` even though the VPN appears to be working:
 
 ```
-ERROR [vpn] getting public IP address information: persisting public ip address: open /tmp/gluetun/ip: permission denied
 INFO  [healthcheck] listening for ICMP packets: not permitted: you can try adding NET_RAW capability to resolve this; permanently falling back to plain DNS over UDP checks
 ```
 
-**Cause:** Both are non-fatal. The first is gluetun unable to cache the detected public IP to a file inside the container — the VPN connection itself is unaffected. The second is gluetun's healthcheck wanting to ping; we drop `NET_RAW` for security, so it falls back to DNS lookups (still a valid health signal).
+**Cause:** Non-fatal. Gluetun's healthcheck wants to ping; we drop `NET_RAW` for security, so it falls back to DNS lookups (still a valid health signal).
+
+> **Not the same thing:** `open /tmp/gluetun/ip: permission denied` (or `clearing public IP data: permission denied`) is **not** noise. It means gluetun lacks `DAC_OVERRIDE`, which the compose file has added back since v1.10.0; without it `/v1/publicip/ip` returns nothing. `git pull`, then recreate gluetun and its dependents ([After a Gluetun RECREATE](#after-a-gluetun-recreate-not-just-a-restart-docker-restart-cannot-save-you)).
 
 **Confirm the VPN is actually working:**
 ```bash
@@ -23,7 +24,7 @@ If that shows a different IP from your home connection, gluetun is fine — leav
 
 **Symptom:** A monitored episode/movie that is clearly out (aired days ago) never gets grabbed. Sonarr/Radarr history is empty for it, nothing is in the queue, and an interactive search returns **0 releases**. Prowlarr health shows `Indexers unavailable due to failures for more than 6 hours: EZTV` (or another indexer), and that indexer is auto-disabled.
 
-**Cause:** The VPN exit is in a country that legally blocks the indexer. Our stack defaults to `VPN_COUNTRIES=United Kingdom`, and the UK now serves Cloudflare-level legal blocks for several public torrent indexers. The block returns **HTTP 451** with a body like:
+**Cause:** The VPN exit is in a country that legally blocks the indexer. `.env.example` used to default to `VPN_COUNTRIES=United Kingdom` (it's `Netherlands` now), and the UK now serves Cloudflare-level legal blocks for several public torrent indexers. The block returns **HTTP 451** with a body like:
 
 ```
 In response to a legal order, Cloudflare has taken steps to limit access
@@ -56,7 +57,7 @@ cp .env ".env.bak-$(date +%Y%m%d-%H%M%S)"          # .env is gitignored — edit
 sed -i 's/^VPN_COUNTRIES=United Kingdom$/VPN_COUNTRIES=Netherlands/' .env
 
 # Recreate gluetun AND every container sharing its network namespace
-# (sonarr, radarr, prowlarr, qbittorrent, sabnzbd, flaresolverr — all bounce together)
+# (prowlarr, qbittorrent, sabnzbd, flaresolverr — all bounce together)
 docker compose -f docker-compose.arr-stack.yml up -d
 
 # Verify the new exit + that the indexer is reachable again
@@ -69,7 +70,7 @@ echo "$DEF" | python3 -c 'import sys,json;d=json.load(sys.stdin);d["enable"]=Fal
 echo "$DEF" | curl -s -X PUT "http://localhost:9696/api/v1/indexer/3?apikey=$PK" -H "Content-Type: application/json" -d @-
 ```
 
-Surfshark's WireGuard key is account-wide, so changing only `VPN_COUNTRIES` is enough — gluetun picks a server in the new country with the same key. No new config from Surfshark is needed. The VPN only covers the download stack (qBittorrent/usenet/indexers/`*arr`), **not** Jellyfin, so a non-UK exit has no downside for playback. Leave it on a non-blocking country (e.g. Netherlands) to avoid recurrence; revert with the `.env` backup if ever needed.
+Surfshark's WireGuard key is account-wide, so changing only `VPN_COUNTRIES` is enough — gluetun picks a server in the new country with the same key. No new config from Surfshark is needed. The VPN only covers the download stack (qBittorrent, SABnzbd, Prowlarr, FlareSolverr), **not** Jellyfin, Sonarr or Radarr, so a non-UK exit has no downside for playback. Leave it on a non-blocking country (e.g. Netherlands) to avoid recurrence; revert with the `.env` backup if ever needed.
 
 > **Diagnostic gotcha — Prowlarr masks API keys.** `GET /api/v1/indexer/<id>` returns indexer secrets as a short placeholder, **not** the real key. If you curl an indexer's newznab API directly using that masked value you'll get `<error code="102" description="Empty API Key"/>` and zero results — which looks like a dead indexer but isn't. Prowlarr's own searches use the real key (32 chars for NZBgeek). Read the real value from `prowlarr.db` (`Indexers.Settings` JSON) before testing by hand, or just trust Prowlarr's search rather than a manual curl.
 
@@ -109,7 +110,7 @@ docker exec gluetun wget -qO- https://ipinfo.io/ip
 # REQUIRED: restart every container sharing gluetun's network namespace.
 # Restarting gluetun alone severs their networking — they go dead (empty/000 responses)
 # until bounced too.
-docker restart prowlarr qbittorrent          # add sabnzbd/sonarr/radarr/bazarr if they share the netns
+docker restart prowlarr qbittorrent sabnzbd flaresolverr   # gluetun-recover does this if you run the utilities
 ```
 
 Re-run the aggregate search to confirm it's back to ~1-2s. (Observed 2026-06-19: a throttled NL server gave a 54s search with two indexers at HTTP 500; `docker restart gluetun` + bouncing the dependents dropped it to **1.2s**, no config change.) If the new server is *also* slow, restart gluetun again to roll the dice on another. Only switch `VPN_COUNTRIES` (the section above) if you actually see HTTP 451 — that's a different problem.

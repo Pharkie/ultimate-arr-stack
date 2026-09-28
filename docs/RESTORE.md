@@ -50,7 +50,7 @@ cd $NAS_STACK_DIR
 cp .env.example .env
 # Edit .env with your settings
 docker compose -f docker-compose.arr-stack.yml up -d
-docker compose -f docker-compose.arr-stack.yml down
+docker compose -f docker-compose.arr-stack.yml stop   # stop, never down
 ```
 
 ### 5. Restore Volumes
@@ -136,7 +136,7 @@ If `configure-apps.sh` was used for initial setup, re-running it will fix any mi
 
 ### "Volume not found" during restore
 
-Volumes are created when you first `docker compose up`. If restoring to a fresh system, run `up -d` then `down` first (Step 4 above).
+Volumes are created when you first `docker compose up`. If restoring to a fresh system, run `up -d` then `stop` first (Step 4 above).
 
 ### Permissions errors
 
@@ -144,7 +144,7 @@ The alpine container in the restore command runs as root, so permissions should 
 
 ### Wrong volume prefix
 
-If your project directory isn't named `arr-stack`, Docker uses a different prefix. Check with:
+The compose files pin every volume name to `arr-stack_<volume>`, whatever the project directory is called, so the loop above matches them. Only volumes created under another prefix before the names were pinned differ. Check with:
 ```bash
 docker volume ls | grep config
 ```

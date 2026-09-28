@@ -15,19 +15,19 @@ cd $NAS_STACK_DIR  # or your deployment path
 
 git pull origin main
 docker compose -f docker-compose.arr-stack.yml up -d --force-recreate  # Updates AND restarts - no further steps needed
-# If you also run utilities (beszel, configarr, etc.), add -f docker-compose.utilities.yml after the first -f
+# If you also run utilities (beszel, uptime-kuma, etc.), add -f docker-compose.utilities.yml after the first -f
 ```
 
 The `--force-recreate` flag ensures containers restart with new config even if the image hasn't changed.
 
 ## Container Image Updates (Sonarr, Jellyfin, etc.)
 
-To pull the latest Docker images and restart with them:
+The compose files pin every image to a version, so newer Sonarr, Jellyfin and so on arrive as a stack update (above). `pull` fetches the pinned tags, for example after a `git pull` or after you change a tag yourself:
 
 ```bash
 docker compose -f docker-compose.arr-stack.yml pull
 docker compose -f docker-compose.arr-stack.yml up -d  # Restarts containers with new images - no further steps needed
-# If you also run utilities (beszel, configarr, etc.), add -f docker-compose.utilities.yml to both commands
+# If you also run utilities (beszel, uptime-kuma, etc.), add -f docker-compose.utilities.yml to both commands
 ```
 
 > **Ugreen NAS users:** UGOS has a built-in Container Manager that automatically updates images on a schedule. Check **Docker → Settings → Auto Update** to configure. You can skip manual image updates if this is enabled.

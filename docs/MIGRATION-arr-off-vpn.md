@@ -6,7 +6,7 @@
 
 # Migration: move Sonarr + Radarr off the VPN
 
-**Branch:** `feat/arr-off-vpn` · **Status:** spec for review — do NOT merge or deploy until reviewed.
+**Branch:** `feat/arr-off-vpn` · **Status:** shipped in v1.7.23. Kept as the record of the change and the runbook for a deploy that predates it.
 
 ## Why
 
@@ -58,8 +58,8 @@ branch. New connection targets:
 | Sonarr → SABnzbd | download client | `localhost:8080` | `gluetun:8080` |
 | Radarr → qBittorrent | download client | `localhost:8085` | `gluetun:8085` |
 | Radarr → SABnzbd | download client | `localhost:8080` | `gluetun:8080` |
-| Prowlarr → Sonarr | Settings ▸ Apps, "Sonarr server" | `localhost:8989` | `sonarr:8989` |
-| Prowlarr → Radarr | Settings ▸ Apps, "Radarr server" | `localhost:7878` | `radarr:7878` |
+| Prowlarr → Sonarr | Settings ▸ Apps, "Sonarr server" | `localhost:8989` | `172.20.0.10:8989` |
+| Prowlarr → Radarr | Settings ▸ Apps, "Radarr server" | `localhost:7878` | `172.20.0.11:7878` |
 | Prowlarr → Sonarr/Radarr | the "Prowlarr Server" URL field in each app | `localhost:9696` | `gluetun:9696` |
 | Bazarr → Sonarr | Settings ▸ Sonarr | `gluetun:8989` | `sonarr:8989` |
 | Bazarr → Radarr | Settings ▸ Radarr | `gluetun:7878` | `radarr:7878` |
@@ -68,7 +68,8 @@ branch. New connection targets:
 
 > Prowlarr stays in the VPN namespace, so within Prowlarr the FlareSolverr proxy
 > stays `localhost:8191` (unchanged). Prowlarr reaches the bridge-side Sonarr/Radarr
-> because gluetun's `FIREWALL_OUTBOUND_SUBNETS` already allows `172.20.0.0/24`.
+> because gluetun's `FIREWALL_OUTBOUND_SUBNETS` already allows `172.20.0.0/24`, and
+> by IP because the namespace's DNS is Pi-hole, which can't resolve container names.
 
 ## Deploy procedure (branch-first, per CLAUDE.md)
 
@@ -112,11 +113,11 @@ UI — they are a handful of fields. Do the UI route unless you want to script a
 
 1. `docker ps` — sonarr/radarr **healthy**, on `arr-stack` (`docker inspect sonarr --format '{{json .NetworkSettings.Networks}}'` shows `172.20.0.10`, no `service:gluetun`).
 2. Sonarr/Radarr **Settings ▸ Download Clients ▸ Test** → green (reaching `gluetun:8085`/`8080`).
-3. Prowlarr **Settings ▸ Apps ▸ Test** both → green (reaching `sonarr`/`radarr`).
+3. Prowlarr **Settings ▸ Apps ▸ Test** both → green (reaching `172.20.0.10`/`172.20.0.11`).
 4. Bazarr + Seerr → Sonarr/Radarr connections test green.
 5. Seerr: no `Unable to get queue` errors for 10 min (`docker logs seerr --since 10m | grep -i "download tracker"` → empty).
 6. End-to-end: request a test title in Seerr → it reaches Radarr → grabs → qBit downloads → imports.
-7. `npm run test:e2e` — all 14 pass (run in background).
+7. `npm run test:e2e` — every test passes (run in background).
 8. **VPN-still-protects check:** `docker exec qbittorrent curl -s ifconfig.me` returns the **VPN** IP, not home. `docker exec prowlarr curl -s ifconfig.me` returns the **VPN** IP. (Sonarr/Radarr will now show the home IP — expected.)
 
 ## Rollback

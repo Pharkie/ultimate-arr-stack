@@ -108,7 +108,7 @@ Decide how you'll access your media stack:
 - `docker-compose.*.yml` - Work as-is, configured via `.env`
 - `pihole/dnsmasq.d/02-local-dns.conf` - Generated from example via sed command
 - `traefik/dynamic/tls.yml` - Security defaults
-- `traefik/dynamic/local-services.yml` - Auto-generates from `.env`
+- `traefik/dynamic/local-services.yml` - Ready-made `.lan` routes to the fixed container IPs (reads nothing from `.env`)
 
 ### Docker Compose Files
 
@@ -148,11 +148,11 @@ Add this to `docker-compose.arr-stack.yml` (add `plex-config` to the `volumes:` 
       - /dev/dri:/dev/dri
     volumes:
       - plex-config:/config
-      - ${MEDIA_ROOT}/movies:/media/movies:ro
-      - ${MEDIA_ROOT}/tv:/media/tv:ro
+      - ${MEDIA_ROOT}/media/movies:/media/movies:ro
+      - ${MEDIA_ROOT}/media/tv:/media/tv:ro
     networks:
       arr-stack:
-        ipv4_address: 172.20.0.11
+        ipv4_address: 172.20.0.7  # not used by any stack service
     restart: always
     logging: *default-logging
     healthcheck:

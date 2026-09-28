@@ -11,9 +11,11 @@ docker compose -f docker-compose.utilities.yml up -d
 | Service | Description | Access |
 |---------|-------------|--------|
 | **deunhealth** | Auto-restarts services when VPN recovers | Internal |
+| **gluetun-recover** | Restarts VPN-side services that a gluetun restart left exited or on a dead network namespace | Internal |
 | **Uptime Kuma** | Service monitoring dashboard | http://uptime.lan |
 | **Beszel** | System metrics (CPU, RAM, disk, containers) | http://beszel.lan |
 | **duc** | Disk usage analyzer (treemap UI) | http://duc.lan |
+| **DIUN** | Webhook notification when a newer image tag is published (set `DIUN_WEBHOOK_URL`, see [Home Assistant](HOME-ASSISTANT.md#diun--home-assistant)) | Internal |
 | **Configarr** | Syncs TRaSH Guides quality profiles to Sonarr/Radarr | Run manually |
 
 > **Want Docker log viewing?** [Dozzle](https://dozzle.dev/) is a lightweight web UI for viewing container logs in real-time. Not included in the stack, but easy to add if you want it.
@@ -150,7 +152,7 @@ RADARR_API_KEY=your_radarr_api_key
 ```
 Find these in Sonarr/Radarr → Settings → General → API Key.
 
-**3. Edit `configarr/config.yml`** — uncomment the template set you want (e.g., `sonarr-v4-quality-profile-web-1080p`). Browse available templates at the [recyclarr config-templates repo](https://github.com/recyclarr/config-templates).
+**3. Edit `configarr/config.yml`** — as shipped it creates a `WEB-2160p` profile in Sonarr and a `UHD Bluray + WEB` profile in Radarr, both with a 1080p fallback; the comments name the 1080p-only templates if you'd rather have those. Browse available templates at the [recyclarr config-templates repo](https://github.com/recyclarr/config-templates).
 
 **4. Preview changes (dry run):**
 ```bash
