@@ -21,7 +21,7 @@ For each part of the stack: which check covers it, where that check runs, whethe
 | Capability | Hook | Local bats | CI required | CI nightly | e2e | Renovate | NAS |
 |---|---|---|---|---|---|---|---|
 | **Compose model** | | | | | | | |
-| Compose files render (each file alone, every profile) | blocks¹ | fails | blocks | | | | `compose up` |
+| Compose files render (each file alone, every profile) | blocks² | fails | blocks | | | | `compose up` |
 | Host ports and static IPs unique | blocks² | fails² | blocks² | | | | |
 | Static IPs in `172.20.0.0/24` or `10.8.1.0/24`; `arr-stack` subnet, `ip_range`, gateway pinned; static IPs outside `ip_range` | | fails | blocks | | | | `docker network inspect` for the neighbour's reserved IP |
 | Project `name:` pinned; the core three share `arr-stack` | | fails | blocks | | | | |
@@ -69,7 +69,7 @@ For each part of the stack: which check covers it, where that check runs, whethe
 | Action digests, npm versions | | | | | | opens PRs | |
 
 1. Hook check 3 parses only **staged** `*.yml`/`*.yaml`: PyYAML (syntax only) if `.venv` or `python3` has it, else `docker compose config` for compose files, else it prints SKIPPED and passes.
-2. Only lines of the form `- "HOST:CONTAINER"` with nothing after them. See [gaps](#gaps).
+2. Hook check 4 and `tests/port-conflicts.bats` render every compose file, staged or not, with every profile and the placeholders in `tests/fixtures/.env.test`, and read the model, not the text. Two published ports clash on the same port and protocol when the host IPs match or either is a wildcard, in one file or across files. gluetun's ports are named with the services in its namespace, and a port on one of those services is an error of its own. Static IPs clash per network. A file that doesn't render blocks. Host-network services aren't seen (see [gaps](#gaps)).
 3. No `privileged`, docker socket `:ro`, no `env_file`, no `SYS_TIME`, Traefik `no-new-privileges`, Jellyfin media `:ro` (`tests/security.bats`).
 4. Read from the rendered model. A client is matched by service name (`qbittorrent`, `sabnzbd`) or by an image token (qbittorrent, transmission, deluge, rtorrent, rutorrent, aria2, sabnzbd, nzbget). Prowlarr and FlareSolverr aren't clients; footnote 5 holds them.
 5. `TUNNELED` in `detect-vpn-zombies.sh`, and what `check-vpn.sh --list-tunnelled` derives, must equal the compose `service:`/`container:gluetun` bindings in both directions (`tests/vpn-zombies.bats`).
@@ -81,13 +81,14 @@ For each part of the stack: which check covers it, where that check runs, whethe
 
 **Hook**
 - Exits 0 before any check when nothing is staged as added, copied or modified.
+- Check 4 prints SKIPPED and passes without `docker compose` or a working `python3`.
 - The link `setup-hooks.sh` makes is absolute, so every worktree runs the `scripts/pre-commit` and `scripts/lib/` of the checkout that last ran it, against its own files.
 - The hostname block, the domain warning and checks 6–9 read untracked files from the committing checkout: `.claude/config.local.md`, `.env` or `.env.nas.backup`. A fresh clone, a git worktree and CI have none of them, so those checks skip.
 - Checks 6–8 skip when the NAS doesn't answer ping, port 22 is closed, SSH auth fails, or there is no `timeout` command on `PATH` (it's what probes the port). Check 9 also needs `dig` and `NAS_IP` in `.env.nas.backup`.
 - Check 10 skips offline. Each registry that doesn't answer is named as a SKIP. It stops at 30 s only when `timeout` or `gtimeout` exists.
 
 **bats, local and CI**
-- No `docker compose`: the render, volume-pin and architecture tests skip. The architecture tests also need `python3`.
+- No `docker compose`: the render, volume-pin, architecture and port-conflict tests skip. The architecture and port-conflict tests also need `python3`.
 - No docker daemon, or no `/dev/net/tun` inside containers: the OpenVPN test skips.
 - No `shellcheck` on `PATH` and no docker: the shellcheck tests skip.
 - The tag-existence test skips without `curl`, but fails, rather than skips, without a network.
@@ -112,7 +113,7 @@ For each part of the stack: which check covers it, where that check runs, whethe
 
 Things nothing checks, or checks that can't see what they're meant to. Each was confirmed in the code.
 
-- **Port conflicts see 3 of the 18 published host ports.** The hook and `tests/port-conflicts.bats` share a regex that needs the line to end right after `"HOST:CONTAINER"`, so a trailing comment, `/udp` or a host-IP prefix hides the line. Moving Pi-hole's web UI onto qBittorrent's `8085` passes both, and `docker compose config` too.
+- **Ports bound by host-network services aren't checked.** Tailscale and beszel-agent use `network_mode: host`, so the ports they listen on never appear in the compose model. The conflict check names them in a NOTE.
 - **The e2e list of tunnelled services is compared with nothing.** `GLUETUN_NAMESPACE_SERVICES` in `tests/e2e/helpers.ts` says a script checks it against compose; none does. A newly tunnelled service gets no egress or namespace test until someone adds it by hand.
 - **The NAS-first rule is enforced by nothing.** CI can't reach the NAS, and nothing records that e2e ran for a commit.
 - **Hostname and domain leaks are never checked in CI or in a worktree.** Only a checkout holding the untracked config runs them. The hook's secret patterns (WireGuard, OpenVPN, Cloudflare, bcrypt) never run over the tree in CI, and never over `*.md` anywhere.

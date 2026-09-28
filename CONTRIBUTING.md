@@ -161,7 +161,7 @@ This repo includes validation hooks that run on `git commit`:
 | Secrets | Yes | Detects real API keys, private keys, bcrypt hashes |
 | Env vars | Yes | Ensures compose `${VAR}` are documented in `.env.example` |
 | YAML syntax | Yes | Catches invalid YAML before it breaks deployment |
-| Port/IP conflicts | Yes | Detects duplicate ports or static IPs |
+| Port/IP conflicts | Yes | Detects host ports or static IPs used twice, across every compose file (reads `docker compose config`; skipped without docker compose or python3) |
 | Hardcoded domain | Block | Detects your hostname in tracked files (leaks identity) |
 | Hardcoded domain | Warn | Detects your domain in tracked files (may be intentional) |
 | NAS .env backup | Warn | Checks `.env.nas.backup` matches NAS |
@@ -305,6 +305,7 @@ scripts/
     ├── check-env-vars.sh       # Ensure compose vars are documented
     ├── check-yaml-syntax.sh    # Validate YAML syntax
     ├── check-conflicts.sh      # Detect port/IP conflicts
+    ├── compose-conflicts.py    # The clash logic check-conflicts.sh runs on the rendered compose model
     ├── check-hardcoded-domain.sh  # Detect domain/hostname in tracked files
     ├── check-env-backup.sh     # Compare .env.nas.backup with NAS
     ├── check-uptime-monitors.sh   # Verify Uptime Kuma monitors

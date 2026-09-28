@@ -94,59 +94,7 @@ EOF
     rm -rf "$tmpdir"
 }
 
-@test "check_conflicts catches duplicate ports within a file" {
-    source "$REPO_ROOT/scripts/lib/check-conflicts.sh"
-
-    # Create a temp dir with a conflicting compose file
-    local tmpdir
-    tmpdir=$(mktemp -d)
-    cp "$REPO_ROOT/tests/fixtures/compose-port-conflict.yml" "$tmpdir/docker-compose.conflict.yml"
-
-    run bash -c "
-        source '$REPO_ROOT/scripts/lib/check-conflicts.sh'
-        # Override git rev-parse to use tmpdir
-        git() { echo '$tmpdir'; }
-        export -f git
-        check_conflicts
-    "
-    assert_failure
-    assert_output --partial "Duplicate ports"
-
-    rm -rf "$tmpdir"
-}
-
-@test "check_conflicts catches cross-file port duplicates" {
-    source "$REPO_ROOT/scripts/lib/check-conflicts.sh"
-
-    # Create two compose files with same port in different files
-    local tmpdir
-    tmpdir=$(mktemp -d)
-    cat > "$tmpdir/docker-compose.a.yml" <<'EOF'
-services:
-  svc-a:
-    image: alpine:3.20
-    ports:
-      - "9999:80"
-EOF
-    cat > "$tmpdir/docker-compose.b.yml" <<'EOF'
-services:
-  svc-b:
-    image: alpine:3.20
-    ports:
-      - "9999:8080"
-EOF
-
-    run bash -c "
-        source '$REPO_ROOT/scripts/lib/check-conflicts.sh'
-        git() { echo '$tmpdir'; }
-        export -f git
-        check_conflicts
-    "
-    assert_failure
-    assert_output --partial "Port 9999 used across multiple files"
-
-    rm -rf "$tmpdir"
-}
+# check_conflicts has its own file, tests/port-conflicts.bats.
 
 # --- doc links -------------------------------------------------------------
 #
@@ -432,4 +380,49 @@ run_hook() {
     assert_output --partial "NAS hostname 'mybox-nas' found"
     assert_output --partial "11. Checking documentation links"
     assert_output --partial "BLOCKED: 1 error(s) found"
+}
+
+# Check 4 used to print "OK: No conflicts detected" whenever check_conflicts
+# returned 0, and a skip returns 0 too. The hook now prints only what the
+# check says. The services use build: rather than image:, so check 10 has no
+# registry to ask. Runs on any bash: nothing here depends on (( )) under set -e.
+hook_conflict_repo() {
+    HOOK_T=$(mktemp -d)
+    git -C "$HOOK_T" init -q
+    : > "$HOOK_T/.env.example"
+    # Check 3's docker compose fallback renders with this file and fails
+    # without it.
+    mkdir -p "$HOOK_T/tests/fixtures"
+    : > "$HOOK_T/tests/fixtures/.env.test"
+    cat > "$HOOK_T/docker-compose.yml" <<'EOF'
+services:
+  gluetun:
+    build: .
+    ports:
+      - "8085:8085"   # qBittorrent
+  pihole:
+    build: .
+    ports:
+      - "8085:80"  # Web UI
+EOF
+}
+
+@test "pre-commit: a port clash behind a comment blocks the commit" {
+    docker compose version &>/dev/null || skip "docker compose CLI not available"
+    python3 -c 'import json' &>/dev/null || skip "python3 not available"
+    hook_conflict_repo
+    run_hook
+    assert_failure
+    assert_output --partial "Port 8085/tcp is used multiple times"
+    assert_output --partial "BLOCKED: 1 error(s) found"
+}
+
+@test "pre-commit: a conflict check that could not run says SKIPPED, not OK" {
+    hook_conflict_repo
+    mkdir -p "$BATS_TEST_TMPDIR/bin"
+    printf '#!/bin/sh\nexit 1\n' > "$BATS_TEST_TMPDIR/bin/docker"
+    chmod +x "$BATS_TEST_TMPDIR/bin/docker"
+    PATH="$BATS_TEST_TMPDIR/bin:$PATH" run_hook
+    assert_output --partial "SKIPPED: docker compose not available"
+    refute_output --partial "No conflicts"
 }
