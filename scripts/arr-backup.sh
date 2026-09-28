@@ -8,10 +8,15 @@ set -euo pipefail
 #
 # Options:
 #   --tar           Create a .tar.gz archive (recommended for off-NAS transfer)
-#   --encrypt       Encrypt tarball with GPG symmetric encryption (requires --tar)
+#   --encrypt       Encrypt tarball with GPG symmetric encryption (requires --tar).
+#                   The archive is then named .tar.gz.gpg, wherever it ends up.
 #   --prefix NAME   Volume prefix (default: auto-detect from running containers)
 #   --usb DIR_NAME  Dynamically find USB device under /mnt/@usb/sd*/ containing DIR_NAME
 #                   (device letters change on reboot, so never hardcode e.g. /mnt/@usb/sdd1)
+#
+# Environment:
+#   ARR_BACKUP_STAGING_ROOT  Where the working copy is built (default: /tmp).
+#                            Tests point it at a throwaway directory.
 #
 # Examples:
 #   ./scripts/arr-backup.sh --tar                     # Backup to /tmp, create tarball
@@ -30,6 +35,11 @@ set -euo pipefail
 # Restoring a volume:
 #   docker run --rm -v ./backup/gluetun-config:/source:ro \
 #     -v PREFIX_gluetun-config:/dest alpine cp -a /source/. /dest/
+#
+# ⚠️  This script was generated with LLM assistance and human-reviewed.
+#     Read and understand it before running. Do not execute scripts you
+#     don't understand on your system. It reads Docker volumes, writes the
+#     backup, and deletes its own backups older than 7 days at the destination.
 #
 
 # --- Failure notifications via Home Assistant webhook ---
@@ -175,15 +185,17 @@ fi
 # Backup location handling:
 # - Always create backup in /tmp first (reliable space)
 # - If destination specified and different from /tmp, move tarball there after checking space
+STAGING_ROOT="${ARR_BACKUP_STAGING_ROOT:-/tmp}"
 FINAL_DEST="${BACKUP_DIR:-}"
-BACKUP_DIR="/tmp/arr-stack-backup-$(date +%Y%m%d)"
+BACKUP_DIR="$STAGING_ROOT/arr-stack-backup-$(date +%Y%m%d)"
 mkdir -p "$BACKUP_DIR"
 
-# Rotate old backups at final destination (keep 7 days)
+# Rotate old backups at final destination (keep 7 days), encrypted ones included
 KEEP_DAYS=7
 if [ -n "$FINAL_DEST" ] && [ -d "$FINAL_DEST" ]; then
-  find "$FINAL_DEST" -maxdepth 1 -name "arr-stack-backup-*" -type d -mtime +$KEEP_DAYS -exec rm -rf {} \; 2>/dev/null
-  find "$FINAL_DEST" -maxdepth 1 -name "arr-stack-backup-*.tar.gz" -type f -mtime +$KEEP_DAYS -delete 2>/dev/null
+  find "$FINAL_DEST" -maxdepth 1 -name "arr-stack-backup-*" -type d -mtime +$KEEP_DAYS -exec rm -rf {} \;
+  find "$FINAL_DEST" -maxdepth 1 -name "arr-stack-backup-*.tar.gz" -type f -mtime +$KEEP_DAYS -delete
+  find "$FINAL_DEST" -maxdepth 1 -name "arr-stack-backup-*.tar.gz.gpg" -type f -mtime +$KEEP_DAYS -delete
 fi
 
 # Get current user for ownership fix (avoids needing sudo for tar)
@@ -316,51 +328,59 @@ if [ "$CREATE_TAR" = true ]; then
     STEP="encrypting tarball"
     echo ""
     echo "Encrypting tarball with GPG..."
-    gpg --batch --yes --symmetric --cipher-algo AES256 "$TARBALL"
+    gpg --batch --yes --symmetric --cipher-algo AES256 --output "${TARBALL}.gpg" "$TARBALL"
     rm -f "$TARBALL"
     TARBALL="${TARBALL}.gpg"
     TARBALL_SIZE_BYTES=$(stat -f%z "$TARBALL" 2>/dev/null || stat -c%s "$TARBALL" 2>/dev/null)
     TARBALL_SIZE_MB=$(( TARBALL_SIZE_BYTES / 1024 / 1024 ))
     TARBALL_SIZE=$(ls -lh "$TARBALL" | awk '{print $5}')
     echo "Encrypted: $TARBALL ($TARBALL_SIZE)"
-    echo ""
-    echo "To decrypt: gpg --decrypt $TARBALL > backup.tar.gz"
   fi
 
   STEP="moving tarball to USB"
-  # Move to final destination if specified and different from /tmp
-  if [ -n "$FINAL_DEST" ] && [ "$FINAL_DEST" != "/tmp" ]; then
+  # Move to final destination if specified and different from the staging root
+  if [ -n "$FINAL_DEST" ] && [ "$FINAL_DEST" != "$STAGING_ROOT" ]; then
     AVAILABLE_MB=$(df -m "$FINAL_DEST" 2>/dev/null | awk 'NR==2 {print $4}')
     REQUIRED_MB=$(( TARBALL_SIZE_MB + 10 ))  # Actual size + 10MB buffer
 
     if [ -n "$AVAILABLE_MB" ] && [ "$AVAILABLE_MB" -lt "$REQUIRED_MB" ]; then
       echo ""
       echo "WARNING: Not enough space at $FINAL_DEST (${AVAILABLE_MB}MB free, need ${REQUIRED_MB}MB)"
-      echo "         Tarball remains in /tmp - copy manually when space available"
+      echo "         Tarball remains in $STAGING_ROOT - copy manually when space available"
     else
-      FINAL_TARBALL="$FINAL_DEST/arr-stack-backup-$(date +%Y%m%d).tar.gz"
-      if mv "$TARBALL" "$FINAL_TARBALL" 2>/dev/null; then
+      # Keep the staged name, extension included: an --encrypt archive must stay
+      # .tar.gz.gpg, or a restore would try to untar ciphertext.
+      FINAL_TARBALL="$FINAL_DEST/$(basename "$TARBALL")"
+      if mv "$TARBALL" "$FINAL_TARBALL"; then
         TARBALL="$FINAL_TARBALL"
         echo "Moved to: $TARBALL"
       else
-        notify_failure "Could not move tarball to ${FINAL_DEST}. Backup remains in /tmp."
+        notify_failure "Could not move tarball to ${FINAL_DEST}. Backup remains in ${STAGING_ROOT}."
       fi
     fi
   fi
 
+  LOCAL_COPY="backup.tar.gz"
+  if $ENCRYPT; then
+    LOCAL_COPY="backup.tar.gz.gpg"
+  fi
   echo ""
   echo "To copy off-NAS:"
   echo "  # Ugreen NAS (scp doesn't work with /tmp):"
-  echo "  ssh user@nas 'cat $TARBALL' > ./backup.tar.gz"
+  echo "  ssh user@nas 'cat $TARBALL' > ./$LOCAL_COPY"
   echo ""
   echo "  # Other systems:"
-  echo "  scp user@nas:$TARBALL ./backup.tar.gz"
+  echo "  scp user@nas:$TARBALL ./$LOCAL_COPY"
+  if $ENCRYPT; then
+    echo ""
+    echo "To decrypt: gpg --decrypt $LOCAL_COPY > backup.tar.gz"
+  fi
 fi
 
 # Safety check runs via EXIT trap (ensure_services_running)
 
 echo ""
-if [[ "${TARBALL}" == /tmp/* ]] || [[ -z "${TARBALL}" ]]; then
+if [[ "${TARBALL}" == "$STAGING_ROOT"/* ]] || [[ -z "${TARBALL}" ]]; then
   echo "NOTE: Backup is in /tmp which is cleared on reboot."
   echo "      Copy the tarball off-NAS before rebooting!"
 fi

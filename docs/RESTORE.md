@@ -26,11 +26,13 @@ cat backup.tar.gz | ssh user@nas "cat > /tmp/backup.tar.gz"
 
 ### 2. Decrypt (if encrypted)
 
-If the backup was created with `--encrypt`:
+A backup created with `--encrypt` ends in `.tar.gz.gpg`. Keep that name when you copy it, then decrypt:
 
 ```bash
 gpg --decrypt /tmp/backup.tar.gz.gpg > /tmp/backup.tar.gz
 ```
+
+> **Older encrypted backups:** before this was fixed, `--encrypt` with a destination directory or `--usb` saved the encrypted file as `.tar.gz`, and `tar` rejects it ("not in gzip format"). If `file backup.tar.gz` reports `PGP symmetric key encrypted data`, decrypt it as above before extracting.
 
 ### 3. Extract
 
