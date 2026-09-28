@@ -136,6 +136,8 @@ docker compose -f docker-compose.utilities.yml up -d beszel-agent
 
 Configarr syncs [TRaSH Guides](https://trash-guides.info/) quality profiles and custom formats to Sonarr and Radarr. It runs once and exits — no persistent service, no web UI.
 
+It only runs when you ask for it. `docker compose -f docker-compose.utilities.yml up -d` skips it, because it sits in a `manual` compose profile. A run creates the quality profiles its config names and, with `reset_unmatched_scores` on (as in the example), zeroes any custom-format score on those profiles that the config doesn't list, including ones you set by hand.
+
 **1. Copy the example config:**
 ```bash
 cp configarr/config.yml.example configarr/config.yml

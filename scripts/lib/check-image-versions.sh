@@ -38,21 +38,15 @@ _cache_set() {
     echo "${image}=${latest}" >> "$_IMAGE_CACHE"
 }
 
-# Query Docker Hub for latest tag matching a version pattern
-# Args: $1=namespace/image (e.g. "linuxserver/sonarr"), $2=current tag
-# Returns: latest tag or empty
-_query_dockerhub() {
-    local repo="$1" current_tag="$2"
+# Pull the plain version tags out of one Docker Hub tag listing.
+# Args: $1=response body. Returns 1 if the body is not a tag listing at all.
+_dockerhub_version_tags() {
+    local response="$1"
 
-    # page_size=100, not 25. LinuxServer pushes nightlies continuously, so
-    # ordering=last_updated fills the first 25 entirely with nightly and
-    # arch-prefixed variants — every one of radarr's first 25 was a nightly,
-    # and the newest STABLE tag never appeared in the window at all.
-    local url="https://hub.docker.com/v2/repositories/${repo}/tags/?page_size=100&ordering=last_updated"
-
-    local response
-    # 3s was too tight for a 100-tag page.
-    response=$(curl -s --max-time 15 "$url" 2>/dev/null) || return 1
+    # A real listing always has "results", even an empty one. An empty body,
+    # an HTML error page or {"message":"...rate limit..."} is the registry NOT
+    # answering, and must never read as "answered, no newer version".
+    [[ "$response" == *'"results"'* ]] || return 1
 
     # Keep ONLY plain version tags: 1.6.0, 4.0.19, v3.5.0, 2026.8.2, 10.11.
     #
@@ -65,6 +59,41 @@ _query_dockerhub() {
         | grep -oE '"name"[[:space:]]*:[[:space:]]*"[^"]+"' \
         | sed 's/.*:[[:space:]]*"//;s/"$//' \
         | grep -E '^v?[0-9]+(\.[0-9]+)*$'
+    return 0
+}
+
+# Query Docker Hub for latest tag matching a version pattern
+# Args: $1=namespace/image (e.g. "linuxserver/sonarr"), $2=current tag
+# Returns: version tags (possibly none) on stdout; 1 if the registry did not
+# answer, which the caller reports differently from "no version tags".
+_query_dockerhub() {
+    local repo="$1" current_tag="$2"
+
+    # page_size=100, not 25. LinuxServer pushes nightlies continuously, so
+    # ordering=last_updated fills the first 25 entirely with nightly and
+    # arch-prefixed variants — every one of radarr's first 25 was a nightly,
+    # and the newest STABLE tag never appeared in the window at all.
+    local url="https://hub.docker.com/v2/repositories/${repo}/tags/?page_size=100&ordering=last_updated"
+
+    local response tags
+    # 3s was too tight for a 100-tag page.
+    response=$(curl -s --max-time 15 "$url" 2>/dev/null) || return 1
+    tags=$(_dockerhub_version_tags "$response") || return 1
+
+    # Even 100 is not enough for a repo whose CI tags every commit: all 100 of
+    # klutchell/dnscrypt-proxy's newest were build-<sha>, renovate branches and
+    # main, so nothing survived the filter and the image was "skipped" on
+    # every run — it could never have reported a release. Found 2026-09-28.
+    # Ask again for only tags containing a dot (name= is a substring match).
+    # Not "name=2." for the current major: that could never see a 3.0.0. A
+    # dotless tag has no such filter, so it stays a visible skip.
+    if [[ -z "$tags" && "$current_tag" == *.* ]]; then
+        response=$(curl -s --max-time 15 "${url}&name=." 2>/dev/null) || return 1
+        tags=$(_dockerhub_version_tags "$response") || return 1
+    fi
+
+    [[ -n "$tags" ]] && echo "$tags"
+    return 0
 }
 
 # Query GHCR for tags
@@ -93,6 +122,8 @@ _query_ghcr() {
     local response
     # 3s was too tight once a token round-trip is involved.
     response=$(curl -s --max-time 10 -H "Authorization: Bearer $token" "$url" 2>/dev/null) || return 1
+    # {"errors":[...TOOMANYREQUESTS...]} is not an answer; a tag list has "tags".
+    [[ "$response" == *'"tags"'* ]] || return 1
 
     echo "$response" | grep -oE '"[v]?[0-9][^"]*"' | tr -d '"' | while read -r tag; do
         case "$tag" in
@@ -237,6 +268,7 @@ check_image_versions() {
     local checked=0
     local updates=0
     local skipped=0
+    local skip_lines=()
 
     for image_ref in "${images[@]}"; do
         local registry="" namespace="" image="" tag=""
@@ -282,22 +314,26 @@ check_image_versions() {
             continue
         fi
 
-        # Query the appropriate registry
-        local tags_list=""
+        # Query the appropriate registry. Non-zero status = it did not answer;
+        # zero with no tags = it answered, with no version tags in it.
+        local tags_list="" query_rc=0
         case "$registry" in
             ghcr)
-                tags_list=$(_query_ghcr "$namespace" "$tag")
+                tags_list=$(_query_ghcr "$namespace" "$tag") || query_rc=$?
                 ;;
             lscr)
-                tags_list=$(_query_lscr "$image" "$tag")
+                tags_list=$(_query_lscr "$image" "$tag") || query_rc=$?
                 ;;
             dockerhub)
-                tags_list=$(_query_dockerhub "$namespace" "$tag")
+                tags_list=$(_query_dockerhub "$namespace" "$tag") || query_rc=$?
                 ;;
         esac
 
-        if [[ -z "$tags_list" ]]; then
+        if [[ $query_rc -ne 0 || -z "$tags_list" ]]; then
             ((skipped++))
+            local reason="registry did not answer"
+            [[ $query_rc -eq 0 ]] && reason="registry answered, but with no version tags"
+            skip_lines+=("$image_ref not checked - $reason")
             # DELIBERATELY NOT CACHED. This used to _cache_set "current" here,
             # which turned a failed lookup into a positive "you are up to date"
             # for the whole cache lifetime — so one rate-limited run produced a
@@ -327,8 +363,14 @@ check_image_versions() {
         echo "      Found $updates update(s) across $checked images"
     fi
 
+    # Name every skip and say why. The bare "(1 images skipped - registry
+    # unavailable or rate-limited)" printed on every run for dnscrypt-proxy,
+    # blamed a registry that had answered fine, and read as routine noise.
     if [[ $skipped -gt 0 ]]; then
-        echo "      ($skipped images skipped - registry unavailable or rate-limited)"
+        local line
+        for line in "${skip_lines[@]}"; do
+            echo -e "      ${YELLOW:-}SKIP${NC:-}: $line"
+        done
     fi
 
     # Always return 0 - this is a warning-only check

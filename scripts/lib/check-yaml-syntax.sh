@@ -70,7 +70,7 @@ except yaml.YAMLError as e:
             [[ -f "$repo_root/$file" ]] || continue
             case "$file" in docker-compose*.yml) ;; *) continue ;; esac
             if ! docker compose -f "$repo_root/$file" \
-                   --env-file "$repo_root/tests/fixtures/.env.test" config -q >/dev/null 2>&1; then
+                   --env-file "$repo_root/tests/fixtures/.env.test" --profile '*' config -q >/dev/null 2>&1; then
                 echo "    ERROR: $file failed docker compose config"
                 ((errors++)) || true
             fi

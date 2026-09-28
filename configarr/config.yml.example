@@ -21,7 +21,7 @@
 
 sonarr:
   main:
-    base_url: http://gluetun:8989
+    base_url: http://sonarr:8989
     api_key: !env SONARR_API_KEY
 
     quality_definition:
@@ -58,7 +58,7 @@ sonarr:
 
 radarr:
   main:
-    base_url: http://gluetun:7878
+    base_url: http://radarr:7878
     api_key: !env RADARR_API_KEY
 
     quality_definition:
