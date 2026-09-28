@@ -1,45 +1,33 @@
 #!/bin/bash
-# Setup script for pre-commit hooks
-# Run once after cloning: ./setup-hooks.sh
+# Installs this repo's pre-commit hook. Run once per clone: ./setup-hooks.sh
+#
+# Generated with LLM assistance and human-reviewed. Read it before you run it.
 
 set -e
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+HOOK_SRC="$REPO/scripts/pre-commit"
 
-echo "Setting up git hooks for ultimate-arr-stack..."
+echo "Installing git hooks for ultimate-arr-stack..."
 echo ""
 
-# Check we're in a git repo — and ask git rather than looking for a .git
-# DIRECTORY. Inside a worktree, .git is a FILE holding a gitdir pointer, so
-# `[[ -d .git ]]` is false and this script would exit 1 claiming "not a git
-# repository". The hook then silently never gets installed, and every check it
-# performs stops running for that worktree.
-if ! GIT_COMMON_DIR="$(git -C "$SCRIPT_DIR" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)"; then
-    echo "ERROR: Not a git repository. Run this from the repo root."
+# Let git say where hooks go. Every worktree of a clone shares the hooks of the
+# main .git directory, and inside a worktree .git is just a pointer file, so a
+# test for a .git directory would wrongly give up there.
+if ! COMMON_GIT_DIR="$(git -C "$REPO" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)"; then
+    echo "ERROR: $REPO is not inside a git clone."
     exit 1
 fi
-
-# Hooks live in the COMMON git dir, shared by every worktree of this repo.
-HOOKS_DIR="$GIT_COMMON_DIR/hooks"
-
-# Create hooks directory if needed
+HOOKS_DIR="$COMMON_GIT_DIR/hooks"
 mkdir -p "$HOOKS_DIR"
 
-# Remove existing hook if present
-if [[ -e "$HOOKS_DIR/pre-commit" ]]; then
-    rm "$HOOKS_DIR/pre-commit"
-    echo "  Removed existing pre-commit hook"
-fi
+# Link by full path, so the hook resolves the same from any worktree and always
+# runs the current scripts/pre-commit. -f replaces an old hook or copy.
+ln -sfn "$HOOK_SRC" "$HOOKS_DIR/pre-commit"
+echo "  Linked $HOOKS_DIR/pre-commit -> $HOOK_SRC"
 
-# Absolute path, not the old "../../scripts/pre-commit": that relative link
-# assumed HOOKS_DIR was always <repo>/.git/hooks, which is untrue for worktrees.
-ln -s "$SCRIPT_DIR/scripts/pre-commit" "$HOOKS_DIR/pre-commit"
-echo "  Created symlink: $HOOKS_DIR/pre-commit -> $SCRIPT_DIR/scripts/pre-commit"
-
-# Ensure scripts are executable
-chmod +x "$SCRIPT_DIR/scripts/pre-commit"
-chmod +x "$SCRIPT_DIR/scripts/lib/"*.sh
-echo "  Made scripts executable"
+chmod +x "$HOOK_SRC" "$REPO"/scripts/lib/*.sh
+echo "  Made the hook and its checks executable"
 
 # ---------------------------------------------------------------------------
 # PyYAML, for the hook's YAML syntax check.
@@ -51,10 +39,10 @@ echo "  Made scripts executable"
 # ---------------------------------------------------------------------------
 if python3 -c "import yaml" 2>/dev/null; then
     echo "  PyYAML: already available via system python3"
-elif [[ -x "$SCRIPT_DIR/.venv/bin/python3" ]] && "$SCRIPT_DIR/.venv/bin/python3" -c "import yaml" 2>/dev/null; then
+elif [[ -x "$REPO/.venv/bin/python3" ]] && "$REPO/.venv/bin/python3" -c "import yaml" 2>/dev/null; then
     echo "  PyYAML: already available via .venv"
-elif python3 -m venv "$SCRIPT_DIR/.venv" 2>/dev/null &&
-     "$SCRIPT_DIR/.venv/bin/pip" install --quiet pyyaml 2>/dev/null; then
+elif python3 -m venv "$REPO/.venv" 2>/dev/null &&
+     "$REPO/.venv/bin/pip" install --quiet pyyaml 2>/dev/null; then
     echo "  PyYAML: installed into .venv (gitignored)"
 else
     echo "  WARNING: could not provide PyYAML."
@@ -63,9 +51,6 @@ else
 fi
 
 echo ""
-echo "Done! Pre-commit hook installed."
-echo ""
-echo "The hook will run automatically on 'git commit'."
-echo "To test manually: ./scripts/pre-commit"
-echo ""
-echo "To uninstall: rm \"$HOOKS_DIR/pre-commit\""
+echo "Done. The hook now runs on every 'git commit'."
+echo "Run it by hand: ./scripts/pre-commit"
+echo "Remove it:      rm \"$HOOKS_DIR/pre-commit\""

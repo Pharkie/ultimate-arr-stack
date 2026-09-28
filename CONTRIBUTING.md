@@ -129,16 +129,19 @@ The actual `.yml` files are gitignored, so:
 
 ## Continuous Integration
 
-`.github/workflows/ci.yml` runs on every pull request and on pushes to `main`. It does not replace the rule that every change is tested on the NAS before it reaches `main` — nothing in CI can reach the stack — it front-loads the checks that don't need it, and it is the only gate a contributor without the local hooks passes through.
+`.github/workflows/ci.yml` runs on pull requests to `main`, on pushes to `main`, nightly, and on manual dispatch. It does not replace the rule that every change is tested on the NAS before it reaches `main` — nothing in CI can reach the stack — it front-loads the checks that don't need it, and it is the only gate a contributor without the local hooks passes through.
+
+Branch protection on `main` requires the three blocking jobs by name. The names below are exact: rename one in the workflow and it silently drops out of the gate.
 
 | job | what it runs | blocks merge? |
 |---|---|---|
-| `bats suite` | `tests/run-tests.sh`: compose validity, ports and IPs, secrets hygiene, env documentation, doc links, container posture, shellcheck at `error`, the unit tests for `configure-apps.sh`, and the architecture rules (download clients inside gluetun's namespace, project names, the `arr-stack` subnet pins). The pre-commit hook runs its own eleven checks; the two overlap in intent, and the bats suite drives several of the hook's check functions directly. Registry-tag checks are guaranteed a network here. | yes |
-| `lint` | actionlint over the workflow, hadolint over the devcontainer Dockerfile, shellcheck at `warning` (advisory — printed, never fails) | yes, except the advisory step |
-| `supply chain` | syft SBOM (SPDX + CycloneDX, uploaded as an artifact); trivy over the tree for vulnerabilities, misconfiguration and secrets at HIGH/CRITICAL | yes |
-| `nightly` | trivy image scan over every image the compose files pin — a report per image and a count table in the run summary (an image that could not be scanned is a row that says so); and a `docker build` of the devcontainer Dockerfile, which nothing else builds | never — diagnostic |
+| `bats suite` | `./setup-hooks.sh`, then `tests/run-tests.sh`: compose validity, ports and IPs, secrets hygiene, env documentation, doc links, container posture, shellcheck at `error`, the unit tests for `configure-apps.sh`, and the architecture rules (download clients inside gluetun's namespace, project names, the `arr-stack` subnet pins). The pre-commit hook runs its own eleven checks; the two overlap in intent, and the bats suite drives several of the hook's check functions directly. Registry-tag checks are guaranteed a network here. The TAP results go to the run summary. | yes |
+| `lint (actionlint, hadolint, shellcheck warnings)` | actionlint over the workflows (its image bundles shellcheck, so the `run:` blocks are checked too); hadolint over the devcontainer Dockerfile with `.hadolint.yaml`; shellcheck at `warning` over `scripts/pre-commit` and every tracked `*.sh` — advisory: printed and annotated, never fails the job, though a shellcheck that cannot run at all does | yes, except the advisory step |
+| `supply chain (trivy, sbom)` | resolves a `package-lock.json` (gitignored, so CI writes one with `npm install --package-lock-only`; without it neither tool sees any JavaScript); syft SBOM, SPDX + CycloneDX, uploaded as the `sbom` artifact; trivy over the tree for vulnerabilities, misconfiguration and secrets, failing at HIGH/CRITICAL. Both include npm dev dependencies (the only kind this repo has) and skip `node_modules` and the vendored bats submodules | yes |
+| `nightly — trivy over every compose image` | trivy (vulnerabilities, `linux/amd64` as on the NAS) over every image the compose files use, listed by `docker compose config --profile '*'` so profile-gated services such as configarr are included — JSON reports in the `trivy-images` artifact and a per-image count table in the run summary (an image that could not be scanned is a row that says so) | never — diagnostic |
+| `nightly — the devcontainer builds` | a `docker build` of the devcontainer Dockerfile, which nothing else builds | never — diagnostic |
 
-Run the blocking checks locally before pushing: `./tests/run-tests.sh` is the whole `bats` job. The lint and supply-chain steps each run one digest-pinned image with the flags shown in the workflow — copy the step's `docker run` line to reproduce it. [`docs/QUALITY-CONTROL-MAP.md`](docs/QUALITY-CONTROL-MAP.md) says which surface covers which capability, and where nothing does.
+Run the blocking checks locally before pushing: `./setup-hooks.sh && ./tests/run-tests.sh` is the whole `bats suite` job. The lint and supply-chain steps each run one digest-pinned image, named in the job's `env:` block — copy the step's `docker run` line with that image to reproduce it (the trivy scan expects the `trivy-cache` volume that the database-fetch step fills). [`docs/QUALITY-CONTROL-MAP.md`](docs/QUALITY-CONTROL-MAP.md) says which surface covers which capability, and where nothing does.
 
 ### Pinning policy
 

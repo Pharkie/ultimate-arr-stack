@@ -1,55 +1,86 @@
 #!/usr/bin/env bats
-# Static analysis over the repo's own shell scripts.
+# shellcheck at error severity over every tracked shell script.
 #
-# The repo had no shellcheck coverage at all, while carrying ~25 shell files
-# that run against a live NAS — the pre-commit hook, the backup script, the
-# VPN checks. Quoting and expansion mistakes in those are exactly the class
-# shellcheck exists to catch, and exactly the class that only shows up when
-# something already went wrong.
+# Error severity only: these are the findings that mean a script is broken
+# (parse errors, array misuse, tests that can never be true), not style.
 #
-# Scoped to `-S error`: syntax errors, invalid redirections, and the like.
-# Widening to `-S warning` is a deliberate decision for another day, not a
-# side effect of this file — it would surface 7 pre-existing findings as of
-# this commit (4x SC2155 declare-and-assign, 3x SC2034 unused variable), all
-# unrelated to anything here.
-#
-# Adapted from tests/shellcheck.bats in leonardoazeredo/ultimate-arr-stack,
-# which skips outright when the binary is absent. Since shellcheck is nobody's
-# default install, that skip is the normal case rather than the exception, and
-# a check that normally does not run is not a check. This falls back to the
-# published container image, which every machine that runs this stack already
-# has a daemon for.
+# shellcheck comes from the host if it has one, otherwise from the pinned
+# koalaman/shellcheck image listed in .github/workflows/ci.yml, run through
+# docker. With neither, the tests skip and say why.
 
 setup() {
     load helpers/setup
-}
 
-# Every shell file in the repo. scripts/pre-commit has no extension and is the
-# one most worth checking, so it is listed explicitly. The rest come from git,
-# not from globs over scripts/: those missed setup-hooks.sh, tests/run-tests.sh
-# and duc/scan.sh, which the NAS runs inside the duc container.
-shell_files() {
-    printf '%s\n' scripts/pre-commit
-    git -C "$REPO_ROOT" ls-files '*.sh' | sed "s|^|$REPO_ROOT/|"
-}
+    SHELLCHECK_IMAGE="$(grep -oE 'koalaman/shellcheck:[^ @]+@sha256:[0-9a-f]{64}' \
+        "$REPO_ROOT/.github/workflows/ci.yml" | head -n1)"
 
-@test "shell scripts have no shellcheck errors" {
-    local -a rel=()
-    local f
-    for f in $(shell_files); do
-        rel+=("${f#"$REPO_ROOT"/}")
-    done
-    [[ ${#rel[@]} -gt 1 ]]  # guard against the globs silently expanding to nothing
-
-    if command -v shellcheck &>/dev/null; then
-        cd "$REPO_ROOT"
-        run shellcheck -S error -x "${rel[@]}"
-    elif command -v docker &>/dev/null && docker info &>/dev/null; then
-        run docker run --rm -v "$REPO_ROOT:/mnt" -w /mnt \
-            koalaman/shellcheck:v0.11.0@sha256:61862eba1fcf09a484ebcc6feea46f1782532571a34ed51fedf90dd25f925a8d -S error -x "${rel[@]}"
+    if command -v shellcheck >/dev/null 2>&1; then
+        SHELLCHECK_VIA=host
+    elif [ -z "$SHELLCHECK_IMAGE" ]; then
+        skip "no shellcheck on PATH, and no pinned koalaman/shellcheck image in .github/workflows/ci.yml"
+    elif ! command -v docker >/dev/null 2>&1 || ! docker info >/dev/null 2>&1; then
+        skip "no shellcheck on PATH, and no running docker to use $SHELLCHECK_IMAGE"
     else
-        skip "neither shellcheck nor a running docker daemon is available"
+        SHELLCHECK_VIA=docker
     fi
+}
 
+# scripts/pre-commit has no extension, so it is named here; everything else
+# is any *.sh git tracks. Submodule contents (bats) are not listed by git
+# ls-files in the superproject. Paths are relative to the repo root.
+discover_scripts() {
+    (
+        cd "$REPO_ROOT" || exit 1
+        { echo scripts/pre-commit; git ls-files -- '*.sh'; } |
+            while read -r f; do [ -f "$f" ] && echo "$f"; done |
+            sort -u
+    )
+}
+
+# run_shellcheck DIR FILE...: shellcheck -S error -x on FILEs, relative to
+# DIR, run from DIR so -x resolves `source` paths as the scripts do.
+run_shellcheck() {
+    local dir="$1"
+    shift
+    if [ "$SHELLCHECK_VIA" = host ]; then
+        (cd "$dir" && shellcheck -S error -x "$@")
+    else
+        docker run --rm -v "$dir:/mnt:ro" -w /mnt "$SHELLCHECK_IMAGE" -S error -x "$@"
+    fi
+}
+
+@test "discovery finds the tracked shell scripts, pre-commit included" {
+    run discover_scripts
+    assert_success
+    # Nothing found would make the next test pass while checking nothing.
+    [ -n "$output" ] || fail "discovery found no shell scripts"
+    assert_line "scripts/pre-commit"
+    assert_line "scripts/lib/common.sh"
+}
+
+@test "every tracked shell script passes shellcheck -S error -x" {
+    local files=() f
+    while read -r f; do files+=("$f"); done < <(discover_scripts)
+    [ "${#files[@]}" -gt 0 ] || fail "discovery found no shell scripts"
+    run run_shellcheck "$REPO_ROOT" "${files[@]}"
+    assert_success
+}
+
+@test "a real error-level fault fails the check (negative)" {
+    mkdir -p "$BATS_TEST_TMPDIR/neg"
+    # SC2068, error severity: unquoted $@ re-splits every argument, so a
+    # filename with a space becomes two files.
+    printf '#!/bin/bash\nfor f in $@; do rm -- "$f"; done\n' > "$BATS_TEST_TMPDIR/neg/bad.sh"
+    run run_shellcheck "$BATS_TEST_TMPDIR/neg" bad.sh
+    assert_failure
+    assert_output --partial "SC2068"
+}
+
+@test "a warning-level finding alone does not fail it: the severity is error" {
+    mkdir -p "$BATS_TEST_TMPDIR/warn"
+    # SC2034 (unused variable) is a warning: reported at default severity,
+    # silent at -S error. Proves the run above is not stricter than asked.
+    printf '#!/bin/bash\nunused=1\n' > "$BATS_TEST_TMPDIR/warn/warn.sh"
+    run run_shellcheck "$BATS_TEST_TMPDIR/warn" warn.sh
     assert_success
 }

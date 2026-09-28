@@ -1,219 +1,310 @@
 #!/usr/bin/env bats
-# Unit tests for scripts/detect-vpn-zombies.sh.
+# Unit tests for scripts/detect-vpn-zombies.sh, plus the guard that keeps its
+# TUNNELED list in step with the compose files.
 #
-# That script is the stack's guard against the nastiest Gluetun failure mode:
-# a *recreate* mints a new container ID, and dependents pinned to the old one
-# keep running as zombies — healthy on their own localhost, unreachable from
-# everything else. Until now the script had no tests at all, so nothing proved
-# it could actually report a zombie rather than just exit 0 on a healthy day.
-# A guard nobody has watched fail is not yet a guard.
-#
-# `docker` is stubbed throughout, so these run anywhere — no NAS, no network,
-# no live stack. The live counterpart is tests/e2e/resilience.spec.ts, which
-# asks the real containers the same question.
-#
-# Adapted from work in leonardoazeredo/ultimate-arr-stack (tests/vpn-zombies.bats),
-# rewritten against this repo's script, which differs in array name, output
-# strings, and its stranded/skipped split.
+# Docker is faked by a `docker` shim first on PATH. It answers only
+# `docker inspect [--type container] -f FORMAT REF`, from one file per
+# container under $FAKE_DOCKER, and exits 99 on any other subcommand, so a
+# script that tried to restart or modify anything would fail loudly here.
 
 setup() {
     load helpers/setup
-    ZOMBIE_SCRIPT="$REPO_ROOT/scripts/detect-vpn-zombies.sh"
-    STUB="$BATS_TEST_TMPDIR/docker-stub.bash"
-    write_docker_stub
-}
+    SCRIPT="$REPO_ROOT/scripts/detect-vpn-zombies.sh"
+    FAKE_DOCKER="$BATS_TEST_TMPDIR/containers"
+    DOCKER_LOG="$BATS_TEST_TMPDIR/docker.log"
+    export FAKE_DOCKER DOCKER_LOG
+    mkdir -p "$FAKE_DOCKER" "$BATS_TEST_TMPDIR/bin"
 
-# A `docker` stub covering the only two calls the script makes:
-#   docker inspect --format '{{.Id}}' <name>
-#   docker inspect --format '{{.HostConfig.NetworkMode}}' <name>
-#
-# Lookups come from two newline-separated `name=value` tables, STUB_IDS and
-# STUB_NETMODE, set per test. A name absent from its table makes inspect fail,
-# which is how the real docker behaves for a container that does not exist; the
-# value `EMPTY` makes it succeed while printing nothing.
-# Deliberately no associative arrays: macOS ships bash 3.2.
-write_docker_stub() {
-    cat > "$STUB" <<'STUB'
-docker() {
-    local fmt="" name=""
-    shift  # `inspect`
-    while [[ $# -gt 0 ]]; do
-        case "$1" in
-            --format) fmt="$2"; shift 2 ;;
-            *)        name="$1"; shift ;;
-        esac
-    done
-
-    local table
-    case "$fmt" in
-        '{{.Id}}')                     table="$STUB_IDS" ;;
-        '{{.HostConfig.NetworkMode}}') table="$STUB_NETMODE" ;;
-        *) return 1 ;;
+    cat > "$BATS_TEST_TMPDIR/bin/docker" <<'SHIM'
+#!/bin/bash
+echo "$*" >> "$DOCKER_LOG"
+[ "${1:-}" = inspect ] || { echo "fake docker: refusing '$*'" >&2; exit 99; }
+shift
+fmt="" ref=""
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --type) shift 2 ;;
+        -f|--format) fmt="$2"; shift 2 ;;
+        *) ref="$1"; shift ;;
     esac
+done
+for f in "$FAKE_DOCKER"/*; do
+    [ -f "$f" ] || continue
+    name="${f##*/}"
+    id="$(sed -n 's/^id=//p' "$f")"
+    if [ "$ref" = "$name" ] || { [ -n "$id" ] && [ "$ref" = "$id" ]; }; then
+        printf '%s\n' "$fmt" | sed \
+            -e "s|{{.Id}}|$id|g" \
+            -e "s|{{.Name}}|/$name|g" \
+            -e "s|{{.HostConfig.NetworkMode}}|$(sed -n 's/^netmode=//p' "$f")|g" \
+            -e "s|{{.State.Status}}|$(sed -n 's/^status=//p' "$f")|g"
+        exit 0
+    fi
+done
+echo "Error: No such container: $ref" >&2
+exit 1
+SHIM
+    chmod +x "$BATS_TEST_TMPDIR/bin/docker"
+    PATH="$BATS_TEST_TMPDIR/bin:$PATH"
 
-    local key value
-    while IFS='=' read -r key value; do
-        [[ "$key" == "$name" ]] || continue
-        case "$value" in
-            # Docker succeeding with an empty answer is a distinct failure from
-            # docker erroring, and the script handles them separately.
-            EMPTY) printf '\n'; return 0 ;;
-            '')    return 1 ;;
-            *)     printf '%s\n' "$value"; return 0 ;;
-        esac
-    done <<< "$table"
-    return 1
+    # Full-length IDs, as Docker records them in HostConfig.NetworkMode.
+    GLUETUN_ID="$(printf 'a%.0s' {1..64})"
+    OLD_ID="$(printf 'b%.0s' {1..64})"
+    OTHER_ID="$(printf 'c%.0s' {1..64})"
 }
-STUB
+
+# container NAME ID NETMODE [STATUS]
+container() {
+    printf 'id=%s\nnetmode=%s\nstatus=%s\n' "$2" "$3" "${4:-running}" > "$FAKE_DOCKER/$1"
 }
 
-run_detector() {
-    run bash -c "source '$STUB'; source '$ZOMBIE_SCRIPT'"
+healthy_stack() {
+    container gluetun "$GLUETUN_ID" arr-stack
+    local svc n=0
+    for svc in qbittorrent sabnzbd prowlarr flaresolverr; do
+        n=$((n + 1))
+        container "$svc" "$(printf '%064d' "$n")" "container:$GLUETUN_ID"
+    done
 }
 
-@test "reports OK when every tunneled dependent shares Gluetun's live namespace" {
-    export STUB_IDS='gluetun=live-ns'
-    export STUB_NETMODE='qbittorrent=container:live-ns
-sabnzbd=container:live-ns
-prowlarr=container:live-ns
-flaresolverr=container:live-ns'
+# Anything but `inspect` would have exited 99 and logged; prove none happened.
+assert_only_inspected() {
+    run grep -v '^inspect ' "$DOCKER_LOG"
+    assert_failure
+    assert_output ""
+}
 
-    run_detector
+# ---------------------------------------------------------------------------
+# Behaviour
+# ---------------------------------------------------------------------------
+
+@test "healthy: every service is in gluetun's namespace, exit 0 with an OK line" {
+    healthy_stack
+    run "$SCRIPT"
     assert_success
-    assert_output --partial "OK: every tunneled dependent is inside Gluetun's current namespace"
+    assert_output --partial "OK: no VPN zombies — 4 service(s) in gluetun's namespace (aaaaaaaaaaaa), 0 skipped"
+    refute_output --partial "ZOMBIE"
+    assert_only_inspected
 }
 
-@test "flags a dependent pinned to a destroyed container, and names only that one" {
-    # The post-recreate case: sabnzbd still references the container ID Gluetun
-    # had before, which no longer exists.
-    export STUB_IDS='gluetun=live-ns'
-    export STUB_NETMODE='qbittorrent=container:live-ns
-sabnzbd=container:dead-ns
-prowlarr=container:live-ns
-flaresolverr=container:live-ns'
-
-    run_detector
-    assert_failure
-    assert_output --partial "STRANDED"
-    assert_output --partial "sabnzbd (joined to a destroyed container)"
-    assert_output --partial "Fix: docker restart sabnzbd"
-    # The healthy three must not be swept in with it — a detector that blames
-    # everything is as useless as one that blames nothing.
-    refute_output --partial "qbittorrent"
+@test "stranded on a destroyed gluetun: listed, fix suggested, exit 1" {
+    healthy_stack
+    container qbittorrent 0000000000000000000000000000000000000000000000000000000000000001 "container:$OLD_ID"
+    run "$SCRIPT"
+    assert_failure 1
+    assert_output --partial "ZOMBIE  qbittorrent (running): joined to bbbbbbbbbbbb, which no longer exists; gluetun is now aaaaaaaaaaaa"
+    assert_output --partial "1 service(s) stranded outside gluetun's current namespace: qbittorrent"
+    assert_output --partial "up -d --no-deps --force-recreate qbittorrent"
+    # Only the stranded one goes into the fix; the healthy ones are left alone.
+    refute_output --partial "force-recreate qbittorrent sabnzbd"
+    refute_output --partial "OK: no VPN zombies"
+    assert_only_inspected
 }
 
-@test "distinguishes a dependent pinned to a different *live* container" {
-    # Same breakage, different shape: the old Gluetun is gone but its ID was
-    # reused, or the dependent was pointed at some other container entirely.
-    # The two read very differently when you are working out what happened.
-    export STUB_IDS='gluetun=live-ns
-other-ns=other-ns'
-    export STUB_NETMODE='qbittorrent=container:live-ns
-sabnzbd=container:live-ns
-prowlarr=container:other-ns
-flaresolverr=container:live-ns'
-
-    run_detector
-    assert_failure
-    assert_output --partial "prowlarr (joined to a different live container)"
-    refute_output --partial "destroyed container"
+@test "stranded on a different, still-live container: named, exit 1" {
+    healthy_stack
+    container gluetun-old "$OTHER_ID" arr-stack exited
+    container sabnzbd 0000000000000000000000000000000000000000000000000000000000000002 "container:$OTHER_ID" exited
+    run "$SCRIPT"
+    assert_failure 1
+    assert_output --partial "ZOMBIE  sabnzbd (exited): joined to gluetun-old (cccccccccccc), a different container from gluetun (aaaaaaaaaaaa)"
+    assert_output --partial "force-recreate sabnzbd"
 }
 
-@test "treats an absent or stopped dependent as not-checked, not as a zombie" {
-    # No namespace binding to judge means no evidence of breakage. Calling it a
-    # zombie would be a false positive that trains people to ignore the output.
-    export STUB_IDS='gluetun=live-ns'
-    export STUB_NETMODE='qbittorrent=container:live-ns
-sabnzbd=container:live-ns
-prowlarr=container:live-ns'
+@test "both kinds at once are all listed in one fix" {
+    healthy_stack
+    container gluetun-old "$OTHER_ID" arr-stack
+    container qbittorrent 0000000000000000000000000000000000000000000000000000000000000001 "container:$OLD_ID"
+    container flaresolverr 0000000000000000000000000000000000000000000000000000000000000004 "container:$OTHER_ID"
+    run "$SCRIPT"
+    assert_failure 1
+    assert_output --partial "2 service(s) stranded outside gluetun's current namespace: qbittorrent flaresolverr"
+    assert_output --partial "force-recreate qbittorrent flaresolverr"
+}
 
-    run_detector
+@test "a service joined by gluetun's name, not its ID, is not a zombie" {
+    healthy_stack
+    container prowlarr 0000000000000000000000000000000000000000000000000000000000000003 "container:gluetun"
+    run "$SCRIPT"
     assert_success
-    assert_output --partial "Not checked"
-    assert_output --partial "flaresolverr"
+    assert_output --partial "OK      prowlarr (running) is in gluetun's namespace"
 }
 
-@test "treats a dependent that is not namespace-joined as not-checked" {
-    export STUB_IDS='gluetun=live-ns'
-    export STUB_NETMODE='qbittorrent=container:live-ns
-sabnzbd=bridge
-prowlarr=container:live-ns
-flaresolverr=container:live-ns'
-
-    run_detector
+@test "absent and not-joined services are skipped, not reported as zombies" {
+    healthy_stack
+    rm "$FAKE_DOCKER/sabnzbd"
+    container flaresolverr 0000000000000000000000000000000000000000000000000000000000000004 arr-stack
+    run "$SCRIPT"
     assert_success
-    assert_output --partial "Not checked"
-    assert_output --partial "sabnzbd"
+    assert_output --partial "SKIP    sabnzbd: no such container"
+    assert_output --partial "SKIP    flaresolverr: not joined to any container's namespace (network mode 'arr-stack')"
+    assert_output --partial "OK: no VPN zombies — 2 service(s) in gluetun's namespace (aaaaaaaaaaaa), 2 skipped"
+    refute_output --partial "ZOMBIE"
 }
 
-@test "fails loudly when Gluetun itself cannot be inspected" {
-    # The one case where returning 0 would be actively dangerous: no Gluetun to
-    # compare against means the check produced no evidence at all.
-    export STUB_IDS=''
-    export STUB_NETMODE=''
-
-    run_detector
-    assert_failure
-    assert_output --partial "cannot inspect gluetun"
+@test "gluetun missing: a clear error and exit 2, never OK" {
+    healthy_stack
+    rm "$FAKE_DOCKER/gluetun"
+    run "$SCRIPT"
+    assert_failure 2
+    assert_output --partial "ERROR: cannot inspect the gluetun container 'gluetun': Error: No such container: gluetun"
+    refute_output --partial "OK:"
 }
 
-@test "fails loudly when Gluetun reports an empty container ID" {
-    # Distinct from the case above: docker answers, but with nothing. Without
-    # its own check the script would compare every dependent against "" and
-    # declare the whole stack stranded.
-    export STUB_IDS='gluetun=EMPTY'
-    export STUB_NETMODE=''
-
-    run_detector
-    assert_failure
-    assert_output --partial "empty container ID"
+@test "gluetun with an empty ID: a clear error and exit 2, never OK" {
+    healthy_stack
+    container gluetun "" arr-stack
+    run "$SCRIPT"
+    assert_failure 2
+    assert_output --partial "ERROR: docker inspect returned an empty ID for 'gluetun'"
+    refute_output --partial "OK:"
 }
 
-@test "TUNNELED covers every service compose puts inside Gluetun's namespace" {
-    # The gap this file exists to close is not a logic bug — it is a service
-    # added to compose with network_mode: "service:gluetun" and never added to
-    # the script's hardcoded list, so it silently escapes detection forever.
-    # Derive the truth from compose and assert the list keeps up.
-    local declared
-    declared=$(grep -oE 'TUNNELED=\([^)]*\)' "$ZOMBIE_SCRIPT")
-    [[ -n "$declared" ]]
+@test "GLUETUN_CONTAINER points the comparison at another container" {
+    healthy_stack
+    mv "$FAKE_DOCKER/gluetun" "$FAKE_DOCKER/vpn"
+    GLUETUN_CONTAINER=vpn run "$SCRIPT"
+    assert_success
+    assert_output --partial "in vpn's namespace (aaaaaaaaaaaa)"
+}
 
-    local tunneled
-    tunneled=$(for f in $(get_compose_files); do
+# ---------------------------------------------------------------------------
+# Drift guard: TUNNELED must name every service the compose files bind into
+# gluetun's namespace. A service missing from it would never be checked, and
+# the script would still print OK.
+# ---------------------------------------------------------------------------
+
+# Words of the one-line `TUNNELED=(...)` array in FILE. Prints nothing if the
+# line is missing or spread over several lines.
+tunneled_list() {
+    sed -n 's/^TUNNELED=(\([^)]*\))[[:space:]]*\(#.*\)\{0,1\}$/\1/p' "$1" | tr -d "\"'" | tr -s ' \t' '\n' | sed '/^$/d'
+}
+
+# Container name (container_name, else the service key) of every service in
+# the given compose files with network_mode service:gluetun or container:gluetun.
+# Written separately from check-vpn.sh's parser, so the two can check each other.
+compose_tunnelled() {
+    local f
+    for f in "$@"; do
         awk '
-            /^  [a-zA-Z0-9_.-]+:[[:space:]]*$/ { svc=$0; sub(/:[[:space:]]*$/, "", svc); sub(/^  /, "", svc) }
-            /^[[:space:]]*network_mode:[[:space:]]*"service:gluetun"[[:space:]]*$/ { print svc }
+            /^[^[:space:]#]/ { if (bound) print name; svc = ""; bound = 0; next }
+            /^  [A-Za-z0-9._-]+:[[:space:]]*$/ {
+                if (bound) print name
+                svc = $1; sub(/:$/, "", svc); name = svc; bound = 0; next
+            }
+            svc != "" && /^    container_name:/ { v = $2; gsub(/["\047]/, "", v); name = v }
+            svc != "" && /^    network_mode:[[:space:]]*["\047]?(service|container):gluetun["\047]?[[:space:]]*(#.*)?$/ { bound = 1 }
+            END { if (bound) print name }
         ' "$f"
-    done)
-
-    # Guard the guard: if the awk stops matching, every assertion below passes
-    # vacuously and this test becomes decoration.
-    [[ -n "$tunneled" ]]
-
-    local svc
-    while IFS= read -r svc; do
-        [[ -n "$svc" ]] || continue
-        echo "checking '$svc' is listed in TUNNELED" >&2
-        [[ "$declared" == *"$svc"* ]]
-    done <<< "$tunneled"
+    done
 }
 
-@test "helpers.ts TUNNELED_SERVICES agrees with the script's TUNNELED" {
-    # Two hardcoded copies of the same topology, in two languages. They drifting
-    # apart would mean the e2e suite and the shell detector disagree about what
-    # is even supposed to be on the VPN.
-    local helpers="$REPO_ROOT/tests/e2e/helpers.ts"
-    [[ -f "$helpers" ]]
+# Succeeds if every compose-bound service is in SCRIPT's TUNNELED list, by
+# whole name. Fails, saying why, if either list comes out empty: an empty
+# extraction means the parsing broke, and would otherwise pass vacuously.
+tunneled_drift() {
+    local script="$1" declared bound svc t found missing=""
+    shift
+    declared="$(tunneled_list "$script")"
+    bound="$(compose_tunnelled "$@" | sort -u)"
+    [ -n "$declared" ] || { echo "no TUNNELED=(...) on one line in $script"; return 1; }
+    [ -n "$bound" ] || { echo "no gluetun-bound service found in: $*"; return 1; }
+    for svc in $bound; do
+        found=no
+        for t in $declared; do
+            [ "$t" = "$svc" ] && found=yes
+        done
+        [ "$found" = yes ] || missing="$missing $svc"
+    done
+    [ -z "$missing" ] || { echo "bound to gluetun in compose but missing from TUNNELED:$missing"; return 1; }
+}
 
-    local from_ts
-    from_ts=$(grep -oE "TUNNELED_SERVICES = \[[^]]*\]" "$helpers" \
-        | grep -oE "'[a-z0-9_-]+'" | tr -d "'" | sort | tr '\n' ' ')
+# A compose file with the repo's layout; each argument is "service[:network_mode]".
+fixture_compose() {
+    local out="$1" spec svc mode
+    shift
+    { echo "name: fixture"; echo "services:"
+      echo "  gluetun:"; echo "    image: qmcgaw/gluetun"; echo "    container_name: gluetun"
+      for spec in "$@"; do
+          svc="${spec%%:*}" mode="${spec#*:}"
+          echo "  $svc:"
+          echo "    image: example/$svc"
+          echo "    container_name: $svc"
+          [ "$mode" = "$spec" ] || echo "    network_mode: \"$mode\""
+      done
+    } > "$out"
+}
 
-    local from_sh
-    from_sh=$(grep -oE 'TUNNELED=\([^)]*\)' "$ZOMBIE_SCRIPT" \
-        | sed -E 's/TUNNELED=\(//; s/\)//' | tr ' ' '\n' | grep -v '^$' | sort | tr '\n' ' ')
+fixture_script() {
+    printf '#!/bin/bash\n%s\necho body\n' "$2" > "$1"
+}
 
-    [[ -n "$from_ts" ]]
-    [[ -n "$from_sh" ]]
-    assert_equal "$from_ts" "$from_sh"
+@test "drift guard: TUNNELED covers every service the compose files bind into gluetun" {
+    run tunneled_drift "$SCRIPT" "$REPO_ROOT"/docker-compose*.yml
+    assert_success
+}
+
+@test "drift guard: TUNNELED has no stale entries the compose files no longer bind" {
+    local bound t stale=""
+    bound="$(compose_tunnelled "$REPO_ROOT"/docker-compose*.yml)"
+    [ -n "$bound" ]
+    for t in $(tunneled_list "$SCRIPT"); do
+        printf '%s\n' "$bound" | grep -qxF "$t" || stale="$stale $t"
+    done
+    [ -z "$stale" ] || fail "in TUNNELED but not bound to gluetun in any compose file:$stale"
+}
+
+@test "drift guard: check-vpn.sh derives the same tunnelled list from the compose files" {
+    run env ARR_STACK_DIR="$REPO_ROOT" "$REPO_ROOT/scripts/check-vpn.sh" --list-tunnelled
+    assert_success
+    [ -n "$output" ]
+    assert_equal "$output" "$(compose_tunnelled "$REPO_ROOT"/docker-compose*.yml | sort -u)"
+}
+
+@test "drift guard FAILS: a bound service missing from TUNNELED" {
+    fixture_compose "$BATS_TEST_TMPDIR/c.yml" qbittorrent:service:gluetun sabnzbd:service:gluetun dl:service:gluetun plain
+    fixture_script "$BATS_TEST_TMPDIR/s.sh" 'TUNNELED=(qbittorrent sabnzbd)'
+    run tunneled_drift "$BATS_TEST_TMPDIR/s.sh" "$BATS_TEST_TMPDIR/c.yml"
+    assert_failure
+    assert_output "bound to gluetun in compose but missing from TUNNELED: dl"
+}
+
+@test "drift guard FAILS: container:gluetun bindings count too" {
+    fixture_compose "$BATS_TEST_TMPDIR/c.yml" qbittorrent:service:gluetun sidecar:container:gluetun
+    fixture_script "$BATS_TEST_TMPDIR/s.sh" 'TUNNELED=(qbittorrent)'
+    run tunneled_drift "$BATS_TEST_TMPDIR/s.sh" "$BATS_TEST_TMPDIR/c.yml"
+    assert_failure
+    assert_output "bound to gluetun in compose but missing from TUNNELED: sidecar"
+}
+
+@test "drift guard FAILS: names must match whole, not as substrings" {
+    fixture_compose "$BATS_TEST_TMPDIR/c.yml" qbittorrent:service:gluetun sabnzbd:service:gluetun
+    fixture_script "$BATS_TEST_TMPDIR/s.sh" 'TUNNELED=(qbittorrent-old sab sabnzbd)'
+    run tunneled_drift "$BATS_TEST_TMPDIR/s.sh" "$BATS_TEST_TMPDIR/c.yml"
+    assert_failure
+    assert_output "bound to gluetun in compose but missing from TUNNELED: qbittorrent"
+}
+
+@test "drift guard FAILS: an empty TUNNELED" {
+    fixture_compose "$BATS_TEST_TMPDIR/c.yml" qbittorrent:service:gluetun
+    fixture_script "$BATS_TEST_TMPDIR/s.sh" 'TUNNELED=()'
+    run tunneled_drift "$BATS_TEST_TMPDIR/s.sh" "$BATS_TEST_TMPDIR/c.yml"
+    assert_failure
+    assert_output --partial "no TUNNELED=(...) on one line"
+}
+
+@test "drift guard FAILS: TUNNELED spread over several lines" {
+    fixture_compose "$BATS_TEST_TMPDIR/c.yml" qbittorrent:service:gluetun
+    fixture_script "$BATS_TEST_TMPDIR/s.sh" "$(printf 'TUNNELED=(\n  qbittorrent\n)')"
+    run tunneled_drift "$BATS_TEST_TMPDIR/s.sh" "$BATS_TEST_TMPDIR/c.yml"
+    assert_failure
+    assert_output --partial "no TUNNELED=(...) on one line"
+}
+
+@test "drift guard FAILS: compose files with no gluetun binding found" {
+    fixture_compose "$BATS_TEST_TMPDIR/c.yml" plain other
+    fixture_script "$BATS_TEST_TMPDIR/s.sh" 'TUNNELED=(qbittorrent)'
+    run tunneled_drift "$BATS_TEST_TMPDIR/s.sh" "$BATS_TEST_TMPDIR/c.yml"
+    assert_failure
+    assert_output --partial "no gluetun-bound service found"
 }

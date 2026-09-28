@@ -1,162 +1,321 @@
 #!/bin/bash
-set -euo pipefail
 #
-# Verify the VPN is actually carrying traffic — for Gluetun itself, and for
-# every service that is supposed to be tunneled through it.
+# Verify the VPN end to end:
+#   1. DNS resolves inside gluetun.
+#   2. gluetun exits to the internet from a different IP than the host's own
+#      connection, measured from a container on the ordinary bridge (sonarr).
+#   3. Every service bound into gluetun's network namespace exits from
+#      gluetun's IP. The list comes from the compose files: every service with
+#      network_mode "service:gluetun" (or "container:gluetun").
+#
+# Usage: ./scripts/check-vpn.sh                  run every check
+#        ./scripts/check-vpn.sh --list-tunnelled print the services it would check
+#
+# Exit 0 means every check ran and passed. Anything else is a problem, and the
+# FAIL lines say what. Cron relies on that: it pings the Uptime Kuma push
+# monitor only on exit 0 (docs/UTILITIES.md), so a check that could not run,
+# or a service whose egress could not be measured, is a failure, never a skip.
+#
+# Environment overrides:
+#   GLUETUN_CONTAINER  the VPN container (default: gluetun)
+#   HOST_PROBE         a container on the plain bridge, used to measure the
+#                      host's own egress (default: sonarr)
+#   ARR_STACK_DIR      directory holding the compose files. By default it is
+#                      read from gluetun's compose labels, so the script also
+#                      works when piped in (`... | ssh nas bash -s`), then
+#                      falls back to the checkout this script lives in.
+#   DNS_TEST_NAME      name resolved inside gluetun (default: cloudflare.com)
+#
+# It only reads: docker inspect, and docker exec of getent/nslookup and of
+# curl/wget against public IP-echo services. It restarts and changes nothing.
 #
 # ⚠️  This script was generated with LLM assistance and human-reviewed.
 #     Read and understand it before running. Do not execute scripts you
 #     don't understand on your system. It only inspects and reports —
 #     it changes nothing.
 #
-# WHAT CHANGED AND WHY (2026-08-15): this used to compare Gluetun's exit IP
-# against the NAS's LAN IP from `hostname -I`. Those are a public address and a
-# private one — a routable WAN address versus an RFC 1918 LAN address — so they
-# could never be equal and
-# the leak branch could never fire. It reported "OK: VPN is active" whether the
-# tunnel was up, down or leaking.
-#
-# The comparison that means something is against the HOST's OWN EGRESS: what
-# the internet sees when traffic does not go through the VPN. Sonarr is used to
-# measure it because it is bridge-only by design (docs/MIGRATION-arr-off-vpn.md),
-# so its egress is the host's egress.
-#
-# Per-service checks must assert EQUAL to Gluetun, not merely different from
-# the host: a service escaping down some third route would also differ from the
-# host while not being tunneled at all.
-#
-# WHAT CHANGED AND WHY (2026-08-27): a service whose egress could not be
-# measured printed WARN, was skipped, and did not affect the exit code. So the
-# run in which all four tunneled services had lost their network still ended on
-# "OK: every tunneled service egresses through Gluetun", exit 0. Unmeasurable
-# is now a failure. An unverified service is not a passing one.
-#
-# This is the shell counterpart to tests/e2e/vpn-security.spec.ts. Both
-# implement the same comparison; keep them in step.
-#
-# Usage:
-#   ./scripts/check-vpn.sh
-#
-# Exit codes:
-#   0 = Gluetun is tunneling and no tunneled service is leaking
-#   1 = a leak was detected, or the check could not run
-#
-# Use in cron or monitoring:
-#   */5 * * * * /path/to/arr-stack/scripts/check-vpn.sh || notify "VPN leak!"
 
-# Must match network_mode: "service:gluetun" in docker-compose.arr-stack.yml.
-TUNNELED_SERVICES=(qbittorrent prowlarr sabnzbd flaresolverr)
+# No `set -e`: a failed probe is a result to report, not a reason to stop
+# before the remaining checks have run.
+set -uo pipefail
 
-# Container used to measure the host's non-VPN egress. Must be bridge-only.
-HOST_EGRESS_PROBE=sonarr
+GLUETUN="${GLUETUN_CONTAINER:-gluetun}"
+HOST_PROBE="${HOST_PROBE:-sonarr}"
+DNS_TEST_NAME="${DNS_TEST_NAME:-cloudflare.com}"
+PROBE_TIMEOUT=10
 
-# Images differ in which HTTP client they ship — Gluetun's Alpine base has only
-# wget, LSIO images have curl — so try both in one shell invocation. The /ip
-# path matters: ifconfig.me serves curl a bare IP at the root but serves wget
-# (no Accept header) its HTML homepage. /ip is plain text for both.
-egress_ip() {
-    docker exec "$1" sh -c \
-        'curl -s --max-time 5 https://ifconfig.me/ip || wget -qO- --timeout=5 https://ifconfig.me/ip' 2>/dev/null
+# IPv4-only answers, and only IPv4 is accepted from them. If one side of a
+# comparison came back IPv6 and the other IPv4 they would always differ, and
+# a gluetun that was leaking the host's IPv4 would pass as "not the host".
+IP_ECHO_URLS="https://api.ipify.org https://ipv4.icanhazip.com https://ipinfo.io/ip"
+
+FAILURES=0
+ok()   { printf '  OK    %s\n' "$*"; }
+fail() { printf '  FAIL  %s\n' "$*"; FAILURES=$((FAILURES + 1)); }
+
+# One line, whitespace squeezed: docker's multi-line errors stay readable.
+oneline() { printf '%s' "$*" | tr '\n' ' ' | sed -e 's/  */ /g' -e 's/^ //' -e 's/ $//'; }
+
+is_ipv4() {
+    local re='^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$'
+    [[ $1 =~ $re ]]
 }
 
-echo "Measuring the host's own egress (via $HOST_EGRESS_PROBE, which is bridge-only)..."
-HOST_IP=$(egress_ip "$HOST_EGRESS_PROBE") || HOST_IP=""
-if [[ -z "$HOST_IP" ]]; then
-    echo "ERROR: Could not determine host egress IP via $HOST_EGRESS_PROBE"
-    echo "       Is it running, and is it still off the VPN?"
-    exit 1
-fi
+# The host's real IP goes to logs; keep only enough of it to recognise.
+mask() { printf '%s' "$1" | sed -E 's/^([0-9]+\.[0-9]+)\.[0-9]+\.[0-9]+$/\1.x.x/'; }
 
-# DNS is checked explicitly, and before egress, because gluetun's own health
-# check no longer looks at it. HEALTH_TARGET_ADDRESSES pins that check to bare
-# IPs on purpose (see docker-compose.arr-stack.yml): resolving names there made
-# a Pi-hole wobble indistinguishable from a dead tunnel, and gluetun answered by
-# rebuilding the tunnel in a loop that took every VPN-side container down with
-# it. Decoupling that is only safe if something else still watches DNS, and
-# this is that something.
-#
-# It runs ahead of the Gluetun exit-IP check too, not just the per-service
-# ones. That check resolves ifconfig.me and exits the script on failure, so
-# with DNS down the whole run ended on "Gluetun may be down or the VPN
-# disconnected" — true only in the sense that nothing worked, and pointing
-# at the tunnel when the tunnel was fine. Found by staging the outage rather
-# than reasoning about it.
-#
-# One probe covers all four services: they share gluetun's network namespace,
-# so they share its resolver. Checked ahead of egress because every egress
-# probe below resolves a hostname — with DNS down they all fail at once, and
-# without this the report would blame egress for a name-resolution fault.
-echo ""
-echo "Checking DNS inside the tunnel..."
-dns_server=$(docker exec gluetun sh -c "nslookup github.com 2>/dev/null | awk '/^Address:/{print \$2; exit}'" 2>/dev/null) || dns_server=""
-if docker exec gluetun sh -c 'nslookup github.com >/dev/null 2>&1' 2>/dev/null; then
-    echo "  OK:   names resolve inside gluetun's namespace (resolver ${dns_server:-unknown})"
-else
-    echo "  FAIL: DNS is not resolving inside gluetun's namespace."
-    echo "        Every tunneled service shares this resolver, so all of them are"
-    echo "        affected. DNS_ADDRESS points gluetun at Pi-hole (172.20.0.5) and"
-    echo "        disables its internal resolver, so start with Pi-hole:"
-    echo "        docker exec pihole dig @127.0.0.1 github.com +short"
-    exit 1
-fi
-
-echo ""
-echo "Checking Gluetun's exit IP..."
-VPN_IP=$(egress_ip gluetun) || VPN_IP=""
-if [[ -z "$VPN_IP" ]]; then
-    echo "ERROR: Could not reach an IP-check service through Gluetun"
-    echo "       Gluetun may be down or the VPN disconnected"
-    exit 1
-fi
-
-if [[ "$VPN_IP" == "$HOST_IP" ]]; then
-    echo "LEAK DETECTED: Gluetun's egress ($VPN_IP) matches the host's ($HOST_IP)"
-    echo "               Gluetun is NOT routing through the VPN."
-    exit 1
-fi
-
-echo "OK: Gluetun is tunneling"
-echo "  host egress: $HOST_IP"
-echo "  VPN egress:  $VPN_IP"
-echo ""
-echo "Checking tunneled services..."
-
-leaked=0
-for svc in "${TUNNELED_SERVICES[@]}"; do
-    svc_ip=$(egress_ip "$svc") || svc_ip=""
-    if [[ -z "$svc_ip" ]]; then
-        # Not a warning to be scrolled past. A service whose egress cannot be
-        # measured has not been shown to be tunneled, and calling that success
-        # is the same mistake as the pre-2026-08-15 comparison this script was
-        # rewritten to fix — it is just spelled `continue` instead of `==`.
-        #
-        # This is not hypothetical. On 2026-08-27, recreating Gluetun left all
-        # four tunneled services attached to a namespace that no longer existed:
-        # running, reported healthy, no network at all. Every egress probe here
-        # returned empty, and this script ended on "OK: every tunneled service
-        # egresses through Gluetun" and exit 0 — the one outcome that guarantees
-        # nobody looks further. In cron, that silence is the whole product.
-        #
-        # scripts/detect-vpn-zombies.sh diagnoses this specific cause and is
-        # worth running next; the job here is only to refuse to call it OK.
-        echo "  FAIL: $svc — could not determine egress (container down, or attached to"
-        echo "        a namespace that no longer exists — try scripts/detect-vpn-zombies.sh)"
-        leaked=1
-        continue
-    fi
-    if [[ "$svc_ip" == "$VPN_IP" ]]; then
-        echo "  OK:   $svc egresses through Gluetun ($svc_ip)"
+# A wedged container can hang `docker exec` itself, past any timeout given to
+# the command inside it, and a hung cron job never reports anything.
+dexec() {
+    if command -v timeout >/dev/null 2>&1; then
+        timeout 45 docker exec "$@"
     else
-        echo "  LEAK: $svc egress ($svc_ip) does NOT match Gluetun ($VPN_IP)"
-        leaked=1
+        docker exec "$@"
+    fi
+}
+
+# ---------------------------------------------------------------------------
+# Which services are tunnelled: read from how the compose files bind them.
+# ---------------------------------------------------------------------------
+
+# Prints the container name (container_name, else the service key) of every
+# service whose network_mode is service:gluetun or container:gluetun. Reads
+# the services: block of each file, whatever its indent width.
+tunnelled_from_compose() {
+    awk -v g="$GLUETUN" '
+        function flush() {
+            if (svc != "" && bound) print (cname != "" ? cname : svc)
+            svc = ""; cname = ""; bound = 0
+        }
+        FNR == 1 { flush(); in_svcs = 0 }
+        /^[^[:space:]#]/ { flush(); in_svcs = ($0 ~ /^services:[[:space:]]*(#.*)?$/); sindent = -1; next }
+        !in_svcs || /^[[:space:]]*(#.*)?$/ { next }
+        {
+            match($0, /^[[:space:]]*/); ind = RLENGTH
+            line = substr($0, ind + 1)
+            key = line; sub(/:.*/, "", key)
+            val = line; sub(/^[^:]*:[[:space:]]*/, "", val)
+            sub(/[[:space:]]+#.*$/, "", val); sub(/[[:space:]]+$/, "", val)
+            gsub(/^["\047]|["\047]$/, "", val)
+            if (sindent < 0) sindent = ind
+            if (ind == sindent) { flush(); svc = key; pindent = -1; next }
+            if (svc == "") next
+            if (pindent < 0) pindent = ind
+            if (ind != pindent) next          # a key of the service itself
+            if (key == "container_name") cname = val
+            if (key == "network_mode" && (val == "service:" g || val == "container:" g)) bound = 1
+        }
+        END { flush() }
+    ' "$@"
+}
+
+# Sets STACK_DIR to the directory holding the compose files, or "".
+resolve_stack_dir() {
+    local d src
+    STACK_DIR=""
+    if [ -n "${ARR_STACK_DIR:-}" ]; then
+        STACK_DIR="$ARR_STACK_DIR"
+        return
+    fi
+    # Where gluetun was actually deployed from: compose stamps it on the
+    # container, and it is the only source available when piped to `bash -s`.
+    d=$(docker inspect --type container \
+        -f '{{index .Config.Labels "com.docker.compose.project.working_dir"}}' "$GLUETUN" 2>/dev/null)
+    if [ -n "$d" ] && [ -d "$d" ]; then
+        STACK_DIR="$d"
+        return
+    fi
+    src="${BASH_SOURCE[0]:-}"
+    if [ -n "$src" ] && [ -f "$src" ]; then
+        STACK_DIR="$(cd "$(dirname "$src")/.." && pwd)"
+    fi
+}
+
+# Sets TUNNELLED (space-separated), TUNNELLED_COUNT and STACK_DIR, or sets
+# LOAD_ERR and returns 1.
+load_tunnelled() {
+    local f files=()
+    TUNNELLED="" TUNNELLED_COUNT=0 LOAD_ERR=""
+    resolve_stack_dir
+    if [ -z "$STACK_DIR" ] || [ ! -d "$STACK_DIR" ]; then
+        LOAD_ERR="cannot find the stack's compose files (set ARR_STACK_DIR)"
+        return 1
+    fi
+    for f in "$STACK_DIR"/docker-compose*.yml; do
+        [ -f "$f" ] && files+=("$f")
+    done
+    if [ ${#files[@]} -eq 0 ]; then
+        LOAD_ERR="no docker-compose*.yml in $STACK_DIR"
+        return 1
+    fi
+    TUNNELLED=$(tunnelled_from_compose "${files[@]}" | sort -u | tr '\n' ' ')
+    TUNNELLED="${TUNNELLED% }"
+    # An empty list would make "every tunnelled service is fine" true of
+    # nothing. A parser that stops matching must fail loudly, not pass.
+    if [ -z "$TUNNELLED" ]; then
+        LOAD_ERR="no service in $STACK_DIR/docker-compose*.yml is bound to $GLUETUN's network namespace"
+        return 1
+    fi
+    for f in $TUNNELLED; do TUNNELLED_COUNT=$((TUNNELLED_COUNT + 1)); done
+}
+
+# ---------------------------------------------------------------------------
+# Probes
+# ---------------------------------------------------------------------------
+
+# Sets EGRESS to the public IPv4 CONTAINER exits from, or sets EGRESS_ERR and
+# returns 1.
+measure_egress() {
+    local c="$1" state tool url out rc last=""
+    EGRESS="" EGRESS_ERR=""
+    if ! state=$(docker inspect --type container -f '{{.State.Status}}' "$c" 2>&1); then
+        EGRESS_ERR=$(oneline "$state")
+        return 1
+    fi
+    if [ "$state" != running ]; then
+        EGRESS_ERR="container is $state"
+        return 1
+    fi
+    # curl where the image has it; gluetun only has busybox wget.
+    tool=$(dexec "$c" sh -c 'command -v curl || command -v wget' 2>&1)
+    case "$tool" in
+        */curl) tool=curl ;;
+        */wget) tool=wget ;;
+        *) EGRESS_ERR="no curl or wget found in it${tool:+ ($(oneline "$tool"))}"; return 1 ;;
+    esac
+    for url in $IP_ECHO_URLS; do
+        if [ "$tool" = curl ]; then
+            out=$(dexec "$c" curl -fsS -m "$PROBE_TIMEOUT" "$url" 2>&1)
+        else
+            out=$(dexec "$c" wget -qO- -T "$PROBE_TIMEOUT" "$url" 2>&1)
+        fi
+        rc=$?
+        out=$(printf '%s' "$out" | tr -d '[:space:]')
+        if [ $rc -eq 0 ] && is_ipv4 "$out"; then
+            EGRESS="$out"
+            return 0
+        fi
+        last="$url -> exit $rc${out:+: $(printf '%s' "$out" | cut -c1-80)}"
+    done
+    EGRESS_ERR="no IP-echo service answered (last: $last)"
+    return 1
+}
+
+# Prints the addresses NAME resolves to inside CONTAINER; returns 1 if none.
+resolve_in() {
+    local c="$1" name="$2" out
+    if out=$(dexec "$c" getent hosts "$name" 2>&1) && [ -n "$out" ]; then
+        printf '%s' "$out" | awk '{print $1}' | tr '\n' ' '
+        return 0
+    fi
+    # No getent: busybox nslookup. Its exit status is unreliable across
+    # versions, so require an address after the "Name:" line.
+    out=$(dexec "$c" nslookup "$name" 2>&1)
+    out=$(printf '%s\n' "$out" | awk '/^Name:/ {n=1; next} n && /^Address/ {print $NF}' | tr '\n' ' ')
+    [ -n "$out" ] || return 1
+    printf '%s' "$out"
+}
+
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
+
+case "${1:-}" in
+    -h|--help)
+        sed -n '2,/^$/{s/^# \{0,1\}//;p;}' "$0" 2>/dev/null || echo "see the header of scripts/check-vpn.sh"
+        exit 0 ;;
+    --list-tunnelled)
+        if ! load_tunnelled; then echo "ERROR: $LOAD_ERR"; exit 2; fi
+        for svc in $TUNNELLED; do echo "$svc"; done
+        exit 0 ;;
+    "") ;;
+    *) echo "Unknown argument: $1 (try --help)"; exit 2 ;;
+esac
+
+if ! command -v docker >/dev/null 2>&1; then
+    echo "FAIL: docker not found on PATH — nothing was checked"
+    exit 2
+fi
+
+echo "VPN check — $(date '+%Y-%m-%d %H:%M:%S')"
+
+# gluetun must be there and running; every other check goes through it.
+if ! g_state=$(docker inspect --type container -f '{{.State.Status}} {{.Id}}' "$GLUETUN" 2>&1); then
+    fail "cannot inspect $GLUETUN: $(oneline "$g_state")"
+    echo "FAIL: nothing else can be checked without $GLUETUN"
+    exit 1
+fi
+if [ "${g_state%% *}" != running ]; then
+    fail "$GLUETUN is ${g_state%% *}, not running"
+    echo "FAIL: nothing else can be checked without $GLUETUN"
+    exit 1
+fi
+g_id="${g_state#* }"
+
+if ! load_tunnelled; then
+    fail "$LOAD_ERR"
+    echo "FAIL: no list of tunnelled services, so none can be verified"
+    exit 1
+fi
+echo "  gluetun ${g_id:0:12}; tunnelled services from $STACK_DIR: $TUNNELLED"
+
+# 1. DNS inside gluetun. gluetun's own health check deliberately avoids DNS
+# (docker-compose.arr-stack.yml), so this is the only thing watching it.
+if addrs=$(resolve_in "$GLUETUN" "$DNS_TEST_NAME"); then
+    ok "DNS inside $GLUETUN: $DNS_TEST_NAME -> ${addrs% }"
+else
+    fail "DNS inside $GLUETUN: $DNS_TEST_NAME did not resolve"
+fi
+
+# 2. gluetun versus the host's own connection. If gluetun exits as the host,
+# the tunnel is not carrying its traffic, and nothing behind it is private.
+G_IP="" H_IP=""
+if measure_egress "$GLUETUN"; then
+    G_IP="$EGRESS"
+else
+    fail "cannot measure $GLUETUN's egress: $EGRESS_ERR"
+fi
+
+# The probe has to be off the VPN, or "host" and "VPN" are the same thing and
+# a real leak would read as a pass.
+p_mode=$(docker inspect --type container -f '{{.HostConfig.NetworkMode}}' "$HOST_PROBE" 2>/dev/null)
+case "$p_mode" in
+    container:*)
+        fail "HOST_PROBE=$HOST_PROBE shares another container's network namespace; it cannot measure the host's own egress" ;;
+    *)
+        if measure_egress "$HOST_PROBE"; then
+            H_IP="$EGRESS"
+        else
+            fail "cannot measure the host's own egress via $HOST_PROBE: $EGRESS_ERR (without it a leak is indistinguishable from the VPN)"
+        fi ;;
+esac
+
+if [ -n "$G_IP" ] && [ -n "$H_IP" ]; then
+    if [ "$G_IP" = "$H_IP" ]; then
+        fail "LEAK: $GLUETUN exits as the host's own IP ($(mask "$H_IP")) — the tunnel is not carrying its traffic"
+    else
+        ok "$GLUETUN exits as $G_IP; the host exits as $(mask "$H_IP") (via $HOST_PROBE)"
+    fi
+fi
+
+# 3. Each tunnelled service must exit exactly where gluetun does.
+for svc in $TUNNELLED; do
+    if ! measure_egress "$svc"; then
+        fail "$svc: cannot measure its egress: $EGRESS_ERR"
+    elif [ -n "$H_IP" ] && [ "$EGRESS" = "$H_IP" ]; then
+        fail "LEAK: $svc exits as the host's own IP ($(mask "$H_IP")), not through $GLUETUN"
+    elif [ -z "$G_IP" ]; then
+        fail "$svc exits as $EGRESS, but $GLUETUN's own egress is unknown, so it cannot be compared"
+    elif [ "$EGRESS" = "$G_IP" ]; then
+        ok "$svc exits through $GLUETUN ($G_IP)"
+    else
+        fail "$svc exits as $EGRESS, not $GLUETUN's $G_IP (if gluetun reconnected mid-check, re-run)"
     fi
 done
 
-if [[ "$leaked" -eq 1 ]]; then
-    echo ""
-    echo "At least one tunneled service is not going through the VPN."
+if [ "$FAILURES" -gt 0 ]; then
+    echo "FAIL: $FAILURES problem(s) — see the FAIL lines above"
     exit 1
 fi
-
-echo ""
-echo "OK: every tunneled service egresses through Gluetun"
+echo "PASS: VPN verified — DNS resolves, $GLUETUN is not exiting as the host, and all $TUNNELLED_COUNT tunnelled services exit through it"
+exit 0

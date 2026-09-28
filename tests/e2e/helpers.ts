@@ -1,215 +1,203 @@
-//
-// Shared fixtures for the end-to-end suite: service addressing, the VPN
-// topology the tests assert against, and a docker channel that works whether
-// the suite runs on the NAS or from a laptop.
-//
-
-import { execFileSync } from 'node:child_process';
+import { test, expect, type APIRequestContext, type Page } from '@playwright/test';
+import { spawnSync } from 'child_process';
 import * as path from 'path';
 
-// ─── Addressing ──────────────────────────────────────────────────────────────
+// Shared by every spec: where the NAS is, how to reach each service's API and
+// how to run docker commands against the live stack.
 
-export const HOST = process.env.NAS_HOST ?? 'localhost';
-export const SCREENSHOTS_DIR = path.join(__dirname, 'screenshots');
+// ─── Where the stack is ─────────────────────────────────────────────────────
 
-export function screenshotPath(name: string) {
-  return path.join(SCREENSHOTS_DIR, `${name}.png`);
-}
+// From .env.e2e (loaded by playwright.config.ts). Empty when that file is
+// missing, which a git worktree does not inherit: url() and the docker
+// helpers then fail with a message saying so rather than aiming at nothing.
+export const HOST = process.env.NAS_HOST ?? '';
 
+// Host ports, as published in docker-compose.arr-stack.yml. SABnzbd's is 8082
+// on the host (8080 inside gluetun's namespace).
 export const PORTS = {
   jellyfin: 8096,
+  seerr: 5055,
   sonarr: 8989,
   radarr: 7878,
   prowlarr: 9696,
+  bazarr: 6767,
   qbittorrent: 8085,
   sabnzbd: 8082,
-  seerr: 5055,
-  bazarr: 6767,
   pihole: 8081,
 } as const;
 
-export function url(service: keyof typeof PORTS, pathStr = '') {
-  return `http://${HOST}:${PORTS[service]}${pathStr}`;
+export type Service = keyof typeof PORTS;
+
+export function url(service: Service, urlPath = '/'): string {
+  if (!HOST) {
+    throw new Error('NAS_HOST is not set. It comes from .env.e2e, which a git worktree does not have: copy it from the main checkout.');
+  }
+  return `http://${HOST}:${PORTS[service]}${urlPath}`;
 }
 
-// ─── VPN topology ────────────────────────────────────────────────────────────
-//
-// One definition, shared. Every service listed here carries
-// network_mode: "service:gluetun" in docker-compose.arr-stack.yml; the bridge
-// list is everything that deliberately does not, per
-// docs/MIGRATION-arr-off-vpn.md. Keeping both here means a topology change is
-// a one-line edit rather than a hunt through the specs.
+export function screenshotPath(name: string): string {
+  return path.join(__dirname, 'screenshots', `${name}.png`);
+}
 
-export const TUNNELED_SERVICES = ['qbittorrent', 'prowlarr', 'sabnzbd', 'flaresolverr'] as const;
-export const BRIDGE_SERVICES = ['sonarr', 'radarr'] as const;
-
-// ─── UI auth helpers ─────────────────────────────────────────────────────────
-
-/** Intercept all requests and add a custom header. Works for SPA auth bypass. */
-export async function addHeaderToAllRequests(page: import('@playwright/test').Page, name: string, value: string) {
-  await page.route('**/*', async (route) => {
-    const headers = { ...route.request().headers(), [name]: value };
-    await route.continue({ headers });
+// For apps that authenticate every request by header rather than by cookie
+// (Bazarr's X-API-KEY). Added only to requests for the NAS, so the key is
+// never sent to a third-party host the page happens to load from.
+export async function addHeaderToAllRequests(page: Page, name: string, value: string): Promise<void> {
+  await page.route('**/*', (route) => {
+    const request = route.request();
+    if (new URL(request.url()).hostname !== HOST) return route.continue();
+    return route.continue({ headers: { ...request.headers(), [name]: value } });
   });
 }
 
-// ─── Reaching the stack's containers ─────────────────────────────────────────
-//
-// Several tests need to run commands inside the stack's containers, which means
-// talking to whichever docker daemon owns them. That is usually not the machine
-// running the suite.
-//
-// Two channels, tried in order:
-//
-//   local  the daemon on this machine already has the stack
-//   ssh    it does not, but a NAS we can log into does
-//
-// The local probe asks whether `gluetun` is inspectable rather than whether the
-// docker CLI works. Those are different questions with different answers: a
-// laptop running Docker Desktop replies happily to `docker version` while
-// holding none of these containers, so a CLI-presence check reports success and
-// every dependent test then dies on "No such container". Inspecting a container
-// the stack actually owns answers the question being asked.
+// ─── Services in gluetun's network namespace ────────────────────────────────
 
-const SSH_TARGET = process.env.NAS_SSH ?? process.env.NAS_HOST ?? '';
-const SSH_FLAGS = ['-o', 'BatchMode=yes', '-o', 'ConnectTimeout=10'];
+// Every service with `network_mode: "service:gluetun"` in
+// docker-compose.arr-stack.yml. The VPN egress and namespace checks iterate
+// over this, so a service missing here is one nobody checks for a leak. Keep
+// it on one line: a script compares it against the compose file.
+export const GLUETUN_NAMESPACE_SERVICES = ['qbittorrent', 'sabnzbd', 'prowlarr', 'flaresolverr'] as const;
 
-/** Wrap for a remote POSIX shell — ssh hands the string to a shell to re-parse. */
-function quoteForRemoteShell(word: string): string {
-  return `'${word.replace(/'/g, `'\\''`)}'`;
+// ─── Running commands on the NAS ────────────────────────────────────────────
+
+// NAS_SSH (an ssh target such as a ~/.ssh/config alias) wins over NAS_HOST.
+// A localhost target means the suite is running on the NAS itself, so
+// commands run here without ssh.
+const LOCAL_TARGETS = new Set(['localhost', '127.0.0.1', '::1']);
+
+function nasTarget(): string {
+  const target = process.env.NAS_SSH || HOST;
+  if (!target) {
+    throw new Error('Neither NAS_SSH nor NAS_HOST is set, so there is no NAS to run docker against. Both come from .env.e2e.');
+  }
+  return target;
 }
 
-/** Does this machine's own docker daemon hold the stack? */
-export const STACK_IS_LOCAL = ((): boolean => {
-  try {
-    execFileSync('docker', ['inspect', '--format', '{{.Id}}', 'gluetun'], { stdio: 'ignore' });
-    return true;
-  } catch {
-    return false;
+// Single-quote for the remote shell: ssh joins its arguments into one string,
+// so an unquoted `(` or `*.exe` would be interpreted on the NAS.
+function shellQuote(arg: string): string {
+  return `'${arg.replace(/'/g, `'\\''`)}'`;
+}
+
+// Runs argv on the NAS host and returns stdout; throws on a non-zero exit.
+// BatchMode because the suite must never sit at a password prompt: key-based
+// auth works, or the command fails.
+export function runOnNas(argv: string[], timeoutMs = 30_000): string {
+  const target = nasTarget();
+  const local = LOCAL_TARGETS.has(target);
+  const [cmd, args] = local
+    ? [argv[0], argv.slice(1)]
+    : ['ssh', ['-o', 'BatchMode=yes', '-o', 'ConnectTimeout=10', '-o', 'ConnectionAttempts=1', target, argv.map(shellQuote).join(' ')]];
+  const where = local ? 'locally' : `on ${target}`;
+
+  const result = spawnSync(cmd, args, { encoding: 'utf8', timeout: timeoutMs, maxBuffer: 16 * 1024 * 1024 });
+  if (result.error) {
+    throw new Error(`\`${argv.join(' ')}\` could not run ${where}: ${result.error.message}`);
   }
-})();
-
-export type DockerTransport = 'local' | 'ssh' | 'none';
-
-export const DOCKER_TRANSPORT: DockerTransport = ((): DockerTransport => {
-  if (STACK_IS_LOCAL) return 'local';
-  if (!SSH_TARGET) return 'none';
-  try {
-    const probe = `docker inspect --format ${quoteForRemoteShell('{{.Id}}')} gluetun`;
-    execFileSync('ssh', [...SSH_FLAGS, SSH_TARGET, probe], { stdio: 'ignore', timeout: 20_000 });
-    return 'ssh';
-  } catch {
-    return 'none';
+  if (result.status !== 0) {
+    // stderr only: stdout may be a config file holding keys.
+    throw new Error(`\`${argv.join(' ')}\` failed ${where} (exit ${result.status}): ${result.stderr.trim()}`);
   }
-})();
+  return result.stdout;
+}
 
-export const STACK_IS_REACHABLE = DOCKER_TRANSPORT !== 'none';
+export function docker(args: string[], timeoutMs = 30_000): string {
+  return runOnNas(['docker', ...args], timeoutMs);
+}
 
-export const STACK_UNREACHABLE_REASON = SSH_TARGET
-  ? `the stack's containers could not be reached: no gluetun on this machine's docker, and ` +
-    `the configured NAS did not answer an inspect over SSH either. Check the NAS is up and ` +
-    `its SSH service is enabled, or run the suite on the NAS itself.`
-  : `the stack's containers could not be reached: no gluetun on this machine's docker, and ` +
-    `no NAS to fall back to — neither NAS_SSH nor NAS_HOST is set. Define one in .env.e2e ` +
-    `(note that a git worktree will not have that file), or run the suite on the NAS itself.`;
+export function dockerExec(container: string, args: string[], timeoutMs = 30_000): string {
+  return docker(['exec', container, ...args], timeoutMs);
+}
 
-// An unreachable stack fails these tests rather than skipping them.
-//
-// Skipping was tried and proved actively dangerous. When the NAS dropped its
-// SSH service, a run reported "16 passed, 9 skipped" and exited 0 — with every
-// leak check among the skipped. Both CI and a human read exit 0 as "the VPN is
-// fine", when in truth nothing about the VPN had been examined at all.
-//
-// A check that did not execute has produced no evidence. Reporting it as
-// success is the precise failure mode this file exists to detect, so it is not
-// tolerated here either. Anyone who genuinely wants to run without a NAS says
-// so out loud:
-//
-//     ALLOW_UNVERIFIED_VPN=1 npm run test:e2e
-//
-// which restores skipping — but as a visible decision in the command, not an
-// accident of whichever machine happened to run it.
+// ─── Fail, don't skip, when the stack is out of reach ───────────────────────
 
-export const ALLOW_UNVERIFIED_VPN = process.env.ALLOW_UNVERIFIED_VPN === '1';
+let reachability: { ok: true } | { ok: false; reason: string } | undefined;
 
-/**
- * Guard for any test that drives the stack's containers.
- *
- * Returns quietly when the stack is reachable. Skips only if the operator has
- * explicitly accepted an unverified VPN; otherwise throws, so the run ends red
- * instead of misleadingly green.
- */
-export function requireStackReachable(skip: (condition: boolean, reason: string) => void): void {
-  if (STACK_IS_REACHABLE) return;
+// Call first in any test that needs docker on the NAS, passing test.skip.
+// An unreachable stack FAILS the test: a VPN leak check that did not run is an
+// unverified result, and reporting it as skipped would let the suite exit 0.
+// ALLOW_UNVERIFIED_VPN=1 is the explicit, visible opt-out for running without
+// a NAS; only then does this skip.
+export function requireStackReachable(skip: typeof test.skip): void {
+  if (!reachability) {
+    try {
+      docker(['version', '--format', '{{.Server.Version}}'], 20_000);
+      reachability = { ok: true };
+    } catch (err) {
+      reachability = { ok: false, reason: (err as Error).message };
+    }
+  }
+  if (reachability.ok) return;
 
-  if (ALLOW_UNVERIFIED_VPN) {
-    skip(true, `${STACK_UNREACHABLE_REASON} (skipped via ALLOW_UNVERIFIED_VPN=1)`);
+  if (process.env.ALLOW_UNVERIFIED_VPN === '1') {
+    skip(true, `ALLOW_UNVERIFIED_VPN=1 and the stack is unreachable (${reachability.reason})`);
     return;
   }
-
   throw new Error(
-    `${STACK_UNREACHABLE_REASON}\n\n` +
-    `This fails rather than skips deliberately. A leak check that never ran is ` +
-    `an unverified result, and exiting 0 would present it as a verified one. ` +
-    `Restore the connection, or accept the gap on purpose with ALLOW_UNVERIFIED_VPN=1.`,
+    `Cannot reach docker on the NAS, so this check cannot run: ${reachability.reason}\n` +
+      'Set NAS_HOST (and NAS_SSH if ssh needs a different target) in .env.e2e, with key-based ssh working. ' +
+      'To run without a NAS, set ALLOW_UNVERIFIED_VPN=1: these tests then skip, and say why.',
   );
 }
 
-// ─── Docker commands ─────────────────────────────────────────────────────────
+// ─── Seerr's own API key ────────────────────────────────────────────────────
 
-/** Issue a docker subcommand over whichever channel reaches the stack. */
-function runDocker(argv: string[], timeoutMs: number): string {
-  if (DOCKER_TRANSPORT === 'ssh') {
-    const remoteCommand = ['docker', ...argv].map(quoteForRemoteShell).join(' ');
-    // The extra margin covers ssh's own connection setup, which is not part of
-    // the timeout the caller is reasoning about.
-    return execFileSync('ssh', [...SSH_FLAGS, SSH_TARGET, remoteCommand], {
-      encoding: 'utf8',
-      timeout: timeoutMs + 5_000,
-    }).trim();
-  }
-  return execFileSync('docker', argv, { encoding: 'utf8', timeout: timeoutMs }).trim();
-}
-
-export function dockerExec(container: string, cmd: string[], timeoutMs = 10_000): string {
-  return runDocker(['exec', container, ...cmd], timeoutMs);
-}
-
-export function dockerInspect(container: string, format: string): string {
-  return runDocker(['inspect', '--format', format, container], 10_000);
-}
-
-/** Stop/start, for the killswitch test. Kept separate so the destructive verbs are easy to grep. */
-export function dockerLifecycle(action: 'stop' | 'start', container: string): void {
-  runDocker([action, container], 30_000);
-}
-
-/**
- * The public IP a container's traffic comes out of, asked from inside it.
- *
- * Returns null whenever the lookup fails or times out. That is a real answer,
- * not an error: a container whose egress is being blocked by a working
- * killswitch is exactly a container that cannot reach an IP echo service.
- */
-export function egressIp(container: string): string | null {
-  // Image bases differ — gluetun's Alpine carries wget only, the LSIO images
-  // carry curl — so pick inside the container instead of maintaining a map of
-  // which is which. Detecting first rather than running curl and letting it
-  // fail keeps "sh: curl: not found" off stderr; the runner echoes that for
-  // every call, and output people learn to scroll past is worthless in a leak
-  // detector.
-  //
-  // The /ip path matters: ifconfig.me returns a bare address to curl but its
-  // full HTML page to wget, which sends no Accept header. That path is plain
-  // text either way.
-  const probe =
-    'if command -v curl >/dev/null 2>&1; then ' +
-    'curl -s --max-time 5 https://ifconfig.me/ip; ' +
-    'else wget -qO- --timeout=5 https://ifconfig.me/ip; fi';
-
+// Seerr generates its API key on first start and keeps it in settings.json;
+// it is not in .env.e2e. Reading it at test time means a reinstalled Seerr
+// cannot leave the suite holding a stale key. Never log the file: it also
+// holds the Sonarr and Radarr keys Seerr uses.
+export function readSeerrApiKey(): string {
+  const raw = dockerExec('seerr', ['cat', '/app/config/settings.json']);
+  let key: unknown;
   try {
-    return dockerExec(container, ['sh', '-c', probe], 15_000);
+    key = JSON.parse(raw)?.main?.apiKey;
   } catch {
-    return null;
+    throw new Error("Seerr's /app/config/settings.json is not valid JSON");
   }
+  if (typeof key !== 'string' || key === '') {
+    throw new Error("Seerr's settings.json has no main.apiKey. Has Seerr been through its setup wizard?");
+  }
+  return key;
+}
+
+// ─── Download clients ───────────────────────────────────────────────────────
+
+type ProviderTestResult = {
+  id: number;
+  isValid: boolean;
+  validationFailures: Array<{ propertyName?: string; errorMessage: string; isWarning?: boolean }>;
+};
+
+// Every enabled download client must pass the app's own connection test.
+// testall answers 400 when any client fails, and silently leaves out a client
+// whose settings don't validate, so results are matched to clients by id: a
+// client with no result fails as untested instead of passing by omission.
+// No enabled client at all fails too. Grabs then go nowhere, with no error.
+export async function assertDownloadClientsHealthy(
+  request: APIRequestContext,
+  app: 'sonarr' | 'radarr' | 'prowlarr',
+  apiKey: string,
+): Promise<void> {
+  const api = app === 'prowlarr' ? '/api/v1' : '/api/v3';
+  const headers = { 'X-Api-Key': apiKey };
+
+  const listRes = await request.get(url(app, `${api}/downloadclient`), { headers });
+  expect(listRes.ok(), `${app}: could not list download clients (HTTP ${listRes.status()})`).toBeTruthy();
+  const clients: Array<{ id: number; name: string; enable: boolean }> = (await listRes.json()).filter(
+    (c: { enable: boolean }) => c.enable,
+  );
+  expect(clients.map((c) => c.name), `${app} has no enabled download client`).not.toEqual([]);
+
+  const testRes = await request.post(url(app, `${api}/downloadclient/testall`), { headers, timeout: 60_000 });
+  expect([200, 400], `${app}: download client testall answered HTTP ${testRes.status()}`).toContain(testRes.status());
+  const results: ProviderTestResult[] = await testRes.json();
+
+  const failures = clients.flatMap((client) => {
+    const result = results.find((r) => r.id === client.id);
+    if (!result) return [`${client.name}: not tested (its settings do not validate)`];
+    if (result.isValid) return [];
+    const reasons = result.validationFailures.filter((f) => !f.isWarning).map((f) => f.errorMessage);
+    return [`${client.name}: ${reasons.join('; ') || 'failed with no reason given'}`];
+  });
+  expect(failures, `${app} download clients failing their own test`).toEqual([]);
 }

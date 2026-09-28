@@ -1,69 +1,40 @@
 import { test, expect } from '@playwright/test';
-import {
-  DOCKER_TRANSPORT,
-  requireStackReachable,
-  TUNNELED_SERVICES,
-  dockerInspect,
-} from './helpers';
+import { requireStackReachable, docker, dockerExec, GLUETUN_NAMESPACE_SERVICES } from './helpers';
 
-//
-// Is every VPN-tunneled service actually inside the Gluetun that is running
-// right now?
-//
-// Restarting Gluetun is harmless — the container ID survives and its
-// dependents come back with it. Recreating it is not. A recreate mints a new
-// ID, and `docker compose up -d` will recreate Gluetun whenever its own
-// definition has drifted, even when the command was aimed at something else
-// entirely. The dependents stay pinned to an ID that no longer exists, and
-// Docker never corrects the reference.
-//
-// What makes this worth a test rather than a healthcheck is that nothing
-// routine can see it. `docker ps` prints Up. The container's own healthcheck
-// passes, because it asks its own localhost. deunhealth stays quiet, because
-// nothing ever reports unhealthy. The service is simply unreachable from the
-// rest of the stack, and its traffic has nowhere to go.
-//
-// scripts/detect-vpn-zombies.sh answers the same question from a shell, and is
-// the thing to run over SSH or on a timer. This asks the containers directly
-// through whichever docker daemon owns the stack — this machine's when they
-// are here, the NAS's over SSH otherwise — so it works from a dev machine,
-// which a `bash scripts/…` call would not. tests/vpn-zombies.bats unit-tests
-// the script itself with docker stubbed. The two lists are held together by a
-// drift guard in that file.
-//
+// After gluetun restarts or is recreated, its dependents can be left on a
+// namespace that no longer exists: running, answering on localhost, healthy by
+// their own healthcheck, and cut off from everything else (docs/
+// TROUBLESHOOTING.md, "Stale Network Namespace" and "After a Gluetun
+// RECREATE"). Nothing goes red, so this asks the two questions that tell.
 
-test.describe('Gluetun namespace integrity', () => {
-  test.beforeAll(() => {
-    console.log(`  [resilience] docker transport: ${DOCKER_TRANSPORT}`);
-  });
+test.describe('Resilience', () => {
+  for (const service of GLUETUN_NAMESPACE_SERVICES) {
+    test(`${service} is joined to gluetun's current network namespace`, () => {
+      requireStackReachable(test.skip);
 
-  test.beforeEach(() => {
-    requireStackReachable(test.skip);
-  });
+      const gluetunId = docker(['inspect', '--format', '{{.Id}}', 'gluetun']).trim();
+      const [mode, running] = docker(['inspect', '--format', '{{.HostConfig.NetworkMode}} {{.State.Running}}', service])
+        .trim()
+        .split(' ');
 
-  for (const service of TUNNELED_SERVICES) {
-    test(`${service} is inside Gluetun's current network namespace`, () => {
-      const liveNamespace = dockerInspect('gluetun', '{{.Id}}');
-      expect(liveNamespace, 'gluetun reported no container ID').toBeTruthy();
+      // A gluetun restart can SIGKILL a dependent and leave it Exited.
+      expect(running, `${service} is not running; try: docker restart ${service}`).toBe('true');
 
-      const netMode = dockerInspect(service, '{{.HostConfig.NetworkMode}}');
-
-      // Assert the shape before the value. A service that has quietly stopped
-      // being namespace-joined at all — moved to the bridge, say — would
-      // otherwise fail with a confusing ID mismatch rather than the real
-      // reason, and a service that is *supposed* to move belongs in
-      // BRIDGE_SERVICES, not silently here.
+      // Recreated gluetun: the dependent still names the old container, and
+      // `docker restart` cannot rejoin it. Only compose can.
       expect(
-        netMode,
-        `${service} is on "${netMode}", not joined to a container namespace at all`,
-      ).toMatch(/^container:/);
+        mode,
+        `${service} is joined to a gluetun container that no longer exists. ` +
+          `Recreate it: docker compose -f docker-compose.arr-stack.yml up -d ${service}`,
+      ).toBe(`container:${gluetunId}`);
 
+      // Restarted gluetun: same container, new namespace. The dependent is a
+      // zombie on the old one, which only the namespace itself can show.
+      const netns = (container: string) => dockerExec(container, ['readlink', '/proc/self/ns/net']).trim();
       expect(
-        netMode.replace(/^container:/, ''),
-        `${service} is a zombie: pinned to a Gluetun container that is no longer running. ` +
-          `It will look healthy in docker ps and unreachable to everything else. ` +
-          `Fix: docker restart ${service}`,
-      ).toBe(liveNamespace);
+        netns(service),
+        `${service} is on the namespace gluetun had before its last restart; try: docker restart ${service}`,
+      ).toBe(netns('gluetun'));
     });
   }
 });

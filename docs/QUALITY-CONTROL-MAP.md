@@ -1,87 +1,136 @@
 # Quality control map
 
-Which surface checks what. Filled in from what actually runs, not from what
-was intended; the point of the table is the cells that say MISSING.
+For each part of the stack: which check covers it, where that check runs, whether a failure stops anything, and when the check quietly doesn't run. Everything here was read off the code, not off the docs that describe it.
 
-Adapted from the same map in leonardoazeredo/ultimate-arr-stack, which found
-gaps there that nothing else had surfaced. A review of this file's first draft
-found five rows that overstated coverage — the map is only worth having if it
-is checked against the code every time it changes.
+## Where checks run
 
-## Legend
+| Surface | What it runs | When | A failure |
+|---|---|---|---|
+| **Hook** | `scripts/pre-commit`: eleven checks from `scripts/lib/check-*.sh` | `git commit`, once `./setup-hooks.sh` has linked it into the common git dir | aborts the commit if a blocking check fails; warn-only checks print and pass. `--no-verify` skips the lot |
+| **Local bats** | `./tests/run-tests.sh`: every `tests/*.bats` | by hand | a red run that only you see |
+| **CI required** | `bats suite` (the same bats run), `lint (actionlint, hadolint, shellcheck warnings)`, `supply chain (trivy, sbom)` | PR to `main`, push to `main`, manual dispatch | branch protection won't merge the PR |
+| **CI nightly** | `nightly — trivy over every compose image`, `nightly — the devcontainer builds` | daily 03:23 UTC, and manual dispatch | a red run; never gates anything |
+| **e2e** | `npm run test:e2e`: Playwright specs in `tests/e2e/` against the live stack | by hand, with `.env.e2e` | a red run that only you see |
+| **Renovate** | `renovate.json` | before 9am Monday (Europe/London), if the Renovate app is installed | opens a PR whose body says to test on the NAS first |
+| **NAS** | by hand: the rule in [CLAUDE.md](../CLAUDE.md#deploying-to-the-nas) and the [pre-release checklist](../CONTRIBUTING.md#pre-release-checklist). By cron, if you install it: `check-vpn.sh` feeding a Kuma push monitor ([UTILITIES.md](UTILITIES.md#the-vpn-check-and-why-it-is-a-push-monitor)) | every change, before `main` | the branch shouldn't merge. Nothing enforces that |
 
-- **YES** — runs there and fails the surface when it fails.
-- **DIAG** — runs there and reports; never fails the surface.
-- **SKIP** — present but skipped on that surface (usually: needs the NAS).
-- **N/A** — the surface cannot do this by nature.
-- **MISSING** — could run there and does not.
-- **—** — not that surface's job.
+## Capability map
 
-## The surfaces
+**blocks** stops the commit or merge. **fails** is a red result only whoever ran it sees. **warns** prints and passes. Blank: not checked there.
 
-| surface | when | what it is |
-|---|---|---|
-| **Hook** | every commit, on the developer's machine | `scripts/pre-commit` — eleven checks, sourced from `scripts/lib/check-*.sh`. Three need SSH to the NAS and one more needs the NAS config; they report SKIP without it. The hook does not run bats. |
-| **Local** | on demand | `tests/run-tests.sh` (bats) and `npm run test:e2e` (Playwright, needs `.env.e2e` and the NAS) |
-| **CI** | every pull request, and pushes to main | `.github/workflows/ci.yml` — bats, lint, supply chain |
-| **Nightly** | 04:17 UTC and on demand | the same workflow's image scan |
-| **NAS** | before every merge, by hand | branch-first deploy per CLAUDE.md: recreate, verify, `npm run test:e2e` |
+| Capability | Hook | Local bats | CI required | CI nightly | e2e | Renovate | NAS |
+|---|---|---|---|---|---|---|---|
+| **Compose model** | | | | | | | |
+| Compose files render (each file alone, every profile) | blocks¹ | fails | blocks | | | | `compose up` |
+| Host ports and static IPs unique | blocks² | fails² | blocks² | | | | |
+| Static IPs in `172.20.0.0/24` or `10.8.1.0/24`; `arr-stack` subnet, `ip_range`, gateway pinned; static IPs outside `ip_range` | | fails | blocks | | | | `docker network inspect` for the neighbour's reserved IP |
+| Project `name:` pinned; the core three share `arr-stack` | | fails | blocks | | | | |
+| Named volumes pinned with `name:` | | fails | blocks | | | | |
+| Restart policy, logging, container posture³ | | fails | blocks | | | | |
+| **Images** | | | | | | | |
+| Tagged, never `:latest` | | fails | blocks | | | | |
+| Tag exists on its registry | | fails | blocks | | | | `docker compose pull` |
+| Newer version available | warns | | | | | opens PRs | |
+| CVEs in the images | | | | reports | | | |
+| **VPN** | | | | | | | |
+| Download clients inside gluetun's namespace (compose)⁴ | | fails | blocks | | | | |
+| Scripts' tunnelled lists match compose⁵ | | fails | blocks | | | | |
+| OpenVPN tunnel comes up with the granted capabilities | | fails | blocks | | | | |
+| Egress: gluetun ≠ NAS, each tunnelled service = gluetun, Sonarr/Radarr ≠ gluetun | | | | | fails | | cron `check-vpn.sh` |
+| Dependents on gluetun's current namespace | | | | | fails | | `detect-vpn-zombies.sh` |
+| Killswitch (qBittorrent loses egress with gluetun stopped) | | | | | fails, opt-in | | |
+| `check-vpn.sh` / `detect-vpn-zombies.sh` logic, docker faked | | fails | blocks | | | | |
+| **Repository hygiene** | | | | | | | |
+| Secrets⁶ | blocks | fails | blocks | | | | |
+| Compose `${VAR}` documented in `.env.example` | blocks | fails | blocks | | | | |
+| Internal doc links⁷ | blocks | fails | blocks | | | | |
+| Your domain in tracked files | warns | | | | | | |
+| Your NAS hostname in tracked files | blocks | | | | | | |
+| YAML syntax of other files | blocks¹ | | | | | | |
+| Hook installed where git runs it | | fails | skipped | | | | |
+| shellcheck at `error` | | fails | blocks | | | | |
+| shellcheck at `warning` | | | reports | | | | |
+| Workflows (actionlint), devcontainer Dockerfile (hadolint) | | | blocks | devcontainer must build | | | |
+| **Scripts** | | | | | | | |
+| `arr-backup.sh` naming, encryption, rotation (docker, gpg stubbed) | | fails | blocks | | | | |
+| `configure-apps.sh` HTTP helpers, Bazarr plan, command line | | fails | blocks | | | | |
+| **Live stack** | | | | | | | |
+| App settings and health through their APIs⁸ | | | | | fails | | |
+| UIs log in and render | | | | | fails | | |
+| Pi-hole DNS published on the NAS, UDP and TCP | | | | | fails | | |
+| `.lan` names resolve through Pi-hole and route through Traefik | warns (resolve only) | | | | fails | | |
+| External names answer through the tunnel | warns | | | | | | |
+| NAS drift: `.env.nas.backup`, Kuma monitors, duplicate `.lan` entries | warns | | | | | | |
+| No executables under `/data` | | | | | fails | | cron `scan-executables.sh` |
+| Every container healthy | | | | | | | by hand |
+| **Supply chain** | | | | | | | |
+| npm dependency CVEs; secrets and misconfiguration in the tree (trivy, HIGH/CRITICAL) | | | blocks | | | | |
+| SBOM (syft, SPDX + CycloneDX artifact) | | | produced | | | | |
+| Action digests, npm versions | | | | | | opens PRs | |
 
-## The map
+1. Hook check 3 parses only **staged** `*.yml`/`*.yaml`: PyYAML (syntax only) if `.venv` or `python3` has it, else `docker compose config` for compose files, else it prints SKIPPED and passes.
+2. Only lines of the form `- "HOST:CONTAINER"` with nothing after them. See [gaps](#gaps).
+3. No `privileged`, docker socket `:ro`, no `env_file`, no `SYS_TIME`, Traefik `no-new-privileges`, Jellyfin media `:ro` (`tests/security.bats`).
+4. Read from the rendered model. A client is matched by service name (`qbittorrent`, `sabnzbd`) or by an image token (qbittorrent, transmission, deluge, rtorrent, rutorrent, aria2, sabnzbd, nzbget). Prowlarr and FlareSolverr aren't clients; footnote 5 holds them.
+5. `TUNNELED` in `detect-vpn-zombies.sh`, and what `check-vpn.sh --list-tunnelled` derives, must equal the compose `service:`/`container:gluetun` bindings in both directions (`tests/vpn-zombies.bats`).
+6. The hook scans every tracked and staged file except `*.md`, `tests/fixtures/`, `scripts/lib/check-*.sh` and `common.sh`. Its two patterns labelled WARNING still count as errors and block. bats runs `check_secrets` on throwaway repos, not on the tree, and scans `.env.example` itself; CI's other secret check is trivy's own ruleset.
+7. Relative links to `.md` files and `#anchors`, outside fenced code. Links to other file types and external URLs aren't followed.
+8. Root folders, qBittorrent and SABnzbd categories, every enabled download client passing its app's own test, RSS indexers, no error-level health checks, Prowlarr's synced apps, Seerr's metadata source and stored servers, Bazarr's profile and stored API keys.
 
-| capability | Hook | Local | CI | Nightly | NAS | where |
-|---|---|---|---|---|---|---|
-| Compose files parse (`docker compose config`) | YES | YES | YES | N/A | YES | hook `check-yaml-syntax`; bats `compose-validation` |
-| Port and static-IP conflicts across files | YES | YES | YES | N/A | — | hook `check-conflicts`; bats `port-conflicts` |
-| Secret patterns in tracked files | YES | YES | YES | N/A | — | hook `check-secrets`; bats `pre-commit-checks` drives it |
-| Every compose variable documented in `.env.example` | YES | YES | YES | N/A | — | hook `check-env-vars`; bats `env-vars` |
-| Internal doc links resolve | YES | YES | YES | N/A | — | hook `check-doc-links`; bats `pre-commit-checks` drives it |
-| No real LAN domain hard-coded in tracked files | YES | MISSING | MISSING | N/A | — | hook `check-hardcoded-domain` (needs `.env` to know the domain) |
-| Image tags pinned (no `latest`, no untagged) | — | YES | YES | N/A | — | bats `compose-validation`, `security`. A major-only tag (e.g. `:2`) passes and still floats |
-| Image tags exist on their registry | DIAG | YES* | YES | N/A | — | hook `check-image-versions` reports newer tags, never fails; bats `compose-validation` — *fails, not skips, without a network |
-| Volumes pinned to physical names | — | YES | YES | N/A | — | bats `compose-validation` |
-| Every service has a restart policy and logging config; none is privileged | — | YES | YES | N/A | — | bats `compose-validation` |
-| Container posture: docker socket read-only, no `env_file` on infrastructure, no `SYS_TIME`, traefik `no-new-privileges`, media mounts read-only | — | YES | YES | N/A | — | bats `security` |
-| Every download client inside gluetun's namespace | — | YES | YES | N/A | — | bats `compose-validation` + `helpers/check-clients-tunnelled.py`, over resolved compose JSON |
-| Project names pinned; core three share `arr-stack` | — | YES | YES | N/A | — | bats `compose-validation` |
-| `arr-stack` subnet, `ip_range` and gateway pinned | — | YES | YES | N/A | — | bats `compose-validation`, over resolved compose JSON |
-| Services declaring a VPN binding are inside gluetun's *current* namespace | — | — | — | N/A | YES | e2e `resilience`; `detect-vpn-zombies.sh` (unit-tested in bats `vpn-zombies`) |
-| Gluetun's capability set (OpenVPN path) | — | YES | YES | N/A | — | bats `openvpn-caps` |
-| The pre-commit hook is installed and points at the repo's script | — | YES | YES | N/A | — | bats `hooks-installed` (CI runs `setup-hooks.sh` first) |
-| shellcheck, `error` severity | — | YES | YES | N/A | — | bats `shellcheck` |
-| shellcheck, `warning` severity | — | — | DIAG | N/A | — | CI `lint` |
-| actionlint over the workflow | — | — | YES | N/A | — | CI `lint` |
-| hadolint over the devcontainer Dockerfile | — | — | YES | N/A | — | CI `lint`, policy in `.hadolint.yaml` |
-| `configure-apps.sh` HTTP layer (curl stubbed) | — | YES | YES | N/A | — | bats `configure-helpers` |
-| Bazarr language plan across profile states | — | YES | YES | N/A | — | bats `bazarr-language-plan` |
-| `audiobooks-tv-mirror.sh` links (checked by inode), prunes, `--dry-run` | — | YES | YES | N/A | — | bats `audiobooks-tv-mirror` |
-| `arr-backup.sh` archive name at the destination (`--encrypt` stays `.tar.gz.gpg`), 7-day rotation, a real-gpg decrypt-and-extract | — | YES | YES | N/A | — | bats `arr-backup` (docker and gpg stubbed; the restore test needs `gpg` installed, skips otherwise) |
-| `configure-apps.sh` structure (step order, no unbounded curl, CLI) | — | YES | YES | N/A | — | bats `configure-apps` |
-| `configure-apps.sh` against real services | — | — | — | N/A | YES | by hand, `--dry-run` then run; throwaway containers for Bazarr |
-| Python in `scripts/lib/` and `tests/helpers/` — lint | — | MISSING | MISSING | N/A | — | nothing runs pyflakes/ruff |
-| YAML lint beyond `compose config` | — | MISSING | MISSING | N/A | — | no yamllint |
-| Vulnerabilities, misconfiguration, secrets over the tree (trivy) | — | MISSING | YES | N/A | — | CI `supply chain`, HIGH/CRITICAL block |
-| SBOM | — | MISSING | YES | N/A | — | CI `supply chain`, artifact |
-| Container image CVEs | — | MISSING | — | DIAG | — | CI `nightly`, artifact + summary table |
-| Uptime Kuma monitors match the services | YES (SSH) | — | SKIP | N/A | — | hook `check-uptime-monitors` |
-| `.lan` DNS duplicates; `.env` backup in sync | YES (SSH) | — | SKIP | N/A | — | hook `check-dns-duplicates`, `check-env-backup` |
-| Public domain resolves and answers | YES (NAS config) | — | SKIP | N/A | — | hook `check-domains` |
-| Every service UI answers; API state (root folders, clients, profiles) | — | — | — | N/A | YES | e2e `ui-screenshots`, `api-assertions` |
-| Traefik routes each `.lan` host; `.lan` resolves to the macvlan; Pi-hole publishes its ports | — | — | — | N/A | YES | e2e `networking` |
-| VPN egress per service; killswitch | — | — | — | N/A | YES | e2e `vpn-security` (killswitch needs `ALLOW_DISRUPTIVE_TESTS=1`) |
-| No executables under `/data` | — | — | — | N/A | YES | e2e `media-hygiene`; `scan-executables.sh` |
-| The devcontainer Dockerfile builds | — | MISSING | — | YES | — | CI `nightly — the devcontainer builds` |
-| Mutation testing of the guards | — | MISSING | MISSING | MISSING | — | the fork has a corpus; not adopted |
+## Where a check quietly doesn't run
 
-## Gaps this map makes visible
+**Hook**
+- Exits 0 before any check when nothing is staged as added, copied or modified.
+- The link `setup-hooks.sh` makes is absolute, so every worktree runs the `scripts/pre-commit` and `scripts/lib/` of the checkout that last ran it, against its own files.
+- The hostname block, the domain warning and checks 6–9 read untracked files from the committing checkout: `.claude/config.local.md`, `.env` or `.env.nas.backup`. A fresh clone, a git worktree and CI have none of them, so those checks skip.
+- Checks 6–8 skip when the NAS doesn't answer ping, port 22 is closed, SSH auth fails, or there is no `timeout` command on `PATH` (it's what probes the port). Check 9 also needs `dig` and `NAS_IP` in `.env.nas.backup`.
+- Check 10 skips offline. Each registry that doesn't answer is named as a SKIP. It stops at 30 s only when `timeout` or `gtimeout` exists.
 
-1. **The Python has no linter.** `scripts/lib/bazarr-language-plan.py` and `tests/helpers/check-clients-tunnelled.py` are unit-tested but nothing runs pyflakes or ruff over them. Cheap to add to `lint`.
-2. **Nothing lints YAML** beyond `docker compose config`, which accepts a lot.
-3. **Four hook checks exist only on a machine that can reach the NAS** — monitors, DNS duplicates, `.env` backup sync (SSH) and the public-domain check (NAS config). A contributor's push is never checked for them, and CI cannot be. The hard-coded-domain check is hook-only for a different reason: it needs `.env` to know what to look for.
-4. **The e2e suite runs only from a machine with `.env.e2e`.** By design — it needs the stack — but the NAS step is the only place UI, routing and egress are ever exercised.
-5. **A test image floats.** `tests/openvpn-caps.bats` probes `/dev/net/tun` with a bare `alpine`, which the pinning test cannot see.
-6. **The guards are never mutation-tested.** Each architecture test carries negatives that assert the specific failure message instead, which proves the check can fail in the ways we thought of.
+**bats, local and CI**
+- No `docker compose`: the render, volume-pin and architecture tests skip. The architecture tests also need `python3`.
+- No docker daemon, or no `/dev/net/tun` inside containers: the OpenVPN test skips.
+- No `shellcheck` on `PATH` and no docker: the shellcheck tests skip.
+- The tag-existence test skips without `curl`, but fails, rather than skips, without a network.
+- bash older than 4.1 (macOS `/bin/bash`): the two whole-hook tests skip, so they only run in CI.
+- No `gpg`: the real-gpg restore test skips.
+- `CI` set: the hook-installed test on this repository skips. CI still runs `setup-hooks.sh`, so the installer has to succeed.
 
-## Maintaining this file
+**CI**
+- `bats suite`, `lint` and `supply chain` don't run on the nightly schedule, and the nightly jobs run only on schedule or dispatch.
+- Required checks gate PR merges. Branch protection on `main` isn't enforced for admins and doesn't require a PR, so an admin's direct push is checked after it lands. That's a repository setting, not code.
 
-When a job, test file or hook check is added or removed, change the row here in the same commit — and check the row against the code, not against the intent. A row that says YES for a check that does not run there is worse than no map.
+**e2e**
+- Without `.env.e2e`, which a git worktree doesn't inherit, the tests that use docker on the NAS fail: egress, namespaces, Pi-hole `:53`, the `/data` scan, Seerr. `ALLOW_UNVERIFIED_VPN=1` turns exactly those into skips, visibly. qBittorrent's category test needs only `NAS_HOST`, and fails without it.
+- Every other API and UI test skips when its API key or login is missing from `.env.e2e`.
+- `.lan` routing tests skip without `TRAEFIK_LAN_IP`, and for an optional utility that isn't deployed. They must run from a LAN machine; the NAS can't reach its own macvlan.
+- The killswitch test skips unless `ALLOW_DISRUPTIVE_TESTS=1`, because it stops the live gluetun.
+
+**Renovate**
+- `renovate.json` does nothing unless the Renovate app is installed on the repository.
+
+## Gaps
+
+Things nothing checks, or checks that can't see what they're meant to. Each was confirmed in the code.
+
+- **Port conflicts see 3 of the 18 published host ports.** The hook and `tests/port-conflicts.bats` share a regex that needs the line to end right after `"HOST:CONTAINER"`, so a trailing comment, `/udp` or a host-IP prefix hides the line. Moving Pi-hole's web UI onto qBittorrent's `8085` passes both, and `docker compose config` too.
+- **The e2e list of tunnelled services is compared with nothing.** `GLUETUN_NAMESPACE_SERVICES` in `tests/e2e/helpers.ts` says a script checks it against compose; none does. A newly tunnelled service gets no egress or namespace test until someone adds it by hand.
+- **The NAS-first rule is enforced by nothing.** CI can't reach the NAS, and nothing records that e2e ran for a commit.
+- **Hostname and domain leaks are never checked in CI or in a worktree.** Only a checkout holding the untracked config runs them. The hook's secret patterns (WireGuard, OpenVPN, Cloudflare, bcrypt) never run over the tree in CI, and never over `*.md` anywhere.
+- **No IPv6 or DNS-leak test.** Every egress probe is IPv4-only. `check-vpn.sh` checks that DNS resolves inside gluetun, not where the queries go.
+- **The killswitch covers qBittorrent only,** and only when asked for.
+- **Nothing exercises `gluetun-recover`,** or checks that every gluetun-bound service carries the `gluetun.dependent=true` label it acts on.
+- **Image CVEs never gate or notify.** The nightly findings sit in the run summary and the `trivy-images` artifact.
+- **Tag existence is checked only when a PR or push runs bats.** A tag pulled upstream between changes surfaces at the next change, or at the next `docker compose pull`.
+- **A minor-only tag passes the pinning checks** (`traefik:v3.7`) though it moves with each patch release, and compose images aren't pinned by digest.
+- **Update discovery rests on hook check 10.** This repository has no Renovate PR, branch or Dependency Dashboard issue, so nothing shows the app is installed. Nothing reports new versions of the digest-pinned CI tool images in `ci.yml`.
+- **YAML outside the compose files is parsed only by the hook, and only when staged.** The `*.yml.example` templates and `renovate.json` are never validated, and the YAML check has no negative test.
+- **Some code is never type-checked or linted.** Playwright strips the e2e specs' types without checking them, and CI never loads the specs at all. The `*.bats` files and the two Python helpers aren't linted.
+- **Untested scripts** (shellcheck at `error` only): `check-network.sh`, `check-dns-duplicates.sh`, `fix-radarr-paths.sh`, `fix-sonarr-folders.sh`, `queue-cleanup.sh`, `restart-stack.sh`, `scan-executables.sh`. Hook checks 3 and 6–9 have no tests either.
+- **The three executable-extension lists** in `configure-apps.sh`, `scan-executables.sh` and `media-hygiene.spec.ts` must match, and nothing compares them.
+- **Backups:** a volume that fails to copy prints an error (and posts to `HA_WEBHOOK_URL` if set), but the script still exits 0, and no test covers that path. The volume list is hard-coded and never compared with the compose files. Nothing checks that the scheduled backup ran.
+- **No live test for** cloudflared, Tailscale, dnscrypt-proxy, diun, deunhealth or configarr. The utilities get only their optional `.lan` routes, and the tunnel only hook check 9's two external names.
+- **The neighbouring project's static IP on `arr-stack`** lives outside this repo. Only `docker network inspect` on the NAS shows it.
+
+## Keeping this page true
+
+Change this page in the same commit as any hook check, test file or CI job you add, remove or change. Check each entry against the code, not against what the check was meant to do.

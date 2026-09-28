@@ -83,22 +83,7 @@ This code was generated with [Claude Code](https://claude.ai/claude-code) (Anthr
 
 ## License
 
-**Noncommercial**, with the right instrument for each kind of material — see [LICENSE](LICENSE) for the full picture:
-
-| What | Licence |
-|---|---|
-| Code — compose files, scripts, tests, hooks | [PolyForm Noncommercial 1.0.0](LICENSE-code) |
-| Documentation — prose, guides, README, `docs/` | [CC BY-NC 4.0](LICENSE-docs) |
-
-In short: use it, change it, share it, **provided you credit the source and don't use it commercially**.
-
-Four test and script files remain under CC BY-NC 4.0 rather than PolyForm, because they were contributed by someone else and relicensing another author's copyright isn't ours to do without asking. They're listed in [LICENSE](LICENSE) and each carries a notice.
-
-**This is forward-only.** Every copy already distributed under CC BY-NC 4.0 — including all existing forks — keeps those terms permanently. Nothing is withdrawn from anyone.
-
-> GitHub will report this repository as unlicensed. Its detector recognises thirteen licences and includes neither PolyForm nor any NonCommercial CC variant. That's cosmetic; the licence files are what have legal effect.
-
-Individual software components deployed by this stack (Sonarr, Radarr, Jellyfin, etc.) retain their own licenses.
+[PolyForm Noncommercial 1.0.0](LICENSE)
 
 ## Acknowledgments
 

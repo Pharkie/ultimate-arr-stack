@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.15.0] - 2026-09-28
+
+One licence for the whole repository, and the fixes found on the way.
+
+### Changed
+- **The repository is PolyForm Noncommercial 1.0.0, code and docs alike.** Everything adapted from leonardoazeredo/ultimate-arr-stack (CC BY-NC 4.0) was removed and written again from this repo's own requirements, without reference to the removed code: the compose architecture tests and their helper, the e2e helpers and the networking, VPN, resilience and API tests, `check-vpn.sh`, `detect-vpn-zombies.sh`, the shellcheck, VPN-zombie and hook-installation bats files, the CI workflow, the quality-control map, `setup-hooks.sh`, and a few smaller pieces. Copies distributed earlier keep the terms they came with.
+- **The rewrite checks more than it replaced.** e2e runs 59 checks (was 44), including routing for every `.lan` host and egress measured inside each container. The architecture tests also require every static IP to sit outside the dynamic range. `check-vpn.sh` compares IPv4 exits only, so an IPv6 answer can't hide a leak. The zombie detector suggests a forced recreate, since `docker restart` can't rejoin a namespace. CI builds an npm lockfile so the SBOM and trivy see the JS dependencies (dev dependencies now block on HIGH/CRITICAL), and the nightly scan now includes configarr.
+- **Tailscale runs with every capability dropped except NET_ADMIN and NET_RAW**, and with `no-new-privileges`. Without NET_RAW the legacy iptables it uses can't install the subnet-router and exit-node rules, and says nothing.
+
+### Fixed
+- **The pre-commit hook died mid-run.** Under bash 4.1+ (Linux, CI, Homebrew bash) `((ERRORS++))` from 0 tripped `set -e`, so the first failure ended the hook with no later checks and no summary, and a warning-only hit blocked silently. A NAS hostname in a tracked file did the same on every bash.
+- **Backups:** `--encrypt` with a destination renamed the ciphertext to `.tar.gz`; encrypted archives were never rotated; and the plain-text working copy (every volume, `.env` included) was never removed. On the NAS, whose `/tmp` is RAM, 26 of them had reached 5.8 GB.
+- **The secret scanner let one `${VAR}` line excuse a real password elsewhere in the same file.** Each assignment is now judged on its own.
+- **Docs:** stale capability claims, the Seerr/Bazarr `depends_on` comments, quality-profile names that only exist after configarr runs, and CONTRIBUTING's fixed test count.
+
 ## [1.14.1] - 2026-09-28
 
 The three things meant to announce image updates had all been silent. This fixes the two that live in the repo.

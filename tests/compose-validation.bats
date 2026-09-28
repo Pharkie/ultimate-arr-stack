@@ -177,175 +177,263 @@ get_service_block() {
     done
 }
 
-# --- architecture: rules the compose files must keep, and can silently lose ---
-#
-# Adapted from leonardoazeredo/ultimate-arr-stack (tests/compose-validation.bats,
-# the "quality plan" branch). Each rule has negative tests that feed the same
-# check a fixture or a mutated copy and assert the SPECIFIC failure message —
-# a negative that would also pass on an empty directory proves nothing.
-#
-# Every check reads `docker compose config --format json`, never the YAML:
-# anchors, merge keys and ${VARS} are resolved by compose, and a line parser
-# was fooled by all of them. docker-compose.override.yml is skipped on
-# purpose — it is partial by design, and compose merges it only when no -f
-# is given. `--profile '*'` renders services in every profile: without it a
-# service behind `profiles:` (configarr is) is left out of the JSON, and every
-# check below would pass without having seen it.
+# ===========================================================================
+# Architecture rules, checked on the RENDERED compose model
+# ===========================================================================
+# tests/helpers/compose-architecture.py renders each file with
+#   docker compose -f FILE --env-file tests/fixtures/.env.test --profile '*' config --format json
+# and reads the JSON, so anchors, merge keys, variables and profile-only
+# services count exactly as compose counts them. Every rule has negative tests
+# that feed the check a fixture or a one-line mutation of a real file and
+# assert exit 1 plus the SPECIFIC FAIL line (exit 2 means "could not render").
+# A negative that only wanted a non-zero exit would also pass if the helper
+# crashed, or if the mutation matched nothing.
 
-require_compose() {
-    if ! docker compose version &>/dev/null; then skip "docker compose CLI not available"; fi
+# Expected top-level project `name:` per compose file; the compose files point
+# here. The three core files are ONE project, which is why --remove-orphans on
+# any of them deletes the others' containers (docs/TROUBLESHOOTING.md), and a
+# file that loses its pin falls back to the deploy directory's name
+# (docs/UPGRADING.md, v1.13.0). Cloudflared and Tailscale are kept as separate
+# projects so compose runs on the core files cannot stop the tunnels. A new
+# compose file fails the check until it is listed here.
+EXPECTED_PROJECT_NAMES=(
+    "docker-compose.arr-stack.yml=arr-stack"
+    "docker-compose.traefik.yml=arr-stack"
+    "docker-compose.utilities.yml=arr-stack"
+    "docker-compose.cloudflared.yml=cloudflared"
+    "docker-compose.tailscale.yml=tailscale"
+)
+
+# The arr-stack network (CLAUDE.md, "Cross-Stack"). Gluetun's static 172.20.0.3
+# is safe only while Docker hands out dynamic addresses from the ip_range alone:
+# otherwise a neighbouring container can take it first and the VPN stack fails
+# with "Address already in use".
+ARR_NET_SUBNET="172.20.0.0/24"
+ARR_NET_IP_RANGE="172.20.0.128/25"
+ARR_NET_GATEWAY="172.20.0.1"
+
+require_arch_tools() {
+    docker compose version &>/dev/null || skip "docker compose CLI not available"
+    command -v python3 &>/dev/null || skip "python3 not available"
 }
 
-# resolve_compose DIR: one <name>.json per docker-compose*.yml in DIR, written
-# to $BATS_TEST_TMPDIR/resolved/. Prints the JSON paths.
-resolve_compose() {
-    local dir="$1" out="$BATS_TEST_TMPDIR/resolved" f n found=0
-    rm -rf "$out"; mkdir -p "$out"
-    for f in "$dir"/docker-compose*.yml; do
-        [ -e "$f" ] || continue
-        n=$(basename "$f" .yml)
-        case "$n" in *.override) continue ;; esac
-        docker compose -f "$f" --env-file "$TEST_DIR/fixtures/.env.test" --profile '*' config --format json > "$out/$n.json" \
-            || { echo "docker compose config failed for $f" >&2; return 1; }
-        found=1
+arch_check() {
+    local check="$1"
+    shift
+    python3 "$TEST_DIR/helpers/compose-architecture.py" "$check" \
+        --env-file "$TEST_DIR/fixtures/.env.test" "$@"
+}
+
+check_clients() {
+    arch_check clients "$@"
+}
+
+check_project_names() {
+    local args=() e
+    for e in "${EXPECTED_PROJECT_NAMES[@]}"; do
+        args+=(--expect "$e")
     done
-    [ "$found" = 1 ] || { echo "no compose files in $dir" >&2; return 1; }
-    ls "$out"/*.json
+    arch_check project-name "${args[@]}" "$@"
 }
 
-@test "every BitTorrent or Usenet client runs inside gluetun's namespace" {
-    require_compose
-    resolved=(); while IFS= read -r line; do resolved+=("$line"); done < <(resolve_compose "$REPO_ROOT")
-    run python3 "$TEST_DIR/helpers/check-clients-tunnelled.py" "${resolved[@]}"
+check_arr_network() {
+    arch_check network --subnet "$ARR_NET_SUBNET" --ip-range "$ARR_NET_IP_RANGE" \
+        --gateway "$ARR_NET_GATEWAY" "$@"
+}
+
+# mutate_one_line SRC DEST SED-SCRIPT
+# Writes SRC through a sed script to DEST and fails the test unless exactly one
+# line of SRC was changed or removed. A script that matched nothing would turn
+# the negative test into a re-run of the positive one.
+mutate_one_line() {
+    local src="$1" dest="$2" script="$3" touched
+    mkdir -p "$(dirname "$dest")"
+    sed -e "$script" "$src" > "$dest"
+    touched=$(diff "$src" "$dest" | grep -c '^<' || true)
+    [[ "$touched" -eq 1 ]] || fail "sed '$script' touched $touched line(s) of $(basename "$src"), expected exactly 1"
+}
+
+# --- Download clients reach the internet only through gluetun ---------------
+
+@test "every download client runs in gluetun's network namespace" {
+    require_arch_tools
+    local files
+    read -r -a files <<< "$(get_compose_files)"
+    run check_clients "${files[@]}"
     assert_success
-    # Both named clients, and no phantom from the image pattern.
-    assert_output "checked 2 client(s), all inside gluetun's namespace"
+    # Both shipped clients must have been SEEN: a detection that found nothing
+    # would otherwise pass here.
+    assert_line --partial "OK   docker-compose.arr-stack.yml: download client 'qbittorrent' runs in gluetun's network namespace (service:gluetun;"
+    assert_line --partial "OK   docker-compose.arr-stack.yml: download client 'sabnzbd' runs in gluetun's network namespace (service:gluetun;"
 }
 
-@test "tunnelled-clients check: the image pattern finds an unlisted client and ignores a same-named exporter" {
-    require_compose
-    cp "$TEST_DIR/fixtures/compose-clients-tunnelled.yml" "$BATS_TEST_TMPDIR/docker-compose.fixture.yml"
-    resolved=(); while IFS= read -r line; do resolved+=("$line"); done < <(resolve_compose "$BATS_TEST_TMPDIR")
-    run python3 "$TEST_DIR/helpers/check-clients-tunnelled.py" "${resolved[@]}"
+@test "client check: a named client outside the VPN is caught" {
+    require_arch_tools
+    run check_clients "$TEST_DIR/fixtures/compose-client-outside-vpn.yml"
+    assert_failure 1
+    assert_line "FAIL compose-client-outside-vpn.yml: download client 'qbittorrent' is outside gluetun's network namespace: network_mode is not set, want service:gluetun or container:gluetun (image lscr.io/linuxserver/qbittorrent:5.1.2, matched by name and image)"
+    refute_line --partial "FAIL compose-client-outside-vpn.yml: download client 'sabnzbd'"
+}
+
+@test "client check: a client under a name nobody listed is caught by its image" {
+    require_arch_tools
+    run check_clients "$TEST_DIR/fixtures/compose-unlisted-client-outside-vpn.yml"
+    assert_failure 1
+    assert_line "FAIL compose-unlisted-client-outside-vpn.yml: download client 'dl' is outside gluetun's network namespace: network_mode is not set, want service:gluetun or container:gluetun (image lscr.io/linuxserver/transmission:4.0.6, matched by image)"
+}
+
+@test "client check: a shipped client whose image is not recognised is caught by its name" {
+    require_arch_tools
+    local copy="$BATS_TEST_TMPDIR/compose-client-outside-vpn.yml"
+    mutate_one_line "$TEST_DIR/fixtures/compose-client-outside-vpn.yml" "$copy" \
+        's|image: lscr.io/linuxserver/qbittorrent:5.1.2|image: registry.example.com/mirror/qbt:5.1.2|'
+    run check_clients "$copy"
+    assert_failure 1
+    assert_line "FAIL compose-client-outside-vpn.yml: download client 'qbittorrent' is outside gluetun's network namespace: network_mode is not set, want service:gluetun or container:gluetun (image registry.example.com/mirror/qbt:5.1.2, matched by name)"
+}
+
+@test "client check: a client that exists only behind a compose profile is still caught" {
+    require_arch_tools
+    local fixture="$TEST_DIR/fixtures/compose-profiled-client-outside-vpn.yml"
+    # A plain render leaves it out entirely...
+    run env -u COMPOSE_PROFILES docker compose -f "$fixture" \
+        --env-file "$TEST_DIR/fixtures/.env.test" config --services
     assert_success
-    assert_output "checked 3 client(s), all inside gluetun's namespace"
+    assert_line "qbittorrent"
+    refute_line "deluge"
+    # ...the check renders every profile, so it sees it.
+    run check_clients "$fixture"
+    assert_failure 1
+    assert_line "FAIL compose-profiled-client-outside-vpn.yml: download client 'deluge' is outside gluetun's network namespace: network_mode is not set, want service:gluetun or container:gluetun (image lscr.io/linuxserver/deluge:2.2.0, matched by image, profiles: extra)"
+    # sabnzbd is bound only through a merge key, which the rendered model resolves.
+    assert_line --partial "OK   compose-profiled-client-outside-vpn.yml: download client 'sabnzbd' runs in gluetun's network namespace (service:gluetun;"
 }
 
-@test "tunnelled-clients check: sees a client that sits behind a compose profile" {
-    require_compose
-    sed 's/^    container_name: qbittorrent$/    container_name: qbittorrent\n    profiles: ["manual"]/' \
-        "$TEST_DIR/fixtures/compose-client-outside-vpn.yml" > "$BATS_TEST_TMPDIR/docker-compose.fixture.yml"
-    grep -q 'profiles: \["manual"\]' "$BATS_TEST_TMPDIR/docker-compose.fixture.yml"
-    resolved=(); while IFS= read -r line; do resolved+=("$line"); done < <(resolve_compose "$BATS_TEST_TMPDIR")
-    run python3 "$TEST_DIR/helpers/check-clients-tunnelled.py" "${resolved[@]}"
-    assert_failure
-    assert_output --partial "qbittorrent (lscr.io/linuxserver/qbittorrent:5.1.2) has network_mode unset"
+@test "client check: tunnelled clients pass and an exporter sidecar is not taken for a client" {
+    require_arch_tools
+    run check_clients "$TEST_DIR/fixtures/compose-clients-tunnelled.yml"
+    assert_success
+    assert_line "OK   compose-clients-tunnelled.yml: download client 'dl' runs in gluetun's network namespace (service:gluetun; image lscr.io/linuxserver/transmission:4.0.6, matched by image)"
+    # sabnzbd-exporter is on the bridge, as it should be, and must not be flagged.
+    refute_output --partial "sabnzbd-exporter"
 }
 
-@test "tunnelled-clients check: rejects a named client with no VPN binding" {
-    require_compose
-    cp "$TEST_DIR/fixtures/compose-client-outside-vpn.yml" "$BATS_TEST_TMPDIR/docker-compose.fixture.yml"
-    resolved=(); while IFS= read -r line; do resolved+=("$line"); done < <(resolve_compose "$BATS_TEST_TMPDIR")
-    run python3 "$TEST_DIR/helpers/check-clients-tunnelled.py" "${resolved[@]}"
-    assert_failure
-    assert_output --partial "qbittorrent (lscr.io/linuxserver/qbittorrent:5.1.2) has network_mode unset"
+@test "client check: qbittorrent's network_mode removed from the real compose file is caught" {
+    require_arch_tools
+    local copy="$BATS_TEST_TMPDIR/docker-compose.arr-stack.yml"
+    mutate_one_line "$REPO_ROOT/docker-compose.arr-stack.yml" "$copy" \
+        '/^  qbittorrent:$/,/^  [a-z]/{/^    network_mode: "service:gluetun"$/d;}'
+    run check_clients "$copy"
+    assert_failure 1
+    assert_line --partial "FAIL docker-compose.arr-stack.yml: download client 'qbittorrent' is outside gluetun's network namespace: network_mode is not set,"
+    refute_line --partial "FAIL docker-compose.arr-stack.yml: download client 'sabnzbd'"
 }
 
-@test "tunnelled-clients check: rejects an unlisted client (found by image) with no VPN binding" {
-    require_compose
-    cp "$TEST_DIR/fixtures/compose-unlisted-client-outside-vpn.yml" "$BATS_TEST_TMPDIR/docker-compose.fixture.yml"
-    resolved=(); while IFS= read -r line; do resolved+=("$line"); done < <(resolve_compose "$BATS_TEST_TMPDIR")
-    run python3 "$TEST_DIR/helpers/check-clients-tunnelled.py" "${resolved[@]}"
-    assert_failure
-    assert_output --partial "dl (lscr.io/linuxserver/transmission:4.0.6) has network_mode unset"
+@test "client check: finding no client, or a file it cannot render, is a failure" {
+    require_arch_tools
+    run check_clients "$REPO_ROOT/docker-compose.tailscale.yml"
+    assert_failure 1
+    assert_line "FAIL no download client found in any file, so nothing was checked"
+    run check_clients "$BATS_TEST_TMPDIR/missing.yml"
+    assert_failure 2
+    assert_output --partial "missing.yml: docker compose config failed"
 }
 
-# Which compose files form one project is not cosmetic: it is why
-# `--remove-orphans` on one file deletes the others' containers (CLAUDE.md),
-# and why the `arr-stack_` prefix on networks is stable. Written out rather
-# than derived, so a rename fails here — that is the point of pinning it.
-assert_project_names() {
-    local dir="$1" f base name expected found=0
-    for f in "$dir"/docker-compose*.yml; do
-        [ -e "$f" ] || continue
-        base=$(basename "$f")
-        case "$base" in *.override.yml) continue ;; esac
-        found=1
-        [ -s "$f" ] || { echo "$base is empty"; return 1; }
-        name=$(grep -m1 '^name:' "$f" | sed 's/^name:[[:space:]]*//')
-        [ -n "$name" ] || { echo "$base does not pin a project name"; return 1; }
-        case "$base" in
-            docker-compose.arr-stack.yml|docker-compose.traefik.yml|docker-compose.utilities.yml) expected=arr-stack ;;
-            docker-compose.cloudflared.yml) expected=cloudflared ;;
-            docker-compose.tailscale.yml)   expected=tailscale ;;
-            *) echo "$base is not in the expected-project-name table; add it"; return 1 ;;
-        esac
-        [ "$name" = "$expected" ] || { echo "$base pins project '$name', expected '$expected'"; return 1; }
-    done
-    [ "$found" = 1 ] || { echo "no compose files in $dir"; return 1; }
-    echo "project names pinned as expected"
-}
+# --- Project names ------------------------------------------------------------
 
 @test "every compose file pins its project name, and the core three share arr-stack" {
-    run assert_project_names "$REPO_ROOT"
+    require_arch_tools
+    local files
+    read -r -a files <<< "$(get_compose_files)"
+    run check_project_names "${files[@]}"
     assert_success
-    assert_output "project names pinned as expected"
+    assert_line "OK   docker-compose.arr-stack.yml: pins project name 'arr-stack'"
+    assert_line "OK   docker-compose.traefik.yml: pins project name 'arr-stack'"
+    assert_line "OK   docker-compose.utilities.yml: pins project name 'arr-stack'"
 }
 
-@test "project-name check: fails when the core file loses its name line" {
-    grep -v '^name:' "$REPO_ROOT/docker-compose.arr-stack.yml" > "$BATS_TEST_TMPDIR/docker-compose.arr-stack.yml"
-    [ -s "$BATS_TEST_TMPDIR/docker-compose.arr-stack.yml" ]
-    run assert_project_names "$BATS_TEST_TMPDIR"
-    assert_failure
-    assert_output "docker-compose.arr-stack.yml does not pin a project name"
-}
-
-@test "project-name check: fails when the core file pins a different name" {
-    sed 's/^name: arr-stack$/name: renamed/' "$REPO_ROOT/docker-compose.arr-stack.yml" > "$BATS_TEST_TMPDIR/docker-compose.arr-stack.yml"
-    run assert_project_names "$BATS_TEST_TMPDIR"
-    assert_failure
-    assert_output "docker-compose.arr-stack.yml pins project 'renamed', expected 'arr-stack'"
-}
-
-# Two addresses in this stack are only safe because of these values: gluetun's
-# reserved 172.20.0.3 and every other static IP sit outside the dynamic half,
-# and ip_range is what confines Docker's allocator to 172.20.0.128/25 — the
-# reason a neighbouring container does not land on gluetun's address after a
-# reboot (CLAUDE.md, "Cross-Stack"). Widen the range and the allocator is back
-# on top of the pins. Read from the resolved JSON, so it is the value compose
-# will actually apply.
-assert_arr_network_pinned() {
-    local json="$1"
-    python3 - "$json" <<'PY'
-import json, sys
-doc = json.load(open(sys.argv[1]))
-cfg = ((doc.get("networks") or {}).get("arr-stack") or {}).get("ipam", {}).get("config") or [{}]
-want = {"subnet": "172.20.0.0/24", "ip_range": "172.20.0.128/25", "gateway": "172.20.0.1"}
-bad = [f"arr-stack {k} must stay {v} (found {cfg[0].get(k)!r})" for k, v in want.items() if cfg[0].get(k) != v]
-if bad:
-    print("\n".join(bad)); sys.exit(1)
-print("arr-stack network pins intact")
-PY
-}
-
-@test "the arr-stack subnet, dynamic range and gateway stay pinned" {
-    require_compose
-    resolved=(); while IFS= read -r line; do resolved+=("$line"); done < <(resolve_compose "$REPO_ROOT")
-    run assert_arr_network_pinned "$BATS_TEST_TMPDIR/resolved/docker-compose.arr-stack.json"
+@test "project-name check: a lost name: is caught, even deployed in a directory called arr-stack" {
+    require_arch_tools
+    local copy="$BATS_TEST_TMPDIR/arr-stack/docker-compose.traefik.yml"
+    mutate_one_line "$REPO_ROOT/docker-compose.traefik.yml" "$copy" '/^name: arr-stack$/d'
+    # The blind spot: in the documented deploy directory compose derives the
+    # very name the pin used to give, so the rendered name alone looks right.
+    run env -u COMPOSE_PROJECT_NAME docker compose -f "$copy" \
+        --env-file "$TEST_DIR/fixtures/.env.test" config
     assert_success
-    assert_output "arr-stack network pins intact"
+    assert_line "name: arr-stack"
+    # The check renders against a directory no file would name, and ignores
+    # COMPOSE_PROJECT_NAME, which would also override the key.
+    export COMPOSE_PROJECT_NAME=arr-stack
+    run check_project_names "$copy"
+    assert_failure 1
+    assert_line "FAIL docker-compose.traefik.yml: no top-level project \`name:\`, so compose takes the name from the deploy directory"
 }
 
-@test "network-pin check: fails when the dynamic range, subnet or gateway changes" {
-    require_compose
-    local key val
-    for key in ip_range:172.20.0.128/25:172.20.0.0/24 subnet:172.20.0.0/24:172.20.0.0/23 gateway:172.20.0.1:172.20.0.254; do
-        IFS=: read -r field was now <<<"$key"
-        sed "s|${field}: ${was}|${field}: ${now}|" "$REPO_ROOT/docker-compose.arr-stack.yml" > "$BATS_TEST_TMPDIR/docker-compose.arr-stack.yml"
-        grep -q "${field}: ${now}" "$BATS_TEST_TMPDIR/docker-compose.arr-stack.yml"   # the mutation landed
-        resolve_compose "$BATS_TEST_TMPDIR" >/dev/null
-        run assert_arr_network_pinned "$BATS_TEST_TMPDIR/resolved/docker-compose.arr-stack.json"
-        assert_failure
-        assert_output --partial "arr-stack ${field} must stay ${was}"
-    done
+@test "project-name check: a core file that leaves the shared project is caught" {
+    require_arch_tools
+    local copy="$BATS_TEST_TMPDIR/docker-compose.utilities.yml"
+    mutate_one_line "$REPO_ROOT/docker-compose.utilities.yml" "$copy" 's/^name: arr-stack$/name: utilities/'
+    run check_project_names "$copy"
+    assert_failure 1
+    assert_line "FAIL docker-compose.utilities.yml: project name is 'utilities', expected 'arr-stack'"
+}
+
+@test "project-name check: a compose file with no recorded expectation is caught" {
+    require_arch_tools
+    run check_project_names "$TEST_DIR/fixtures/compose-clients-tunnelled.yml"
+    assert_failure 1
+    assert_line "FAIL compose-clients-tunnelled.yml: pins project name 'fixture' but no expected name is recorded for this file"
+}
+
+# --- The arr-stack network ----------------------------------------------------
+
+@test "the arr-stack network keeps its subnet, dynamic ip_range and gateway" {
+    require_arch_tools
+    local files
+    read -r -a files <<< "$(get_compose_files)"
+    run check_arr_network "${files[@]}"
+    assert_success
+    assert_line "OK   docker-compose.arr-stack.yml: the arr-stack network is pinned (subnet 172.20.0.0/24, ip_range 172.20.0.128/25, gateway 172.20.0.1)"
+    assert_line "OK   docker-compose.arr-stack.yml: service 'gluetun' has static IP 172.20.0.3, outside the dynamic ip_range"
+}
+
+@test "network check: dropping the ip_range from the real compose file is caught" {
+    require_arch_tools
+    local copy="$BATS_TEST_TMPDIR/docker-compose.arr-stack.yml"
+    mutate_one_line "$REPO_ROOT/docker-compose.arr-stack.yml" "$copy" '/^ *ip_range: 172\.20\.0\.128\/25$/d'
+    run check_arr_network "$copy"
+    assert_failure 1
+    assert_line "FAIL docker-compose.arr-stack.yml: the arr-stack network's ip_range is missing, expected '172.20.0.128/25'"
+}
+
+@test "network check: a changed subnet or gateway is caught" {
+    require_arch_tools
+    local copy="$BATS_TEST_TMPDIR/subnet/docker-compose.arr-stack.yml"
+    mutate_one_line "$REPO_ROOT/docker-compose.arr-stack.yml" "$copy" 's|subnet: 172\.20\.0\.0/24$|subnet: 172.20.0.0/16|'
+    run check_arr_network "$copy"
+    assert_failure 1
+    assert_line "FAIL docker-compose.arr-stack.yml: the arr-stack network's subnet is '172.20.0.0/16', expected '172.20.0.0/24'"
+
+    copy="$BATS_TEST_TMPDIR/gateway/docker-compose.arr-stack.yml"
+    mutate_one_line "$REPO_ROOT/docker-compose.arr-stack.yml" "$copy" 's|gateway: 172\.20\.0\.1$|gateway: 172.20.0.254|'
+    run check_arr_network "$copy"
+    assert_failure 1
+    assert_line "FAIL docker-compose.arr-stack.yml: the arr-stack network's gateway is '172.20.0.254', expected '172.20.0.1'"
+}
+
+@test "network check: gluetun's static IP moved into the dynamic ip_range is caught" {
+    require_arch_tools
+    local copy="$BATS_TEST_TMPDIR/docker-compose.arr-stack.yml"
+    mutate_one_line "$REPO_ROOT/docker-compose.arr-stack.yml" "$copy" 's/ipv4_address: 172\.20\.0\.3$/ipv4_address: 172.20.0.200/'
+    run check_arr_network "$copy"
+    assert_failure 1
+    assert_line "FAIL docker-compose.arr-stack.yml: service 'gluetun' has static IP 172.20.0.200 inside the dynamic ip_range 172.20.0.128/25, where Docker can hand it to another container first"
+}
+
+@test "network check: files that only reference the network as external are a failure" {
+    require_arch_tools
+    run check_arr_network "$REPO_ROOT/docker-compose.traefik.yml" "$REPO_ROOT/docker-compose.utilities.yml"
+    assert_failure 1
+    assert_line "FAIL no file defines the arr-stack network (only external references), so nothing was checked"
 }

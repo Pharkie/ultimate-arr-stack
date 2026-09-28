@@ -40,6 +40,17 @@ docker compose -f docker-compose.arr-stack.yml up -d  # Restarts containers with
 
 When upgrading across versions, check below for any action required.
 
+### v1.14.0 → v1.15.0
+
+`git pull`, then recreate the two services whose definitions changed, each through its own compose file:
+
+```bash
+docker compose -f docker-compose.arr-stack.yml up -d --no-deps seerr        # v3.5.0
+docker compose -f docker-compose.tailscale.yml up -d tailscale               # hardened capabilities
+```
+
+Re-run `./setup-hooks.sh` if you use the pre-commit hook. `check-vpn.sh` keeps its contract (exit 0 means the VPN checked out), so a cron line or Kuma push monitor keeps working; its output wording has changed. Backups no longer leave a plain-text working copy in `/tmp`, but copies left by earlier versions stay until you delete them (`/tmp/arr-stack-backup-<date>` directories): check your latest archive first.
+
 ### v1.13.5 → v1.14.0
 
 Twelve image bumps. Back up the config volumes first (Jellyfin 12.1's database migrations are one-way), then pull and recreate as usual. Pass only the services you mean to recreate, and never `--remove-orphans`:
