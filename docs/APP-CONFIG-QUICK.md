@@ -107,10 +107,10 @@ Config (⚙️) → Folders → set **absolute paths**:
 2. Sign in with Jellyfin: URL `http://jellyfin:8096`, enter your Jellyfin credentials
 3. Settings → Jellyfin → set **External URL** to `http://jellyfin.lan` (or `http://NAS_IP:8096`) — makes "Play on Jellyfin" links work in your browser
 4. Settings → Services → Add Radarr:
-   - Hostname: `radarr`, Port: `7878`, Quality Profile: `UHD Bluray + WEB`
+   - Hostname: `radarr`, Port: `7878`, Quality Profile: your choice ([Configarr](UTILITIES.md#configarr-setup)'s is `UHD Bluray + WEB`; the built-in `Ultra-HD` is 4K-only)
    - External URL: `http://radarr.lan` (or `http://NAS_IP:7878`)
 5. Settings → Services → Add Sonarr:
-   - Hostname: `sonarr`, Port: `8989`, Quality Profile: `Ultra-HD`
+   - Hostname: `sonarr`, Port: `8989`, Quality Profile: your choice (Configarr's is `WEB-2160p`)
    - External URL: `http://sonarr.lan` (or `http://NAS_IP:8989`)
 6. Settings → Jellyfin → toggle **Movies** and **TV** on → Save
 7. Click **Sync Libraries** then **Start Scan**
