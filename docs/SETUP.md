@@ -566,7 +566,7 @@ Service configs are stored in Docker named volumes. Run periodic backups:
 ./scripts/arr-backup.sh --tar
 ```
 
-Creates a ~13MB tarball of essential configs (VPN settings, indexers, request history, etc.).
+Creates a tarball (~66MB on a mid-sized library) of essential configs (VPN settings, indexers, request history, etc.) and the Sonarr, Radarr and Jellyfin databases.
 
 See **[Backup & Restore](BACKUP.md)** for full details on what's backed up, restore procedures, and automation.
 
