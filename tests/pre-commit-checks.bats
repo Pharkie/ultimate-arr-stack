@@ -170,3 +170,94 @@ EOF
     assert_failure
     assert_output --partial "broken link to 'docs/MISSING.md'"
 }
+
+# --- image versions --------------------------------------------------------
+#
+# curl is replaced by a stub on PATH that serves canned Docker Hub answers, so
+# these run offline and cannot pass just because the live registry happened to
+# answer well. The stub answers the unfiltered newest-100 query from
+# first.json and any name-filtered query from filtered.json, falling back to
+# first.json; a <name>.fail file makes that query fail the way a dead
+# connection does.
+#
+# The fallback matters: with a missing filtered.json the stub's cat failed, so
+# the rate-limit case "passed" as did-not-answer even with the "results" guard
+# deleted — it was testing the stub, not the check.
+
+# Docker Hub tags listing containing the given tag names, newest first.
+hub_listing() {
+    local out='{"count":0,"next":null,"previous":null,"results":[' sep='' t
+    for t in "$@"; do out+="$sep{\"name\":\"$t\"}"; sep=','; done
+    echo "$out]}"
+}
+
+image_check_setup() {
+    IMG_T=$(mktemp -d)
+    mkdir -p "$IMG_T/bin" "$IMG_T/repo"
+    git -C "$IMG_T/repo" init -q
+    cat > "$IMG_T/bin/curl" <<STUB
+#!/bin/bash
+for url in "\$@"; do :; done
+case "\$url" in
+    https://hub.docker.com) exit 0 ;;
+    *name=*) f=filtered ;;
+    *) f=first ;;
+esac
+[[ -f "$IMG_T/\$f.fail" ]] && exit 7
+[[ -f "$IMG_T/\$f.json" ]] || f=first
+cat "$IMG_T/\$f.json"
+STUB
+    chmod +x "$IMG_T/bin/curl"
+}
+
+# $1 = the one image the throwaway repo's compose file pins
+run_image_check() {
+    printf 'services:\n  x:\n    image: %s\n' "$1" > "$IMG_T/repo/docker-compose.yml"
+    run bash -c "cd '$IMG_T/repo' && export PATH='$IMG_T/bin':\"\$PATH\" \
+        && source '$REPO_ROOT/scripts/lib/common.sh' \
+        && source '$REPO_ROOT/scripts/lib/check-image-versions.sh' \
+        && _IMAGE_CACHE='$IMG_T/cache' && check_image_versions"
+}
+
+# klutchell/dnscrypt-proxy's newest 100 tags were all build-<sha>, renovate
+# branches and main, so the image was "skipped" on every run and could never
+# have reported a release.
+@test "check_image_versions: finds releases buried under CI tags" {
+    image_check_setup
+    hub_listing build-renovate-ubuntu-26.x build-e1149f2 main > "$IMG_T/first.json"
+    hub_listing build-renovate-ubuntu-26.x 2.1.18 v2.1.18 2.1.17 > "$IMG_T/filtered.json"
+    run_image_check example/ci-flooded:2.1.17
+    rm -rf "$IMG_T"
+    assert_success
+    assert_output --partial "UPDATE: ci-flooded 2.1.17 → 2.1.18 available"
+    assert_output --partial "Found 1 update(s) across 1 images"
+    refute_output --partial "SKIP"
+    refute_output --partial "skipped"
+}
+
+@test "check_image_versions: a registry that did not answer is a named skip" {
+    local body
+    # A dead connection, then an answer that is a rate-limit message rather
+    # than a tag listing. Neither may read as "no newer version".
+    for body in FAIL '{"message":"You have reached your pull rate limit."}'; do
+        image_check_setup
+        if [[ "$body" == FAIL ]]; then touch "$IMG_T/first.fail"
+        else echo "$body" > "$IMG_T/first.json"; fi
+        run_image_check example/ci-flooded:2.1.17
+        rm -rf "$IMG_T"
+        assert_success
+        assert_output --partial "SKIP: example/ci-flooded:2.1.17 not checked - registry did not answer"
+        refute_output --partial "UPDATE"
+    done
+}
+
+@test "check_image_versions: an answer with no version tags is a named skip, not 'registry unavailable'" {
+    image_check_setup
+    hub_listing build-e1149f2 main > "$IMG_T/first.json"
+    hub_listing build-renovate-ubuntu-26.x > "$IMG_T/filtered.json"
+    run_image_check example/ci-flooded:2.1.17
+    rm -rf "$IMG_T"
+    assert_success
+    assert_output --partial "SKIP: example/ci-flooded:2.1.17 not checked - registry answered, but with no version tags"
+    refute_output --partial "did not answer"
+}
