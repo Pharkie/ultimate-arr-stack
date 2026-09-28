@@ -37,7 +37,7 @@ is checked against the code every time it changes.
 | Every compose variable documented in `.env.example` | YES | YES | YES | N/A | — | hook `check-env-vars`; bats `env-vars` |
 | Internal doc links resolve | YES | YES | YES | N/A | — | hook `check-doc-links`; bats `pre-commit-checks` drives it |
 | No real LAN domain hard-coded in tracked files | YES | MISSING | MISSING | N/A | — | hook `check-hardcoded-domain` (needs `.env` to know the domain) |
-| Image tags pinned (no `latest`, no untagged) | — | YES | YES | N/A | — | bats `compose-validation`, `security`. A major-only tag (`uptime-kuma:2`) passes and still floats |
+| Image tags pinned (no `latest`, no untagged) | — | YES | YES | N/A | — | bats `compose-validation`, `security`. A major-only tag (e.g. `:2`) passes and still floats |
 | Image tags exist on their registry | DIAG | YES* | YES | N/A | — | hook `check-image-versions` reports newer tags, never fails; bats `compose-validation` — *fails, not skips, without a network |
 | Volumes pinned to physical names | — | YES | YES | N/A | — | bats `compose-validation` |
 | Every service has a restart policy and logging config; none is privileged | — | YES | YES | N/A | — | bats `compose-validation` |
@@ -54,6 +54,7 @@ is checked against the code every time it changes.
 | hadolint over the devcontainer Dockerfile | — | — | YES | N/A | — | CI `lint`, policy in `.hadolint.yaml` |
 | `configure-apps.sh` HTTP layer (curl stubbed) | — | YES | YES | N/A | — | bats `configure-helpers` |
 | Bazarr language plan across profile states | — | YES | YES | N/A | — | bats `bazarr-language-plan` |
+| `audiobooks-tv-mirror.sh` links (checked by inode), prunes, `--dry-run` | — | YES | YES | N/A | — | bats `audiobooks-tv-mirror` |
 | `configure-apps.sh` structure (step order, no unbounded curl, CLI) | — | YES | YES | N/A | — | bats `configure-apps` |
 | `configure-apps.sh` against real services | — | — | — | N/A | YES | by hand, `--dry-run` then run; throwaway containers for Bazarr |
 | Python in `scripts/lib/` and `tests/helpers/` — lint | — | MISSING | MISSING | N/A | — | nothing runs pyflakes/ruff |
@@ -77,7 +78,7 @@ is checked against the code every time it changes.
 2. **Nothing lints YAML** beyond `docker compose config`, which accepts a lot.
 3. **Four hook checks exist only on a machine that can reach the NAS** — monitors, DNS duplicates, `.env` backup sync (SSH) and the public-domain check (NAS config). A contributor's push is never checked for them, and CI cannot be. The hard-coded-domain check is hook-only for a different reason: it needs `.env` to know what to look for.
 4. **The e2e suite runs only from a machine with `.env.e2e`.** By design — it needs the stack — but the NAS step is the only place UI, routing and egress are ever exercised.
-5. **Two test images float.** `tests/openvpn-caps.bats` probes `/dev/net/tun` with a bare `alpine`; `louislam/uptime-kuma:2` in the utilities file is a major-only tag. The pinning test cannot see either.
+5. **A test image floats.** `tests/openvpn-caps.bats` probes `/dev/net/tun` with a bare `alpine`, which the pinning test cannot see.
 6. **The guards are never mutation-tested.** Each architecture test carries negatives that assert the specific failure message instead, which proves the check can fail in the ways we thought of.
 
 ## Maintaining this file

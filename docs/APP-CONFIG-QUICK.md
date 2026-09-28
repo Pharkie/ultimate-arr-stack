@@ -57,7 +57,7 @@ Preview what it will do without making changes:
 
 Useful flags and knobs (the full list is in the script's header, `./scripts/configure-apps.sh --help`):
 
-- `--only <section>` — run one section (`qbittorrent`, `sabnzbd`, `sonarr`, `radarr`, `prowlarr`, `bazarr`, `pihole`) and touch nothing else.
+- `--only <section>` — run one section (`qbittorrent`, `sabnzbd`, `sonarr`, `radarr`, `prowlarr`, `bazarr`, `seerr`, `pihole`) and touch nothing else.
 - `SUBTITLE_LANGUAGES="en fr"` — what the managed Bazarr profile contains (default `en`). The script owns that one profile's contents; your other profiles are never touched.
 - `API_TIMEOUT` (default 60 s) bounds every request; `BAZARR_SCAN_TIMEOUT` (default 600 s) bounds the one Bazarr write that rescans the whole library.
 
@@ -67,16 +67,18 @@ Useful flags and knobs (the full list is in the script's header, `./scripts/conf
 
 | Service | Settings |
 |---------|----------|
-| qBittorrent | Categories (`tv`/`movies`/`other`), executable exclusions, auto torrent management, encryption, UPnP off, stall timeout, concurrent limits |
+| qBittorrent | Categories (`tv`/`movies`/`other`), executable exclusions, auto torrent management, encryption, UPnP off, stall timeout, concurrent limits, binding to the VPN interface |
 | Sonarr | Root folder, qBittorrent + SABnzbd download clients, TRaSH naming, NFO metadata, custom formats (Reject ISO, Dolby Vision profile scoring), Usenet delay profile |
 | Radarr | Root folder, qBittorrent + SABnzbd download clients, TRaSH naming, NFO metadata, custom formats (Reject ISO, Dolby Vision profile scoring), Usenet delay profile |
 | Prowlarr | FlareSolverr proxy, Sonarr + Radarr app sync, qBittorrent + SABnzbd as its *own* download clients so the search page can grab (→ category `other`) |
 | SABnzbd | `other` category for Prowlarr search-page grabs (`/data/usenet/complete/other`) |
 | Bazarr | English subtitle profile (found, adopted or created) + series/movie defaults pointing at it, Sonarr + Radarr connections (after the profile, so the first library sync gets it), subtitle sync (ffsubsync), Sub-Zero content mods |
+| Seerr | TV and anime metadata from TVDB (only once its setup wizard has run, see Step 3) |
+| Pi-hole | Upstream DNS set to the stack's dnscrypt-proxy (`172.20.0.6#5053`) |
 
 ## Step 3: Configure the remaining services
 
-The script handles qBittorrent, Sonarr, Radarr, Prowlarr, and Bazarr. Complete these remaining services in order:
+The script handles qBittorrent, Sonarr, Radarr, Prowlarr, Bazarr and Pi-hole. Complete these remaining services in order:
 
 ### 1. Jellyfin — Add libraries
 
@@ -122,11 +124,13 @@ Settings → Providers → add a provider (e.g., OpenSubtitles).
 
 > The script already configured Sonarr/Radarr connections and subtitle sync.
 
-### 6. Pi-hole — Set upstream DNS
+### 6. Pi-hole — Check it
+
+The script already pointed Pi-hole's upstream DNS at the stack's dnscrypt-proxy (`172.20.0.6#5053`), so there is nothing to set. To look:
 
 1. Open `http://NAS_IP:8081/admin`
 2. Login with the password from `PIHOLE_UI_PASS` in your `.env` (password only, no username)
-3. Settings → DNS → pick upstream servers (e.g., `1.1.1.1`, `8.8.8.8`)
+3. Settings → DNS should list `172.20.0.6#5053` as the only upstream
 
 ---
 

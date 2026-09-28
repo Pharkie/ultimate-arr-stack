@@ -95,9 +95,9 @@ scp user@nas:/tmp/arr-stack-backup-*.tar.gz ./backup.tar.gz
 ### Full Restore (New Installation)
 
 1. Deploy the stack normally (see [Setup Guide](SETUP.md))
-2. SSH into your NAS and stop the services:
+2. SSH into your NAS and stop the services (`stop`, never `down`):
    ```bash
-   docker compose -f docker-compose.arr-stack.yml down
+   docker compose -f docker-compose.arr-stack.yml stop
    ```
 3. Extract backup and restore each volume:
    ```bash
@@ -141,19 +141,22 @@ docker compose -f docker-compose.arr-stack.yml start seerr
 
 Options:
   --tar           Create .tar.gz archive (recommended)
+  --encrypt       GPG-encrypt the tarball, symmetric (requires --tar)
   --prefix NAME   Override volume prefix (default: auto-detect)
+  --usb DIR_NAME  Save to DIR_NAME on whichever USB drive is under /mnt/@usb/sd*/
+                  (device letters change on reboot, so don't hardcode one)
 
 Examples:
   ./scripts/arr-backup.sh --tar                    # Default location
   ./scripts/arr-backup.sh --tar /path/to/backup    # Custom location
+  ./scripts/arr-backup.sh --tar --encrypt          # Encrypted tarball
+  ./scripts/arr-backup.sh --tar --usb arr-backups  # Find the USB drive, save to arr-backups/
   ./scripts/arr-backup.sh --prefix media-stack     # Custom prefix
 ```
 
 ### Volume Prefix Auto-Detection
 
-The script auto-detects your volume prefix from running containers. If you cloned the repo to a different directory (e.g., `media-stack` instead of `arr-stack`), it will detect this automatically.
-
-If auto-detection fails, use `--prefix`:
+The compose files pin every volume's name to `arr-stack_<volume>`, so the prefix is `arr-stack` whatever your deploy directory is called. The script still detects it from the running gluetun container, and `--prefix` is there for volumes created under another prefix before the names were pinned:
 ```bash
 ./scripts/arr-backup.sh --tar --prefix media-stack
 ```
@@ -168,13 +171,13 @@ The script auto-detects which request manager volume exists and backs it up:
 
 ## Automated Daily Backup
 
-A cron job runs daily at 6am, backing up to USB:
+Nothing in the repo installs this; add a cron job yourself, e.g. daily at 6am to USB:
 
 ```bash
 # View current cron
 sudo crontab -l
 
-# Default schedule (already configured):
+# Example entry:
 0 6 * * * $NAS_STACK_DIR/scripts/arr-backup.sh --tar /mnt/arr-backup >> /var/log/arr-backup.log 2>&1
 ```
 

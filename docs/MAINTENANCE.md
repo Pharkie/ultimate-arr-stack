@@ -12,7 +12,7 @@ This stack uses multiple compose files. Here are common commands for each scenar
 # Start / recreate
 docker compose -f docker-compose.arr-stack.yml up -d
 
-# Stop (without removing — safe, keeps Pi-hole running)
+# Stop without removing (Pi-hole stops too: LAN DNS is down until you start it again)
 docker compose -f docker-compose.arr-stack.yml stop
 
 # View logs
@@ -34,9 +34,12 @@ docker compose -f docker-compose.arr-stack.yml -f docker-compose.traefik.yml pul
 
 ### Core + Traefik + Cloudflared (remote access)
 
+Cloudflared has its own project name (`cloudflared`), so give it its own command. Adding its file to the one above would make the *last* file's name win, and run the whole stack as project `cloudflared`.
+
 ```bash
 # Start all three
-docker compose -f docker-compose.arr-stack.yml -f docker-compose.traefik.yml -f docker-compose.cloudflared.yml up -d
+docker compose -f docker-compose.arr-stack.yml -f docker-compose.traefik.yml up -d
+docker compose -f docker-compose.cloudflared.yml up -d
 ```
 
 ### Utilities (independent)
@@ -57,24 +60,26 @@ docker compose -f docker-compose.tailscale.yml pull
 
 ### All Stacks
 
+The three `arr-stack` files go together; Cloudflared and Tailscale are separate projects and get their own commands.
+
 ```bash
 # Start everything
 docker compose \
   -f docker-compose.arr-stack.yml \
   -f docker-compose.traefik.yml \
-  -f docker-compose.cloudflared.yml \
-  -f docker-compose.tailscale.yml \
   -f docker-compose.utilities.yml \
   up -d
+docker compose -f docker-compose.cloudflared.yml up -d
+docker compose -f docker-compose.tailscale.yml up -d
 
 # Pull all images
 docker compose \
   -f docker-compose.arr-stack.yml \
   -f docker-compose.traefik.yml \
-  -f docker-compose.cloudflared.yml \
-  -f docker-compose.tailscale.yml \
   -f docker-compose.utilities.yml \
   pull
+docker compose -f docker-compose.cloudflared.yml pull
+docker compose -f docker-compose.tailscale.yml pull
 ```
 
 > **Never use `docker compose down`** on the arr-stack file — it removes the Pi-hole container and you lose DNS (and internet) before you can bring it back up. Use `stop` instead, or just `up -d` to recreate.
@@ -94,7 +99,7 @@ docker exec gluetun wget -qO- https://ipinfo.io/ip     # Should show VPN IP
 docker exec qbittorrent wget -qO- https://ipinfo.io/ip  # Should match Gluetun's IP
 ```
 
-The `check-vpn.sh` script compares Gluetun's exit IP against your NAS LAN IP and exits non-zero if they match (leak detected). You can add it to cron for periodic monitoring:
+The `check-vpn.sh` script checks DNS, compares Gluetun's exit IP with the host's own egress (measured from Sonarr, which is off the VPN), and checks that each tunnelled service (qBittorrent, Prowlarr, SABnzbd, FlareSolverr) exits through Gluetun. It exits non-zero on a leak, a DNS failure, or a service it can't measure. You can add it to cron for periodic monitoring:
 
 ```bash
 # Check every 5 minutes, log failures
