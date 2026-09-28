@@ -55,6 +55,7 @@ is checked against the code every time it changes.
 | `configure-apps.sh` HTTP layer (curl stubbed) | — | YES | YES | N/A | — | bats `configure-helpers` |
 | Bazarr language plan across profile states | — | YES | YES | N/A | — | bats `bazarr-language-plan` |
 | `audiobooks-tv-mirror.sh` links (checked by inode), prunes, `--dry-run` | — | YES | YES | N/A | — | bats `audiobooks-tv-mirror` |
+| `arr-backup.sh` archive name at the destination (`--encrypt` stays `.tar.gz.gpg`), 7-day rotation, a real-gpg decrypt-and-extract | — | YES | YES | N/A | — | bats `arr-backup` (docker and gpg stubbed; the restore test needs `gpg` installed, skips otherwise) |
 | `configure-apps.sh` structure (step order, no unbounded curl, CLI) | — | YES | YES | N/A | — | bats `configure-apps` |
 | `configure-apps.sh` against real services | — | — | — | N/A | YES | by hand, `--dry-run` then run; throwaway containers for Bazarr |
 | Python in `scripts/lib/` and `tests/helpers/` — lint | — | MISSING | MISSING | N/A | — | nothing runs pyflakes/ruff |
