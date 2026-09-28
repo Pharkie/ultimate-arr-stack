@@ -40,6 +40,23 @@ docker compose -f docker-compose.arr-stack.yml up -d  # Restarts containers with
 
 When upgrading across versions, check below for any action required.
 
+### v1.13.5 → v1.14.0
+
+Twelve image bumps. Back up the config volumes first (Jellyfin 12.1's database migrations are one-way), then pull and recreate as usual. Pass only the services you mean to recreate, and never `--remove-orphans`:
+
+```bash
+cd $NAS_STACK_DIR && git pull
+docker compose -f docker-compose.arr-stack.yml pull sonarr radarr prowlarr bazarr jellyfin pihole
+docker compose -f docker-compose.arr-stack.yml up -d --no-deps sonarr radarr prowlarr bazarr jellyfin pihole
+```
+
+Do the same for `uptime-kuma beszel beszel-agent duc` in `docker-compose.utilities.yml`, and for `docker-compose.cloudflared.yml` and `docker-compose.tailscale.yml` if you run them. Jellyfin is ready when its log says `Startup complete`, not when the healthcheck turns green. Recreating Pi-hole drops DNS for your network for a few seconds.
+
+Two things may need a hand:
+
+- **Sonarr, Radarr or Prowlarr asks for a login at its `.lan` address.** They now trust forwarded headers only from their *Trusted Networks* setting, so *Authentication Required: Disabled for Local Addresses* no longer applies through Traefik. Set Settings → General → Security → Authentication Required to **Enabled**. Don't add `172.20.0.0/24` to Trusted Networks: Cloudflare Tunnel traffic arrives from inside it.
+- **configarr no longer runs on `up -d`.** Run it on purpose with `docker compose -f docker-compose.utilities.yml run --rm -e DRY_RUN=true configarr` (drop `DRY_RUN` to apply). If your `configarr/config.yml` came from the example before this release, change `base_url` from `http://gluetun:8989` / `:7878` to `http://sonarr:8989` / `http://radarr:7878`, dry-run, and read what it would change first: it has not reached Sonarr or Radarr since v1.7.23, and it will create the profiles your config names.
+
 ### v1.13.4 → v1.13.5
 
 Recreate Seerr so it picks up its new start command:

@@ -2,6 +2,24 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.14.0] - 2026-09-28
+
+Twelve image bumps, and three things that had been quietly broken for months: configarr, duc's web UI, and the image check's view of dnscrypt-proxy.
+
+### Changed
+- **Twelve image bumps.** sonarr `4.0.19`→`4.0.20`, radarr `6.3.0`→`6.4.4`, prowlarr `2.5.2`→`2.6.5`, bazarr `1.6.0`→`1.6.2`, jellyfin `12.0`→`12.1`, pihole `2026.07.2`→`2026.09.0`, cloudflared `2026.9.1`→`2026.9.3`, tailscale `v1.102.3`→`v1.102.5`, uptime-kuma `2.5.4`→`2.5.5`, beszel and beszel-agent `0.19`→`0.20`, configarr `1.30.2`→`1.32.0`. Every config volume was backed up with its service stopped, and each service was checked against a snapshot taken before the bump, not just its healthcheck. Series, movies, root folders, download clients, indexers, quality profiles, custom formats, Bazarr's profiles and providers, Pi-hole's lists and resolution, Kuma's monitors and Jellyfin's libraries, plugins, item counts and `encoding.xml` all came out identical.
+  - **Sonarr, Radarr and Prowlarr trust `X-Forwarded-For` only from a new *Trusted Networks* setting** (empty by default). Through Traefik, *Authentication Required: Disabled for Local Addresses* no longer counts as local, so `sonarr.lan` and the rest will ask for a login. Set it to **Enabled** rather than trusting `172.20.0.0/24`: Cloudflare Tunnel traffic reaches the apps from cloudflared's bridge address, so on older versions that mode let tunnel visitors past the login.
+  - **Jellyfin 12.1 runs three one-way database migrations** (27 s here, `Startup complete` in the log is the signal). It rewrote `encoding.xml` with identical content; hardware transcoding settings survived.
+  - **Pi-hole 2026.09.0 (FTL 6.7.1) and Bazarr 1.6.1–1.6.2 are security releases.** Pi-hole's `webserver.advancedOpts` and `misc.dnsmasq_lines` can no longer be changed from the API or web UI; env vars and `pihole.toml` still work.
+- **configarr is opt-in.** It sat in the utilities file as an ordinary service, so any bare `docker compose -f docker-compose.utilities.yml up -d` ran it. A run creates the quality profiles its config names and, with `reset_unmatched_scores`, zeroes every score on them it doesn't list. It now sits in a `manual` compose profile; `docker compose ... run --rm configarr` works as before.
+
+### Fixed
+- **configarr pointed at `gluetun:8989` and `gluetun:7878`**, which stopped answering when Sonarr and Radarr moved off the VPN in 1.7.23. Every run since failed both instances and still exited 0. The example config now uses `sonarr:8989` and `radarr:7878`.
+- **duc's web UI hadn't answered since its container was recreated on 2026-09-02.** nginx's workers died on `setgid(33)`: `cap_drop: ALL` removed SETUID/SETGID and only CHOWN and DAC_OVERRIDE were added back. Both are now added.
+- **The pre-commit image check could never report a dnscrypt-proxy release.** All 100 of its newest Docker Hub tags are CI builds, so no version tag survived the filter and the image was "skipped - registry unavailable or rate-limited" on every run. It now re-queries for dotted tags when the first page has none, and names each skip with its real reason: the registry did not answer, or it answered with no version tags. bats covers both, and both new tests fail on the old script.
+- **The compose checks couldn't see a service behind `profiles:`.** They render each file with `docker compose config`, which drops inactive profiles, so configarr would have vanished from every architecture check. They now render with `--profile '*'`, and a new test hides an untunnelled qBittorrent behind a profile and expects the violation.
+- **The Sonarr, Radarr and Prowlarr screenshot tests** waited for `networkidle`, which Radarr only reached after its telemetry call to a dead `sentry.servarr.com` timed out (~20 s of a 30 s budget). They now wait for the dashboard's own toolbar. The Prowlarr test had been saving a blank page.
+
 ## [1.13.5] - 2026-09-28
 
 ### Fixed
