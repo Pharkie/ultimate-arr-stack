@@ -101,9 +101,10 @@ echo ""
 # CHECK 4: Port/IP Conflicts (BLOCKS)
 # ==========================================
 echo -e "${BLUE}4. Checking for port/IP conflicts...${NC}"
-if check_conflicts; then
-    echo -e "    ${GREEN}OK${NC}: No conflicts detected"
-else
+# check_conflicts prints its own status line: how many ports and IPs it
+# checked, or SKIPPED when docker compose or python3 is missing. A blanket
+# "OK" here would cover a skip.
+if ! check_conflicts; then
     ERRORS=$((ERRORS + 1))
 fi
 echo ""
