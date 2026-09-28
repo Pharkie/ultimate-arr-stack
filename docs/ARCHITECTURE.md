@@ -172,6 +172,7 @@ Services that write to Docker volumes as root add back `CHOWN` + `DAC_OVERRIDE` 
 Additional requirements:
 - **Gluetun** — adds `NET_ADMIN` (required to create VPN tunnel interfaces)
 - **Uptime Kuma** — adds `FOWNER` (sets ownership on created files)
+- **DUC** — adds `SETUID`, `SETGID` (nginx's workers drop to `www-data`)
 - **Pi-hole** — adds `NET_ADMIN`, `NET_RAW`, `CHOWN`, `SETUID`, `SETGID`, `SETFCAP`, `SYS_NICE`, `DAC_OVERRIDE`, and disables `no-new-privileges` (FTL uses `setcap` at startup)
 
 ## Design Decisions

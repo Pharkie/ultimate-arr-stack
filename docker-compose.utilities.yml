@@ -204,6 +204,8 @@ services:
     cap_add:
       - CHOWN           # Nginx chown on startup
       - DAC_OVERRIDE    # Write to root-owned volume directories
+      - SETUID          # Nginx workers drop to www-data; without these two
+      - SETGID          # they die on setgid(33) and the UI never answers
     networks:
       arr-stack:
         ipv4_address: 172.20.0.14
