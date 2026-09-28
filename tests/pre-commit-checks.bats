@@ -416,3 +416,20 @@ run_hook() {
     assert_output --partial "WARNING: Your domain 'example-custom.test' is hardcoded"
     assert_output --partial "PASSED: All checks passed"
 }
+
+# check_hardcoded_domain returns 1 when it finds the NAS hostname, and the hook
+# called it bare, so set -e ended the hook there on every bash: no checks 6-11,
+# no summary. It must block AND let the rest run.
+@test "pre-commit: the NAS hostname blocks, and every later check still runs" {
+    HOOK_T=$(mktemp -d)
+    git -C "$HOOK_T" init -q
+    mkdir -p "$HOOK_T/.claude"
+    printf 'NAS: mybox-nas.local\n' > "$HOOK_T/.claude/config.local.md"
+    printf '.claude/\n' > "$HOOK_T/.gitignore"
+    printf 'ssh mybox-nas\n' > "$HOOK_T/notes.txt"
+    run_hook
+    assert_failure
+    assert_output --partial "NAS hostname 'mybox-nas' found"
+    assert_output --partial "11. Checking documentation links"
+    assert_output --partial "BLOCKED: 1 error(s) found"
+}

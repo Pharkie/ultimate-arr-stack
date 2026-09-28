@@ -110,10 +110,14 @@ fi
 echo ""
 
 # ==========================================
-# CHECK 5: Hardcoded Domain (WARNS)
+# CHECK 5: Hardcoded Domain (WARNS; the NAS hostname BLOCKS)
 # ==========================================
 echo -e "${BLUE}5. Checking for hardcoded domain...${NC}"
-check_hardcoded_domain
+# Called bare, its return 1 for the NAS hostname tripped set -e: the hook
+# died here, before checks 6-11 and without its summary.
+if ! check_hardcoded_domain; then
+    ERRORS=$((ERRORS + 1))
+fi
 echo ""
 
 # ==========================================
