@@ -323,6 +323,13 @@ if [ "$CREATE_TAR" = true ]; then
   TARBALL_SIZE=$(ls -lh "$TARBALL" | awk '{print $5}')
   echo "Created: $TARBALL ($TARBALL_SIZE)"
 
+  # The working copy holds every volume in plain text, .env included, and
+  # nothing ever removed it: on the NAS, whose /tmp is RAM, 26 days of them
+  # had piled up to 5.8 GB (found 2026-09-28). The archive now has it all.
+  case "$BACKUP_DIR" in
+    "$STAGING_ROOT"/arr-stack-backup-[0-9]*) rm -rf "$BACKUP_DIR" ;;
+  esac
+
   # GPG symmetric encryption (opt-in)
   if $ENCRYPT; then
     STEP="encrypting tarball"

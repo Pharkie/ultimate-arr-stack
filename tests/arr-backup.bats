@@ -129,6 +129,21 @@ run_backup() {
     assert_output --partial "arr-stack-backup-$STAMP/gluetun-config/config.xml"
 }
 
+# The plain-text working copy (.env and every config) was never removed; on
+# the NAS 26 of them sat in RAM-backed /tmp. With --tar the archive has it all.
+@test "--tar removes the plain-text working copy once the archive exists" {
+    run_backup --tar "$DEST"
+    assert_success
+    [ -f "$DEST/arr-stack-backup-$STAMP.tar.gz" ]
+    [ ! -e "$ARR_BACKUP_STAGING_ROOT/arr-stack-backup-$STAMP" ]
+}
+
+@test "without --tar the working copy is the backup, and stays" {
+    run_backup
+    assert_success
+    [ -f "$ARR_BACKUP_STAGING_ROOT/arr-stack-backup-$STAMP/dot-env" ]
+}
+
 @test "--encrypt with no destination leaves the .tar.gz.gpg in staging" {
     run_backup --tar --encrypt
     assert_success
