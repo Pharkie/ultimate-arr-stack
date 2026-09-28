@@ -332,6 +332,29 @@ run_image_check() {
     done
 }
 
+# The TTL was the cache FILE's age, and every write rewrites the file, so a
+# stale "current" lived on as long as any other image kept being written.
+@test "check_image_versions: an expired cache entry is re-checked even when the cache file is fresh" {
+    image_check_setup
+    ghcr_listing v3.4.1 v3.5.0 > "$IMG_T/ghcr1.json"
+    printf '%s\n' "ghcr.io/example/paged:v3.4.1=current|$(( $(date +%s) - 90000 ))" \
+        "ghcr.io/example/other:v1.0.0=current|$(date +%s)" > "$IMG_T/cache"
+    run_image_check ghcr.io/example/paged:v3.4.1
+    rm -rf "$IMG_T"
+    assert_success
+    assert_output --partial "UPDATE: paged v3.4.1 → v3.5.0 available"
+}
+
+@test "check_image_versions: a cache line without a timestamp is re-checked, not trusted" {
+    image_check_setup
+    ghcr_listing v3.4.1 v3.5.0 > "$IMG_T/ghcr1.json"
+    echo "ghcr.io/example/paged:v3.4.1=current" > "$IMG_T/cache"
+    run_image_check ghcr.io/example/paged:v3.4.1
+    rm -rf "$IMG_T"
+    assert_success
+    assert_output --partial "UPDATE: paged v3.4.1 → v3.5.0 available"
+}
+
 @test "check_image_versions: a GHCR listing that never ends is a named skip, not 'current'" {
     image_check_setup
     ghcr_listing v3.4.1 > "$IMG_T/ghcr1.json"

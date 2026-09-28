@@ -16,20 +16,21 @@ _GHCR_MAX_PAGES=10
 
 # Get cached result for an image, or empty if stale/missing
 _cache_get() {
-    local image="$1"
-    if [[ ! -f "$_IMAGE_CACHE" ]]; then
-        return 1
-    fi
+    local image="$1" line value stamp
+    [[ -f "$_IMAGE_CACHE" ]] || return 1
 
-    local cache_age
-    cache_age=$(( $(date +%s) - $(stat -f %m "$_IMAGE_CACHE" 2>/dev/null || stat -c %Y "$_IMAGE_CACHE" 2>/dev/null || echo 0) ))
-    if [[ $cache_age -gt $_CACHE_TTL ]]; then
-        rm -f "$_IMAGE_CACHE"
-        return 1
-    fi
-
-    # Simple grep-based lookup: "image=latest_tag"
-    grep "^${image}=" "$_IMAGE_CACHE" 2>/dev/null | cut -d= -f2-
+    # EACH ENTRY CARRIES ITS OWN TIMESTAMP ("image=latest|epoch"). The TTL
+    # used to be the cache FILE's age, and every _cache_set rewrites the file,
+    # so any new entry renewed all the old ones: seerr's wrong "current"
+    # outlived the 24 h by riding on other images' writes. Found 2026-09-28.
+    # A line in the old format has no stamp and reads as expired.
+    line=$(grep "^${image}=" "$_IMAGE_CACHE" 2>/dev/null | tail -1)
+    value=${line#*=}
+    [[ "$value" == *"|"* ]] || return 1
+    stamp=${value##*|}
+    [[ "$stamp" =~ ^[0-9]+$ ]] || return 1
+    (( $(date +%s) - stamp <= _CACHE_TTL )) || return 1
+    echo "${value%|*}"
 }
 
 # Store result in cache
@@ -40,7 +41,7 @@ _cache_set() {
         grep -v "^${image}=" "$_IMAGE_CACHE" > "${_IMAGE_CACHE}.tmp" 2>/dev/null || true
         mv "${_IMAGE_CACHE}.tmp" "$_IMAGE_CACHE"
     fi
-    echo "${image}=${latest}" >> "$_IMAGE_CACHE"
+    echo "${image}=${latest}|$(date +%s)" >> "$_IMAGE_CACHE"
 }
 
 # Pull the plain version tags out of one Docker Hub tag listing.
