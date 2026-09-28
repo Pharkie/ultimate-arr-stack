@@ -99,7 +99,7 @@ scp user@nas:/tmp/arr-stack-backup-*.tar.gz ./backup.tar.gz
    ```bash
    docker compose -f docker-compose.arr-stack.yml stop
    ```
-3. Extract backup and restore each volume:
+3. Extract backup and restore each volume (an `--encrypt` backup ends `.tar.gz.gpg`: run `gpg --decrypt backup.tar.gz.gpg > backup.tar.gz` first):
    ```bash
    tar -xzf backup.tar.gz
    cd arr-stack-backup-20241217
@@ -141,7 +141,8 @@ docker compose -f docker-compose.arr-stack.yml start seerr
 
 Options:
   --tar           Create .tar.gz archive (recommended)
-  --encrypt       GPG-encrypt the tarball, symmetric (requires --tar)
+  --encrypt       GPG-encrypt the tarball, symmetric (requires --tar);
+                  the archive is named .tar.gz.gpg
   --prefix NAME   Override volume prefix (default: auto-detect)
   --usb DIR_NAME  Save to DIR_NAME on whichever USB drive is under /mnt/@usb/sd*/
                   (device letters change on reboot, so don't hardcode one)
@@ -185,7 +186,7 @@ sudo crontab -l
 - ✓ Backs up to `/tmp` first (reliable), then moves to USB
 - ✓ Checks actual tarball size vs destination space before moving
 - ✓ Falls back to `/tmp` if USB lacks space (with warning)
-- ✓ Keeps 7 days of backups on USB, auto-rotates old ones
+- ✓ Keeps 7 days of backups on USB, auto-rotates old ones (`.tar.gz` and encrypted `.tar.gz.gpg`)
 - ✓ EXIT trap ensures critical services stay running no matter what
 - ✓ Does NOT stop services during backup
 
