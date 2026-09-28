@@ -9,6 +9,11 @@ source "$(dirname "${BASH_SOURCE[0]}")/common.sh"
 _IMAGE_CACHE="/tmp/arr-stack-image-cache.json"
 _CACHE_TTL=86400  # seconds (24 hours)
 
+# GHCR tag listing: tags per page, and how many pages to follow before
+# giving up (10 x 1000 is well past the biggest listing here, seerr's ~440).
+_GHCR_PAGE_SIZE=1000
+_GHCR_MAX_PAGES=10
+
 # Get cached result for an image, or empty if stale/missing
 _cache_get() {
     local image="$1"
@@ -98,6 +103,8 @@ _query_dockerhub() {
 
 # Query GHCR for tags
 # Args: $1=owner/image (e.g. "flaresolverr/flaresolverr"), $2=current tag
+# Returns: version tags on stdout; 1 if the registry did not answer; 2 if the
+# listing ran past _GHCR_MAX_PAGES pages and was not read to the end.
 _query_ghcr() {
     local repo="$1"
 
@@ -117,15 +124,44 @@ _query_ghcr() {
             | sed -n 's/.*"token":"\([^"]*\)".*/\1/p')
     [[ -z "$token" ]] && return 1
 
-    local url="https://ghcr.io/v2/${repo}/tags/list?n=200"
+    # FOLLOW THE Link: rel="next" HEADER. GHCR pages the listing and orders it
+    # by push, oldest first, so the newest releases are on the LAST page. It
+    # used to read one page of 200: seerr's stopped at v3.1.0, v3.4.1 and
+    # v3.5.0 sat on pages 2 and 3, and the pinned v3.4.1 was cached "current".
+    # Found 2026-09-28.
+    local url="https://ghcr.io/v2/${repo}/tags/list?n=${_GHCR_PAGE_SIZE}"
+    local hdrs response next all="" pages=0
+    hdrs=$(mktemp) || return 1
 
-    local response
-    # 3s was too tight once a token round-trip is involved.
-    response=$(curl -s --max-time 10 -H "Authorization: Bearer $token" "$url" 2>/dev/null) || return 1
-    # {"errors":[...TOOMANYREQUESTS...]} is not an answer; a tag list has "tags".
-    [[ "$response" == *'"tags"'* ]] || return 1
+    while [[ -n "$url" ]]; do
+        # Out of pages with more to come: the newest tags are the unread
+        # ones, so a partial listing would say "current" exactly when wrong.
+        if (( pages++ >= _GHCR_MAX_PAGES )); then
+            rm -f "$hdrs"
+            return 2
+        fi
+        # 3s was too tight once a token round-trip is involved.
+        response=$(curl -s --max-time 10 -D "$hdrs" -H "Authorization: Bearer $token" "$url" 2>/dev/null) \
+            || { rm -f "$hdrs"; return 1; }
+        # {"errors":[...TOOMANYREQUESTS...]} is not an answer; a tag list has
+        # "tags". That goes for every page: page 1 alone is not the listing.
+        [[ "$response" == *'"tags"'* ]] || { rm -f "$hdrs"; return 1; }
+        all+="$response"$'\n'
+        next=$(tr -d '\r' < "$hdrs" \
+               | sed -n 's/^[Ll][Ii][Nn][Kk]:[[:space:]]*<\([^>]*\)>.*rel="\{0,1\}next.*/\1/p' | head -1)
+        # GHCR sends </v2/...?last=...&n=...>, relative to itself. A next page
+        # in any other form is not silently dropped (that would be page 1 again
+        # posing as the listing), and the token never leaves ghcr.io.
+        case "$next" in
+            "")                url="" ;;
+            /*)                url="https://ghcr.io$next" ;;
+            https://ghcr.io/*) url="$next" ;;
+            *)                 rm -f "$hdrs"; return 1 ;;
+        esac
+    done
+    rm -f "$hdrs"
 
-    echo "$response" | grep -oE '"[v]?[0-9][^"]*"' | tr -d '"' | while read -r tag; do
+    echo "$all" | grep -oE '"[v]?[0-9][^"]*"' | tr -d '"' | while read -r tag; do
         case "$tag" in
             *-beta*|*-alpha*|*-rc*|*-dev*) continue ;;
         esac
@@ -333,6 +369,7 @@ check_image_versions() {
             ((skipped++))
             local reason="registry did not answer"
             [[ $query_rc -eq 0 ]] && reason="registry answered, but with no version tags"
+            [[ $query_rc -eq 2 ]] && reason="tag listing runs past ${_GHCR_MAX_PAGES} pages, newest tags unread"
             skip_lines+=("$image_ref not checked - $reason")
             # DELIBERATELY NOT CACHED. This used to _cache_set "current" here,
             # which turned a failed lookup into a positive "you are up to date"
