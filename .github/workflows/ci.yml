@@ -1,210 +1,33 @@
-# CI for arr-stack.
+# Being rewritten. Kept from the previous file because they are the owner's
+# own: the devcontainer job below, and the "pull with retries" step pattern
+# each job used before running its tool images:
 #
-# Everything here also runs locally: the bats suite is what the pre-commit
-# hook and tests/run-tests.sh run. The NAS rule in CLAUDE.md is unchanged —
-# nothing here touches the stack. CI exists so a change from a machine
-# without the hooks (a fork, a web edit) meets the same bar before it can
-# merge, and so the checks that need a network — registry tags, vulnerability
-# databases — run somewhere that has one.
+#   - name: Pull the tool images (retried — a registry hiccup must not fail a required check)
+#     run: |
+#       for img in <image@digest> ...; do
+#         for attempt in 1 2 3 4; do
+#           docker pull -q "$img" && break
+#           echo "pull of $img failed (attempt $attempt); retrying in $((attempt * 15))s"
+#           sleep $((attempt * 15))
+#         done
+#         docker image inspect "$img" >/dev/null 2>&1 || { echo "::error::could not pull $img after 4 attempts"; exit 1; }
+#       done
 #
-# Blocking on every pull request and on main: bats, lint, supply-chain. Nightly and on
-# demand: the container-image CVE scan, which is diagnostic — it uploads a
-# report and never fails the run, because a CVE in an upstream image is
-# information for the next bump, not a reason to block a docs change.
-#
-# Every action is pinned to a commit SHA and every tool image to a digest;
-# the human-readable version sits in the comment beside it. Renovate bumps
-# the action SHAs (helpers:pinGitHubActionDigests); the image digests are
-# bumped by hand with the version comment. docs/QUALITY-CONTROL-MAP.md says
-# what each job covers and what nothing covers yet.
+# Pinned tool images it pulled:
+#   rhysd/actionlint:1.7.12@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
+#   hadolint/hadolint:v2.15.1@sha256:32dac94127fd60b7b7e3fbfc65e1383b9b5e25c9bfd7b8536de7a539fe68a12d
+#   koalaman/shellcheck:v0.11.0@sha256:61862eba1fcf09a484ebcc6feea46f1782532571a34ed51fedf90dd25f925a8d
+#   anchore/syft:v1.51.1@sha256:95fe0835e5bebc6f8b1f8acef68d47d63d594ef4c0f25c097ff853b23cbac74c
+#   aquasec/trivy:0.74.0@sha256:62b1e65e8869bc4b4c6aa4fa2b21595256c7c2f6018a9d9ad61caf87187c1969
 name: CI
 
 on:
-  pull_request:
-    branches: [main]
-  push:
-    branches: [main]
-  workflow_dispatch: {}
-  schedule:
-    - cron: '17 4 * * *'   # nightly, UTC
-
-concurrency:
-  group: ci-${{ github.ref }}-${{ github.event_name }}
-  cancel-in-progress: ${{ github.event_name != 'schedule' }}
+  workflow_dispatch:
 
 permissions:
   contents: read
 
-defaults:
-  run:
-    shell: bash
-
 jobs:
-  bats:
-    name: bats suite
-    if: github.event_name != 'schedule'
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          submodules: true
-      - name: Install the repo's git hooks
-        # tests/hooks-installed.bats asserts the symlinks setup-hooks.sh makes.
-        run: ./setup-hooks.sh
-      - name: Run the suite
-        # docker compose, python3, curl and shellcheck are all on ubuntu-latest.
-        # Registry-tag checks talk to Docker Hub and GHCR — this is the one
-        # place they always have a network.
-        run: ./tests/run-tests.sh 2>&1 | tee "$RUNNER_TEMP/bats.log"
-      - name: Summary
-        if: always()
-        run: |
-          {
-            echo '## bats'
-            echo '```'
-            grep -E '^(ok|not ok|1\.\.)' "$RUNNER_TEMP/bats.log" | tail -n 150 || true
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
-
-  lint:
-    name: lint (actionlint, hadolint, shellcheck warnings)
-    if: github.event_name != 'schedule'
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Pull the tool images (retried — a registry hiccup must not fail a required check)
-        run: |
-          for img in rhysd/actionlint:1.7.12@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667 hadolint/hadolint:v2.15.1@sha256:32dac94127fd60b7b7e3fbfc65e1383b9b5e25c9bfd7b8536de7a539fe68a12d koalaman/shellcheck:v0.11.0@sha256:61862eba1fcf09a484ebcc6feea46f1782532571a34ed51fedf90dd25f925a8d; do
-            for attempt in 1 2 3 4; do
-              docker pull -q "$img" && break
-              echo "pull of $img failed (attempt $attempt); retrying in $((attempt * 15))s"
-              sleep $((attempt * 15))
-            done
-            docker image inspect "$img" >/dev/null 2>&1 || { echo "::error::could not pull $img after 4 attempts"; exit 1; }
-          done
-      - name: actionlint — the workflows themselves
-        run: docker run --rm -v "$PWD:/repo" -w /repo rhysd/actionlint:1.7.12@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667 -color
-      - name: hadolint — the devcontainer Dockerfile (policy in .hadolint.yaml)
-        run: docker run --rm -v "$PWD:/repo" -w /repo hadolint/hadolint:v2.15.1@sha256:32dac94127fd60b7b7e3fbfc65e1383b9b5e25c9bfd7b8536de7a539fe68a12d hadolint .devcontainer/Dockerfile
-      - name: shellcheck at warning severity (advisory — the bats gate is error)
-        continue-on-error: true
-        run: |
-          mapfile -t files < <(git ls-files 'scripts/*.sh' 'scripts/lib/*.sh' 'scripts/pre-commit' 'setup-hooks.sh' 'tests/run-tests.sh')
-          docker run --rm -v "$PWD:/mnt" -w /mnt koalaman/shellcheck:v0.11.0@sha256:61862eba1fcf09a484ebcc6feea46f1782532571a34ed51fedf90dd25f925a8d -S warning -x "${files[@]}"
-
-  supply-chain:
-    name: supply chain (trivy, sbom)
-    if: github.event_name != 'schedule'
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Pull the tool images (retried — a registry hiccup must not fail a required check)
-        run: |
-          for img in anchore/syft:v1.51.1@sha256:95fe0835e5bebc6f8b1f8acef68d47d63d594ef4c0f25c097ff853b23cbac74c aquasec/trivy:0.74.0@sha256:62b1e65e8869bc4b4c6aa4fa2b21595256c7c2f6018a9d9ad61caf87187c1969; do
-            for attempt in 1 2 3 4; do
-              docker pull -q "$img" && break
-              echo "pull of $img failed (attempt $attempt); retrying in $((attempt * 15))s"
-              sleep $((attempt * 15))
-            done
-            docker image inspect "$img" >/dev/null 2>&1 || { echo "::error::could not pull $img after 4 attempts"; exit 1; }
-          done
-      - name: SBOM (syft — SPDX and CycloneDX)
-        run: |
-          # Playwright is a devDependency and the only JS here; syft and trivy both
-          # skip dev dependencies by default, which made the first SBOM two entries
-          # long and the first vulnerability scan cover zero packages.
-          docker run --rm -v "$PWD:/repo" -w /repo -e SYFT_JAVASCRIPT_INCLUDE_DEV_DEPENDENCIES=true \
-            anchore/syft:v1.51.1@sha256:95fe0835e5bebc6f8b1f8acef68d47d63d594ef4c0f25c097ff853b23cbac74c \
-            dir:. --exclude './node_modules/**' --exclude './tests/bats-*/**' \
-            -o spdx-json=/repo/sbom.spdx.json -o cyclonedx-json=/repo/sbom.cyclonedx.json
-      - name: Upload the SBOM
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: sbom
-          path: |
-            sbom.spdx.json
-            sbom.cyclonedx.json
-          retention-days: 30
-      - name: trivy — vulnerabilities, misconfiguration and secrets in the tree (HIGH and CRITICAL block)
-        run: |
-          mkdir -p "$HOME/.cache/trivy"
-          docker run --rm -v "$PWD:/repo" -w /repo -v "$HOME/.cache/trivy:/root/.cache/trivy" \
-            aquasec/trivy:0.74.0@sha256:62b1e65e8869bc4b4c6aa4fa2b21595256c7c2f6018a9d9ad61caf87187c1969 \
-            fs --scanners vuln,misconfig,secret --include-dev-deps --severity HIGH,CRITICAL --exit-code 1 --no-progress \
-            --skip-dirs node_modules,tests/bats-core,tests/bats-support,tests/bats-assert .
-
-  nightly:
-    name: nightly — container image CVEs (diagnostic)
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
-    timeout-minutes: 90
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Pull the tool images (retried — a registry hiccup must not fail a required check)
-        run: |
-          for img in aquasec/trivy:0.74.0@sha256:62b1e65e8869bc4b4c6aa4fa2b21595256c7c2f6018a9d9ad61caf87187c1969; do
-            for attempt in 1 2 3 4; do
-              docker pull -q "$img" && break
-              echo "pull of $img failed (attempt $attempt); retrying in $((attempt * 15))s"
-              sleep $((attempt * 15))
-            done
-            docker image inspect "$img" >/dev/null 2>&1 || { echo "::error::could not pull $img after 4 attempts"; exit 1; }
-          done
-      - name: Scan every image the compose files pin
-        # Never fails the job: an upstream CVE is input to the next image bump,
-        # not a reason to block a docs change. The report is the artifact.
-        run: |
-          mkdir -p "$HOME/.cache/trivy" trivy-images
-          # The image list comes from compose itself, so variables and quoting
-          # are resolved rather than grepped around.
-          for f in docker-compose*.yml; do
-            docker compose -f "$f" --env-file tests/fixtures/.env.test config --format json \
-              | python3 -c 'import json,sys; [print(s["image"]) for s in json.load(sys.stdin).get("services",{}).values() if s.get("image")]'
-          done | sort -u > trivy-images/images.txt
-          echo "$(wc -l < trivy-images/images.txt) images"
-          while IFS= read -r img; do
-            safe=$(printf '%s' "$img" | tr '/:@' '___')
-            docker run --rm -v "$HOME/.cache/trivy:/root/.cache/trivy" -v "$PWD/trivy-images:/out" \
-              aquasec/trivy:0.74.0@sha256:62b1e65e8869bc4b4c6aa4fa2b21595256c7c2f6018a9d9ad61caf87187c1969 \
-              image --severity HIGH,CRITICAL --format json --output "/out/$safe.json" --no-progress "$img" \
-              || echo "::warning::trivy could not scan $img"
-          done < trivy-images/images.txt
-      - name: Summary — HIGH and CRITICAL counts per image
-        if: always()
-        run: |
-          python3 - <<'PY' >> "$GITHUB_STEP_SUMMARY"
-          import json, os
-          # Driven by the image list, not by whichever reports exist: an image
-          # that could not be scanned is a row that says so, never a silence.
-          print("## container image CVEs (HIGH / CRITICAL)\n")
-          print("| image | HIGH | CRITICAL |")
-          print("| --- | ---: | ---: |")
-          for img in open("trivy-images/images.txt").read().split():
-              f = "trivy-images/" + img.translate(str.maketrans("/:@", "___")) + ".json"
-              if not os.path.exists(f):
-                  print(f"| {img} | scan failed | scan failed |"); continue
-              try:
-                  d = json.load(open(f))
-              except Exception:
-                  print(f"| {img} | unreadable report | unreadable report |"); continue
-              hi = cr = 0
-              for r in d.get("Results") or []:
-                  for v in r.get("Vulnerabilities") or []:
-                      if v.get("Severity") == "HIGH": hi += 1
-                      elif v.get("Severity") == "CRITICAL": cr += 1
-              print(f"| {img} | {hi} | {cr} |")
-          PY
-      - name: Upload the reports
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: trivy-images
-          path: trivy-images/
-          retention-days: 14
-
   devcontainer:
     name: nightly — the devcontainer builds
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
