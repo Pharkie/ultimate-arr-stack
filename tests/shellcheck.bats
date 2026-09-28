@@ -25,12 +25,12 @@ setup() {
 }
 
 # Every shell file in the repo. scripts/pre-commit has no extension and is the
-# one most worth checking, so it is listed explicitly rather than globbed.
+# one most worth checking, so it is listed explicitly. The rest come from git,
+# not from globs over scripts/: those missed setup-hooks.sh, tests/run-tests.sh
+# and duc/scan.sh, which the NAS runs inside the duc container.
 shell_files() {
-    printf '%s\n' \
-        scripts/pre-commit \
-        "$REPO_ROOT"/scripts/*.sh \
-        "$REPO_ROOT"/scripts/lib/*.sh
+    printf '%s\n' scripts/pre-commit
+    git -C "$REPO_ROOT" ls-files '*.sh' | sed "s|^|$REPO_ROOT/|"
 }
 
 @test "shell scripts have no shellcheck errors" {
