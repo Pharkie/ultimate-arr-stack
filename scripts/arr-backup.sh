@@ -58,7 +58,7 @@ notify_failure() {
   if [ -n "${HA_WEBHOOK_URL:-}" ]; then
     curl -s -m 10 -X POST "$HA_WEBHOOK_URL" \
       -H "Content-Type: application/json" \
-      -d "{\"title\":\"Arr Stack: Backup Failed\",\"message\":\"${msg}\"}" || true
+      -d "{\"title\":\"Arr Stack: Backup Failed\",\"message\":\"${msg}\",\"level\":\"critical\"}" || true
   fi
 }
 STEP="initialising"
@@ -67,6 +67,12 @@ trap 'notify_failure "Failed during: ${STEP}. Check /var/log/arr-backup.log"' ER
 # Derive stack directory from script location (scripts/ is one level below stack root)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 NAS_STACK_DIR="$(dirname "$SCRIPT_DIR")"
+
+# Cron hands the script no environment and nothing else loads .env, so read
+# the alert webhook from it here. Without this, alerts never went anywhere.
+if [ -z "${HA_WEBHOOK_URL:-}" ] && [ -f "$NAS_STACK_DIR/.env" ]; then
+  HA_WEBHOOK_URL=$(sed -n 's/^HA_WEBHOOK_URL=//p' "$NAS_STACK_DIR/.env" | tail -n 1 | tr -d "\"'")
+fi
 
 # Ensure critical services are running on ANY exit (normal, error, or interrupt)
 ensure_services_running() {

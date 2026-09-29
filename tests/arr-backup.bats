@@ -589,3 +589,17 @@ run_backup() {
     [ "$(grep -cE '^exec [a-z]+ curl .*-X DELETE' "$STUB_LOG")" -eq 2 ]
     [ "$(grep -cE '^exec [a-z]+ curl .*-X (PUT|PATCH)' "$STUB_LOG")" -eq 0 ]
 }
+
+# notify_failure only read HA_WEBHOOK_URL from the environment, and cron sets
+# none, so a failed backup alerted nobody (found 2026-09-29). It now falls back
+# to the stack's .env.
+@test "a failure alert goes to the HA_WEBHOOK_URL in the stack's .env" {
+    printf 'FAKE_SECRET=1\nHA_WEBHOOK_URL="http://ha.example.invalid/api/webhook/test-hook"\n' > "$STACK/.env"
+    printf '#!/bin/sh\nprintf "%%s\\n" "$@" >> "%s"\n' "$BATS_TEST_TMPDIR/curl.log" > "$STUB_BIN/curl"
+    chmod +x "$STUB_BIN/curl"
+    run_backup --usb no-such-backup-dir
+    assert_failure
+    grep -qx 'http://ha.example.invalid/api/webhook/test-hook' "$BATS_TEST_TMPDIR/curl.log"
+    grep -q 'Backup Failed' "$BATS_TEST_TMPDIR/curl.log"
+    grep -q '"level":"critical"' "$BATS_TEST_TMPDIR/curl.log"
+}

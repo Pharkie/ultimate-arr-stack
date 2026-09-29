@@ -43,6 +43,12 @@ set -euo pipefail
 # Derive stack directory from script location
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 NAS_STACK_DIR="$(dirname "$SCRIPT_DIR")"
+
+# Cron hands the script no environment and nothing else loads .env, so read
+# the alert webhook from it here. Without this, alerts never went anywhere.
+if [ -z "${HA_WEBHOOK_URL:-}" ] && [ -f "$NAS_STACK_DIR/.env" ]; then
+  HA_WEBHOOK_URL=$(sed -n 's/^HA_WEBHOOK_URL=//p' "$NAS_STACK_DIR/.env" | tail -n 1 | tr -d "\"'")
+fi
 LOG_FILE="$NAS_STACK_DIR/logs/queue-cleanup.log"
 MAX_LOG_LINES=1000
 
@@ -391,7 +397,7 @@ PYEOF
 if $APPLY && [[ -n "${HA_WEBHOOK_URL:-}" ]]; then
   curl -s -m 10 -X POST "$HA_WEBHOOK_URL" \
     -H "Content-Type: application/json" \
-    -d "{\"title\":\"Queue Cleanup\",\"message\":\"Weekly queue cleanup completed. Check $NAS_STACK_DIR/logs/queue-cleanup.log for details.\"}" || true
+    -d "{\"title\":\"Queue Cleanup\",\"message\":\"Weekly queue cleanup completed. Check $NAS_STACK_DIR/logs/queue-cleanup.log for details.\",\"level\":\"info\"}" || true
 fi
 
 # --- Trim log file ---
