@@ -58,7 +58,7 @@ notify_failure() {
   if [ -n "${HA_WEBHOOK_URL:-}" ]; then
     curl -s -m 10 -X POST "$HA_WEBHOOK_URL" \
       -H "Content-Type: application/json" \
-      -d "{\"title\":\"Arr Stack: Backup Failed\",\"message\":\"${msg}\"}" || true
+      -d "{\"title\":\"Arr Stack: Backup Failed\",\"message\":\"${msg}\",\"level\":\"critical\"}" || true
   fi
 }
 STEP="initialising"

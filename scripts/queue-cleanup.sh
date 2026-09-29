@@ -397,7 +397,7 @@ PYEOF
 if $APPLY && [[ -n "${HA_WEBHOOK_URL:-}" ]]; then
   curl -s -m 10 -X POST "$HA_WEBHOOK_URL" \
     -H "Content-Type: application/json" \
-    -d "{\"title\":\"Queue Cleanup\",\"message\":\"Weekly queue cleanup completed. Check $NAS_STACK_DIR/logs/queue-cleanup.log for details.\"}" || true
+    -d "{\"title\":\"Queue Cleanup\",\"message\":\"Weekly queue cleanup completed. Check $NAS_STACK_DIR/logs/queue-cleanup.log for details.\",\"level\":\"info\"}" || true
 fi
 
 # --- Trim log file ---

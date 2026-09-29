@@ -601,4 +601,5 @@ run_backup() {
     assert_failure
     grep -qx 'http://ha.example.invalid/api/webhook/test-hook' "$BATS_TEST_TMPDIR/curl.log"
     grep -q 'Backup Failed' "$BATS_TEST_TMPDIR/curl.log"
+    grep -q '"level":"critical"' "$BATS_TEST_TMPDIR/curl.log"
 }
