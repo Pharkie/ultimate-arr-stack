@@ -1,0 +1,226 @@
+# Arr-stack notifications: ONE Home Assistant automation, ONE webhook, every sender.
+# Paste into automations.yaml (or Settings → Automations → ⋮ → Edit in YAML),
+# then change the two CHANGE-ME values. See docs/HOME-ASSISTANT.md.
+#
+# Three body shapes arrive and are normalised into one notice (title, message,
+# optional link, level):
+#   1. GENERIC  {"title", "message", "level"?, "url"?, "tag"?}: the stack's own
+#      scripts (backup failure = critical, weekly queue-cleanup report = info).
+#      Any new sender should use this shape. The same `tag` replaces a notice.
+#   2. ARR      Sonarr/Radarr's webhook (`eventType` + `series`/`episodes` or
+#      `movie`). Health and ManualInteractionRequired are `warning`, the rest `info`.
+#   3. DIUN     top-level `image`, `status` (new|update), `hub_link`, `hostname`.
+#   Anything else still produces a `warning` saying it wasn't recognised.
+#
+# Levels: info = notification panel only; warning (default) = panel + push;
+#         critical = the same as warning (a normal push respects Focus modes).
+#
+# Senders MUST send `Content-Type: application/json`: Home Assistant parses a
+# webhook body as JSON only when the header says so.
+#
+# Generated with LLM assistance and human-reviewed, and tested end to end
+# against Sonarr 4, Radarr 6, DIUN 4.33 and the stack's scripts. Read it
+# before you use it.
+
+- id: arr_stack_notifications
+  alias: Arr stack notifications
+  description: Every arr-stack sender (Sonarr, Radarr, DIUN, the stack's own
+    scripts) posts to one webhook; one notice in the HA panel, and a phone push
+    for warning/critical.
+  triggers:
+  # Every sender posts from the NAS straight to http://<HA LAN IP>:8123, never
+  # through Nabu Casa or a reverse proxy, so local_only costs nothing and keeps
+  # the webhook off the internet. Use an ID nobody could guess.
+  - trigger: webhook
+    webhook_id: arr-stack-notify-CHANGE-ME
+    allowed_methods:
+    - POST
+    local_only: true
+  actions:
+  - variables:
+      j: '{{ trigger.json if trigger.json is defined and trigger.json is mapping
+        else {} }}'
+      # Order matters only in theory: no generic body carries `eventType`, and
+      # no Sonarr/Radarr body carries a top-level `image`.
+      kind: >-
+        {%- if j.eventType is defined -%}arr
+        {%- elif j.image is defined and j.status is defined -%}diun
+        {%- elif j.title is defined or j.message is defined -%}generic
+        {%- else -%}unknown
+        {%- endif -%}
+      # ---- Sonarr/Radarr helpers. Empty for every other kind. -------------
+      # Field names are from REAL payloads in the traces, not the docs: Sonarr
+      # v4 sends `episodeFiles` (a list) where the docs say `episodeFile`, and
+      # leaves `isUpgrade` out entirely unless it is true. Both are handled.
+      app: >-
+        {%- if kind == 'arr' -%}
+          {{- j.get('instanceName') or ('Sonarr' if j.get('series') else 'Radarr' if j.get('movie') else 'Sonarr/Radarr') -}}
+        {%- endif -%}
+      # S01E02; S01E02–E04 for a multi-episode file; S01E10–S02E01 across seasons.
+      ep_code: >-
+        {%- set e = j.get('episodes') if kind == 'arr' else none -%}
+        {%- set eps = (e if e is sequence and e is not string and e is not mapping else [])
+              | select('mapping') | sort(attribute='seasonNumber,episodeNumber') | list -%}
+        {%- if eps -%}
+          {%- set a = eps | first -%}{%- set b = eps | last -%}
+          {{- 'S%02dE%02d' | format(a.get('seasonNumber') | int(0), a.get('episodeNumber') | int(0)) -}}
+          {%- if eps | count > 1 and b.get('seasonNumber') == a.get('seasonNumber') -%}
+            {{- '–E%02d' | format(b.get('episodeNumber') | int(0)) -}}
+          {%- elif eps | count > 1 -%}
+            {{- '–S%02dE%02d' | format(b.get('seasonNumber') | int(0), b.get('episodeNumber') | int(0)) -}}
+          {%- endif -%}
+        {%- endif -%}
+      # The episode's own title, only when the file is ONE episode.
+      ep_title: >-
+        {%- set e = j.get('episodes') if kind == 'arr' else none -%}
+        {%- if e is sequence and e is not string and e | count == 1 and e[0] is mapping -%}
+          {{- e[0].get('title') or '' -}}
+        {%- endif -%}
+      # "Movie (2026)" or "Series S01E02" — what a manual-import title names.
+      media_short: >-
+        {%- set m = j.get('movie') if kind == 'arr' else none -%}
+        {%- set sr = j.get('series') if kind == 'arr' else none -%}
+        {%- if m is mapping and m.get('title') -%}
+          {{- m.get('title') ~ ((' (' ~ m.get('year') ~ ')') if m.get('year') | int(0) > 0 else '') -}}
+        {%- elif sr is mapping and sr.get('title') -%}
+          {{- sr.get('title') ~ ((' ' ~ ep_code) if ep_code else '') -}}
+        {%- endif -%}
+      # ...plus " – Episode title" for a single episode.
+      media: >-
+        {%- if media_short -%}
+          {{- media_short ~ ((' – ' ~ ep_title) if ep_title and j.get('series') else '') -}}
+        {%- endif -%}
+      # The release name, for the rare body that names no movie or series.
+      release_title: >-
+        {%- if kind == 'arr' -%}
+          {%- set di = j.get('downloadInfo') if j.get('downloadInfo') is mapping else {} -%}
+          {%- set rl = j.get('release') if j.get('release') is mapping else {} -%}
+          {{- di.get('title') or rl.get('releaseTitle') or '' -}}
+        {%- endif -%}
+      # First quality found, most specific first: the imported file, then the
+      # release, then the queue item.
+      quality: >-
+        {%- if kind == 'arr' -%}
+          {%- set ef = j.get('episodeFiles') -%}
+          {%- set c = [
+                j.get('movieFile').get('quality') if j.get('movieFile') is mapping else none,
+                j.get('episodeFile').get('quality') if j.get('episodeFile') is mapping else none,
+                ef[0].get('quality') if ef is sequence and ef is not string and ef | count > 0 and ef[0] is mapping else none,
+                j.get('release').get('quality') if j.get('release') is mapping else none,
+                j.get('downloadInfo').get('quality') if j.get('downloadInfo') is mapping else none] -%}
+          {{- c | select('string') | reject('eq', '') | first | default('') -}}
+        {%- endif -%}
+      # The first non-empty downloadStatusMessages[].messages[] entry, one line,
+      # at most 200 characters, trailing full stop dropped (the sentence it is
+      # spliced into supplies one).
+      status_message: >-
+        {%- set ns = namespace(m='') -%}
+        {%- set sms = j.get('downloadStatusMessages') if kind == 'arr' else none -%}
+        {%- for sm in (sms if sms is sequence and sms is not string else []) if sm is mapping -%}
+          {%- set ms = sm.get('messages') -%}
+          {%- for x in (ms if ms is sequence and ms is not string else []) if x is string and x | trim and not ns.m -%}
+            {%- set ns.m = x | trim -%}
+          {%- endfor -%}
+        {%- endfor -%}
+        {%- set t = ns.m | regex_replace('\\s+', ' ') -%}
+        {%- set t = (t[:200] ~ '…') if t | length > 200 else t -%}
+        {{- t.rstrip('.') -}}
+      # Every notice says what happened and, where there is one, what to do.
+      title: >-
+        {%- set ev = j.get('eventType') -%}
+        {%- if kind == 'arr' -%}
+          {%- if ev == 'Test' -%}{{ app }}: test notification
+          {%- elif ev == 'Download' -%}{{ 'Upgraded: ' if j.get('isUpgrade') else 'Ready to watch: ' }}{{ media or release_title or app ~ ' download' }}
+          {%- elif ev == 'Grab' -%}Downloading: {{ media or release_title or 'a release' }}
+          {%- elif ev == 'ManualInteractionRequired' -%}Needs manual import: {{ media_short or release_title or 'a download' }}
+          {%- elif ev == 'Health' -%}{{ app }} needs attention
+          {%- elif ev == 'HealthRestored' -%}{{ app }} is healthy again
+          {%- elif ev == 'ApplicationUpdate' -%}{{ app }} updated to {{ j.get('newVersion') or 'a new version' }}
+          {%- else -%}{{ app }}: {{ ev }}
+          {%- endif -%}
+        {%- elif kind == 'diun' -%}Image update available
+        {%- elif kind == 'generic' -%}{{ j.title | default('Arr stack', true) }}
+        {%- else -%}Arr stack: unrecognised notification
+        {%- endif -%}
+      message: >-
+        {%- set ev = j.get('eventType') -%}
+        {%- set q = (' (' ~ quality ~ ')') if quality else '' -%}
+        {%- if kind == 'arr' -%}
+          {%- if ev == 'Test' -%}{{ app }} can reach Home Assistant. Nothing to do.
+          {%- elif ev == 'Download' and j.get('isUpgrade') -%}Replaced with a better copy{{ q }}.
+          {%- elif ev == 'Download' -%}Downloaded and imported{{ q }}.
+          {%- elif ev == 'Grab' -%}Sent to {{ j.get('downloadClient') or 'the download client' }}{{ q }}. Nothing to do yet.
+          {%- elif ev == 'ManualInteractionRequired' -%}{{ app }} downloaded it but won't import it on its own{{ (': ' ~ status_message) if status_message else '' }}. Open {{ app }} → Activity → Queue and import it.
+          {%- elif ev == 'Health' -%}{{ j.get('message') or 'A health check failed.' }}
+          {%- elif ev == 'HealthRestored' -%}Resolved: {{ j.get('message') or 'the failing health check now passes.' }}
+          {%- elif ev == 'ApplicationUpdate' -%}Updated from {{ j.get('previousVersion') or 'the previous version' }}. Nothing to do.
+          {%- else -%}{{ media or release_title or j.get('message') or 'No details in the payload.' }}
+          {%- endif -%}
+        {%- elif kind == 'diun' -%}
+          {%- if j.get('status') == 'update' -%}{{ j.image }} was rebuilt upstream (same tag). Recreate it to pick it up.
+          {%- else -%}A newer {{ j.image }} was published. Renovate will propose the bump on Monday; nothing to do now.
+          {%- endif -%}
+        {%- elif kind == 'generic' -%}{{ j.message | default('(no message)', true) }}
+        {%- elif trigger.json is defined -%}Body not in any known shape: {{ (trigger.json | tojson)[:600] }}
+        {%- else -%}No JSON body. The sender must send Content-Type: application/json.
+        {%- endif -%}
+      level: >-
+        {%- if kind == 'arr' -%}{{ 'warning' if j.get('eventType') in ['Health', 'ManualInteractionRequired'] else 'info' }}
+        {%- elif kind == 'generic' -%}
+          {%- set l = j.level | default('warning', true) | string | lower -%}
+          {{- l if l in ['info', 'warning', 'critical'] else 'warning' -}}
+        {%- else -%}warning
+        {%- endif -%}
+      # Only an http(s) URL becomes a link. DIUN's hub_link is empty for
+      # registries it cannot build a page for, and an empty `url` is not
+      # something to hand the companion app.
+      link: >-
+        {%- if kind == 'diun' -%}{% set u = j.hub_link | default('') %}
+        {%- elif kind == 'generic' -%}{% set u = j.url | default('') %}
+        {%- elif kind == 'arr' and j.eventType in ['Health', 'HealthRestored'] -%}{% set u = j.wikiUrl | default('') %}
+        {%- else -%}{% set u = '' %}
+        {%- endif -%}
+        {{- u if u is string and u.startswith('http') else '' -}}
+      # The panel's notification_id AND the push `tag`: the same tag replaces
+      # the earlier notice in both places. DIUN per image; a Sonarr/Radarr
+      # health check per check, so HealthRestored replaces its own warning;
+      # a generic sender only if it asks. Everything else is unique and stacks,
+      # which is what the old arr automation did.
+      tag: >-
+        {%- if kind == 'diun' -%}diun_{{ j.image | slugify }}
+        {%- elif kind == 'arr' and j.eventType in ['Health', 'HealthRestored'] -%}arr_{{ (j.instanceName | default('arr', true) ~ '_health_' ~ j.type | default('')) | slugify }}
+        {%- elif kind == 'generic' and j.tag | default('', true) -%}arrstack_{{ j.tag | string | slugify }}
+        {%- else -%}arrstack_{{ context.id | lower }}
+        {%- endif -%}
+      panel_message: >-
+        {{- message -}}
+        {%- if link -%}{{ '\n\n' }}[Open link]({{ link }}){%- endif -%}
+      # APNs caps the whole payload at 4 KB; a weekly report can be longer.
+      # `| string` because HA parses rendered variables: a bare "42" is an int.
+      push_message: >-
+        {%- set m = message | string -%}
+        {{- m if m | length <= 900 else m[:900] ~ ' …' -}}
+      push_data: >-
+        {%- set d = {'tag': tag, 'push': {'thread-id': 'arr-stack-' ~ kind}} -%}
+        {{ dict(d, url=link) if link else d }}
+  - action: persistent_notification.create
+    data:
+      notification_id: '{{ tag }}'
+      title: '{{ title }}'
+      message: '{{ panel_message }}'
+  - if:
+    - condition: template
+      value_template: "{{ level in ['warning', 'critical'] }}"
+    then:
+    - action: notify.mobile_app_CHANGE-ME  # your phone's companion-app notify service
+      data:
+        title: '{{ title }}'
+        message: '{{ push_message }}'
+        data: '{{ push_data }}'
+  # Several senders share this, and HA keeps only 5 traces by default.
+  trace:
+    stored_traces: 20
+  # DIUN sends one POST per image and several can land in the same second;
+  # `single` would drop all but the first.
+  mode: queued
+  max: 25
