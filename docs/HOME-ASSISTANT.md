@@ -1,114 +1,71 @@
 # Home Assistant Integration
 
-Send notifications from Sonarr/Radarr, DIUN, Uptime Kuma, and Beszel to Home Assistant.
+Every notification from the stack goes to Home Assistant through **one automation on one webhook**: Sonarr and Radarr, DIUN's image updates, the nightly backup's failure alert and the weekly queue-cleanup report. Each notice says what happened and what, if anything, to do ("Ready to watch: …", "Needs manual import: … Open Radarr → Activity → Queue and import it"). Uptime Kuma uses Home Assistant's own integration instead (see below).
 
 ## Prerequisites
 
-- Home Assistant accessible from your Docker network
-- Gluetun's `FIREWALL_OUTBOUND_SUBNETS` includes your LAN (e.g., `192.168.0.0/24`)
+- Home Assistant reachable from the NAS on your LAN.
+- The Home Assistant companion app on your phone, for pushes.
 
-**Important:** Use `.lan` TLD, not `.local`. Docker containers can't resolve `.local` domains (mDNS reserved).
+## Step 1: Add the automation
 
-## Step 1: Create HA Automation
+Copy [HOME-ASSISTANT-notifications.yaml](HOME-ASSISTANT-notifications.yaml) into Home Assistant (Settings → Automations → Create → ⋮ → Edit in YAML), and change its two `CHANGE-ME` values:
 
-In Home Assistant: Settings → Automations → Create → Edit in YAML:
+- **`webhook_id`**: something nobody could guess, e.g. `arr-stack-notify-` plus a random string (`openssl rand -hex 12`). It is the only credential the webhook has.
+- **`notify.mobile_app_…`**: your phone's notify service (Developer tools → Actions, search `notify.mobile_app`).
 
-```yaml
-alias: Arr Stack Notifications
-trigger:
-  - platform: webhook
-    webhook_id: arr-notifications
-    local_only: false
-action:
-  - service: notify.persistent_notification
-    data:
-      title: >
-        {% if trigger.json.series %}
-          {{ trigger.json.series.title }}
-        {% elif trigger.json.movie %}
-          {{ trigger.json.movie.title }}
-        {% else %}
-          {{ trigger.json.eventType }}
-        {% endif %}
-      message: >
-        {% if trigger.json.eventType == "Health" %}
-          {{ trigger.json.message }}
-        {% elif trigger.json.eventType == "ManualInteractionRequired" %}
-          Queue item needs manual import
-        {% elif trigger.json.episodes %}
-          S{{ trigger.json.episodes[0].seasonNumber }}E{{ trigger.json.episodes[0].episodeNumber }} - {{ trigger.json.episodes[0].title }}
-        {% elif trigger.json.movie %}
-          ({{ trigger.json.movie.year }}) - {{ trigger.json.eventType }}
-        {% else %}
-          {{ trigger.json.eventType }}
-        {% endif %}
+The automation accepts three shapes of JSON and turns each into one notice:
+
+| Sender | Shape | Level |
+|---|---|---|
+| The stack's scripts, and anything you add | `{"title", "message", "level"?, "url"?, "tag"?}` | as sent: `info`, `warning` (default) or `critical` |
+| Sonarr / Radarr | their own webhook payload | `warning` for health problems and manual imports, `info` otherwise |
+| DIUN | its own webhook payload | `warning` |
+
+`info` goes to the notification panel only; `warning` and `critical` also push to the phone (a normal push, so Focus modes still apply). A notice with the same `tag` replaces the earlier one.
+
+## Step 2: Point every sender at it
+
+The URL is Home Assistant's **LAN address**, not a `.lan` name through Traefik and not Nabu Casa, because the automation only accepts requests from your network (`local_only`):
+
+```
+http://192.168.1.20:8123/api/webhook/arr-stack-notify-CHANGE-ME
 ```
 
-Change `notify.persistent_notification` to `notify.mobile_app_your_phone` for push notifications.
+- **Sonarr and Radarr:** Settings → Connect → + → Webhook. URL as above, method POST. Events: *On Import Complete*, *On Upgrade*, *On Health Issue*, *On Health Restored*, *On Manual Interaction Required*. Skip *On Grab* and *On Movie Added*: they fire before anything is ready.
+- **DIUN, the backup and the queue cleanup:** set both lines in `.env` on the NAS, then recreate DIUN (`docker compose -f docker-compose.utilities.yml up -d --no-deps diun`). The scripts read `HA_WEBHOOK_URL` from `.env` themselves.
 
-## Step 2: Configure Sonarr/Radarr
+  ```bash
+  DIUN_WEBHOOK_URL=http://192.168.1.20:8123/api/webhook/arr-stack-notify-CHANGE-ME
+  HA_WEBHOOK_URL=http://192.168.1.20:8123/api/webhook/arr-stack-notify-CHANGE-ME
+  ```
 
-**Sonarr:** Settings → Connect → Add → Webhook
-- URL: `http://homeassistant.lan:8123/api/webhook/arr-notifications`
-- Events: On Import Complete, On Upgrade, On Health Issue, On Manual Interaction Required
+- **Beszel:** Settings → Notifications → Add URL. Its JSON template sends `title` and `message`, the generic shape:
 
-**Radarr:** Same URL and events.
+  ```
+  generic+http://192.168.1.20:8123/api/webhook/arr-stack-notify-CHANGE-ME?template=json
+  ```
 
-> **Skip "On Grab" and "On Movie Added"** — these fire when Sonarr/Radarr find a release or add a title to the wanted list, not when files are actually ready. They're noisy and not actionable.
+## Step 3: Prove it on your phone
 
-Click **Test** to verify.
+Home Assistant answers `200 OK` to *any* webhook ID, including one with no automation behind it, so a sender saying "sent" proves nothing. Fire each one and look at the panel and the phone:
 
-## DIUN → Home Assistant
+| Fire | Expect |
+|---|---|
+| Sonarr and Radarr: Settings → Connect → the webhook → **Test** | Panel only: "Radarr: test notification / Radarr can reach Home Assistant. Nothing to do." |
+| `docker exec diun diun notif test` | Push: "Image update available" |
+| `./scripts/arr-backup.sh --tar --usb no-such-dir` (fails before touching anything) | Push: "Arr Stack: Backup Failed / Failed during: finding USB device…" |
 
-Requires `docker-compose.utilities.yml` deployed.
+A notice titled "Arr stack: unrecognised notification" means the body wasn't understood. Most often the sender didn't send `Content-Type: application/json`, which Home Assistant needs before it parses a body at all.
 
-DIUN monitors all running containers and sends a webhook when a newer image version is available on the registry.
+## Adding your own sender
 
-### Step 1: Create HA Automation
-
-Pick a webhook ID nobody could guess (e.g. `diun-image-updates-` plus a random string) and use it in both places. DIUN sends the image under a top-level `image` field, with `status` (`new`: a newer tag appeared; `update`: the pinned tag's digest changed), `hub_link` (may be empty) and `hostname`.
-
-```yaml
-alias: DIUN - Arr Stack Image Update Notification
-mode: queued
-triggers:
-  - trigger: webhook
-    webhook_id: diun-image-updates-CHANGE-ME
-    allowed_methods:
-      - POST
-    local_only: true
-actions:
-  - action: persistent_notification.create
-    data:
-      notification_id: "diun_{{ trigger.json.image | slugify }}"
-      title: "Image update available"
-      message: >
-        {{ trigger.json.image }} ({{ trigger.json.status }}) on {{ trigger.json.hostname }}
-        {% if trigger.json.hub_link %}{{ trigger.json.hub_link }}{% endif %}
-```
-
-Add a `notify.mobile_app_your_phone` action for push notifications. The `notification_id` makes a repeat for the same image replace the earlier notice.
-
-### Step 2: Configure .env
-
-Point DIUN at Home Assistant's LAN address directly, not through Traefik or Nabu Casa, so `local_only: true` holds:
+POST JSON to the same webhook with a `Content-Type: application/json` header:
 
 ```bash
-DIUN_WEBHOOK_URL=http://192.168.1.20:8123/api/webhook/diun-image-updates-CHANGE-ME
-```
-
-Then recreate DIUN (`docker compose -f docker-compose.utilities.yml up -d --no-deps diun`) and test the whole path:
-
-```bash
-docker exec diun diun notif test
-```
-
-A notice must actually appear in Home Assistant. DIUN's "Notification sent" proves nothing on its own: Home Assistant answers 200 to a webhook ID that has no automation behind it.
-
-DIUN checks registries daily at 6am by default. Customise with:
-
-```bash
-DIUN_SCHEDULE=0 6 * * *  # cron format
+curl -s -X POST -H "Content-Type: application/json" \
+  -d '{"title":"Disk nearly full","message":"/volume1 is at 92%.","level":"warning","tag":"disk"}' \
+  "$HA_WEBHOOK_URL"
 ```
 
 ## Uptime Kuma → Home Assistant
@@ -120,45 +77,4 @@ In Uptime Kuma: Settings → Notifications → Setup Notification
 - URL: `http://homeassistant.lan:8123`
 - Long-Lived Access Token: (create in HA → Profile → Long-Lived Access Tokens)
 
-## Beszel → Home Assistant
-
-Requires `docker-compose.utilities.yml` deployed.
-
-### Step 1: Create HA Automation
-
-Beszel sends a different JSON format than Sonarr/Radarr, so create a separate automation:
-
-```yaml
-alias: Beszel Alerts
-description: System alerts from Beszel monitoring
-trigger:
-  - platform: webhook
-    webhook_id: beszel-alerts
-    local_only: false
-action:
-  - service: notify.persistent_notification
-    data:
-      title: "{{ trigger.json.title | default('Beszel Alert') }}"
-      message: "{{ trigger.json.message | default(trigger.json | string) }}"
-mode: single
-```
-
-### Step 2: Configure Beszel
-
-In Beszel: Settings → Notifications → Add URL
-
-**Important:** Beszel can't resolve `.lan` domains (uses Docker internal DNS). Use your Home Assistant IP address directly.
-
-```
-generic+http://HOME_ASSISTANT_IP:8123/api/webhook/beszel-alerts?template=json
-```
-
-Example: `generic+http://192.168.1.20:8123/api/webhook/beszel-alerts?template=json`
-
-Click **Test URL** to verify.
-
-### Step 3: Configure Alerts
-
-In Beszel, click on your system → set alert thresholds for CPU, Memory, Disk, Load Average, etc.
-
-To view/manage alerts: `http://beszel.lan/_/#/collections` → select the alerts collection.
+Beszel's alert thresholds are set per system: click the system in Beszel and set CPU, memory, disk and load limits.
