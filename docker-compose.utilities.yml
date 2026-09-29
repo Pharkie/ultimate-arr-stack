@@ -317,8 +317,10 @@ services:
       - DIUN_DEFAULTS_MAXTAGS=25
       - DIUN_NOTIF_WEBHOOK_ENDPOINT=${DIUN_WEBHOOK_URL}
       - DIUN_NOTIF_WEBHOOK_METHOD=POST
-      - DIUN_NOTIF_WEBHOOK_HEADERS_0_NAME=Content-Type
-      - DIUN_NOTIF_WEBHOOK_HEADERS_0_VALUE=application/json
+      # Home Assistant only parses a webhook body as JSON when the request says
+      # so. DIUN takes headers as HEADERS_<NAME>=<value>; the numbered _0_NAME/
+      # _0_VALUE form this used to have was ignored, so notices arrived empty.
+      - DIUN_NOTIF_WEBHOOK_HEADERS_CONTENT-TYPE=application/json
     logging: *default-logging
 
   # ═══════════════════════════════════════════════════════════════════════════
