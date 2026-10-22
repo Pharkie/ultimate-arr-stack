@@ -277,7 +277,7 @@ services:
   # Dry run first: docker compose -f docker-compose.utilities.yml run --rm -e DRY_RUN=true configarr
   # ═══════════════════════════════════════════════════════════════════════════
   configarr:
-    image: ghcr.io/raydak-labs/configarr:1.34.1
+    image: ghcr.io/raydak-labs/configarr:1.36.0
     # Opt-in: a bare `up -d` of this file used to start it too, and a run
     # creates the quality profiles its config names and (reset_unmatched_scores)
     # zeroes any score on them it doesn't list. `run configarr` still works.
