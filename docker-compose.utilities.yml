@@ -162,7 +162,7 @@ services:
   # Access: uptime.lan | NAS_IP:3001 (LAN-only, use WireGuard for remote)
   # ═══════════════════════════════════════════════════════════════════════════
   uptime-kuma:
-    image: louislam/uptime-kuma:2.5.6
+    image: louislam/uptime-kuma:2.5.7
     container_name: uptime-kuma
     <<: *default-security
     cap_add:
