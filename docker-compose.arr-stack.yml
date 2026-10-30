@@ -325,7 +325,7 @@ services:
   # Access: prowlarr.lan | prowlarr.yourdomain.com | NAS_IP:9696
   # ═══════════════════════════════════════════════════════════════════════════
   prowlarr:
-    image: lscr.io/linuxserver/prowlarr:2.6.5
+    image: lscr.io/linuxserver/prowlarr:2.7.0
     container_name: prowlarr
     <<: *lsio-security
     network_mode: "service:gluetun"
