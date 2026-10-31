@@ -16,6 +16,7 @@ All notable changes to this project will be documented in this file.
   - **Pi-hole 2026.10.1 rebuilds on Alpine 3.24.3**: ca-certificates distrust the eMudhra intermediates, and there are musl, zlib, PHP and OpenSSL fixes. FTL v6.8, Web v6.6.1 and Core v6.5 are unchanged, and the exported FTL config is byte-identical. DNS was down for about a minute while the 680 MB volume was archived.
   - **Prowlarr 2.7.0** (2.6.6 promoted) ships indexer definitions v12, uses each indexer's recommended page size, and drops `0.0.0.0`/`[::]` from Allowed Hosts (this stack leaves the list empty). Indexers, priorities, app sync and the FlareSolverr proxy are unchanged, and gluetun was not recreated.
   - **configarr 1.38.0** adds Radarr v7 support (1.37.0 added `LOG_FORMAT=json`). A dry run reached Sonarr and Radarr, with nothing applied.
+- **Live Prowlarr change, not in this repo: The Pirate Bay and YTS re-enabled (2026-10-31), LimeTorrents still off.** 1.11.0 switched off all three public movie indexers after LimeTorrents served disguised executables. Since then `excluded_file_names` drops an executable at the metadata stage, before the download, so the reason no longer holds for the two that never served one. While they were off, Radarr had one film source: of six requests the stuck-requests check had reported for weeks, The Pirate Bay carried two and NZBgeek none. They return at priority 50 behind NZBgeek's 10, and both pass Prowlarr's connection test.
 
 ## [1.18.0] - 2026-10-24
 
