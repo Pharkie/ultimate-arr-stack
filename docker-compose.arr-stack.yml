@@ -325,7 +325,7 @@ services:
   # Access: prowlarr.lan | prowlarr.yourdomain.com | NAS_IP:9696
   # ═══════════════════════════════════════════════════════════════════════════
   prowlarr:
-    image: lscr.io/linuxserver/prowlarr:2.6.5
+    image: lscr.io/linuxserver/prowlarr:2.7.0
     container_name: prowlarr
     <<: *lsio-security
     network_mode: "service:gluetun"
@@ -390,7 +390,7 @@ services:
   # Access: jellyfin.lan | jellyfin.yourdomain.com | NAS_IP:8096
   # ═══════════════════════════════════════════════════════════════════════════
   jellyfin:
-    image: jellyfin/jellyfin:12.3
+    image: jellyfin/jellyfin:12.4
     container_name: jellyfin
     <<: *default-security
     cap_add:
@@ -465,7 +465,7 @@ services:
   # Configure upstream DNS: Settings → DNS → Custom = 172.20.0.6#5053
   # ═══════════════════════════════════════════════════════════════════════════
   pihole:
-    image: pihole/pihole:2026.10.0
+    image: pihole/pihole:2026.10.1
     container_name: pihole
     depends_on:
       dnscrypt-proxy:
