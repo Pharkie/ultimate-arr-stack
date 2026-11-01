@@ -72,6 +72,17 @@ docker compose -f docker-compose.arr-stack.yml restart dnscrypt-proxy
 
 That edit lives in the volume and is lost when the volume is recreated; the mount is the durable fix.
 
+`configure-apps.sh` now sets each Sonarr and Radarr quality profile's **Upgrade Until Custom Format Score** to `500`, the `DV HDR10 (Profile 8.1)` score, so an 8.1 release can replace a file already on disk. Nothing to recreate. Apply it to a running stack with:
+
+```bash
+cd $NAS_STACK_DIR && git pull
+./scripts/configure-apps.sh --only sonarr --dry-run
+./scripts/configure-apps.sh --only sonarr
+./scripts/configure-apps.sh --only radarr
+```
+
+It only ever raises the score, so a profile you set higher yourself is left alone. Or set it by hand: Settings → Profiles → your quality profile → **Upgrade Until Custom Format Score** = `500`. Files already in the library are replaced only when an 8.1 release of the same quality appears in RSS. To swap the ones that matter now, find them with `find tv movies -name '*HDR10Plus*' ! -name '*DV*'` under your media root and grab an 8.1 release from each one's interactive search.
+
 Seven image bumps arrive with the same `git pull` and need nothing beyond a pull and an `up -d` per compose file. Two of them change behaviour you may rely on:
 
 - **Uptime Kuma 2.5.8 removes TLS from the TCP Port monitor.** A TCP monitor that had TLS switched on becomes a plain port check and stops checking the certificate. Look at your TCP monitors before upgrading, and replace any you need with an HTTP(S) monitor (which checks certificate expiry). The stack's own monitors are all HTTP or push, so nothing changes for them.

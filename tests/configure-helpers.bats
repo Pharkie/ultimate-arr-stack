@@ -176,3 +176,69 @@ stub_curl() {
         assert_output --partial "must be a positive integer"
     done
 }
+
+# ---- ensure_cutoff_format_score --------------------------------------------
+
+# Profiles served by a stubbed api_get, one JSON file per id, and every PUT
+# recorded as "<url> <body>" so a test can read back exactly what was sent.
+stub_profiles() {
+    PROFILES="$BATS_TEST_TMPDIR/profiles"
+    mkdir -p "$PROFILES"
+    local spec id score
+    for spec in "$@"; do
+        id=${spec%%:*}; score=${spec#*:}
+        printf '{"id":%s,"name":"p%s","cutoffFormatScore":%s,"formatItems":[]}' "$id" "$id" "$score" > "$PROFILES/$id"
+    done
+    api_get() {
+        case "$1" in
+            */qualityprofile) python3 -c 'import json,os,sys; d=sys.argv[1]; print(json.dumps([json.load(open(os.path.join(d,f))) for f in sorted(os.listdir(d))]))' "$PROFILES" ;;
+            */qualityprofile/*) cat "$PROFILES/${1##*/}" ;;
+        esac
+    }
+    api_put() { echo "$1 $3" >> "$CALLS"; }
+}
+
+@test "ensure_cutoff_format_score: raises a profile below the score and sends the rest of it unchanged" {
+    stub_profiles 1:0
+    run ensure_cutoff_format_score "http://x" "X-Api-Key: k" "Sonarr" 500
+    assert_success
+    assert_output --partial "profile 1 upgrades until custom format score 500"
+    [ "$(wc -l < "$CALLS")" -eq 1 ]
+    run python3 -c 'import json,sys; url,body=open(sys.argv[1]).read().split(" ",1); d=json.loads(body); print(url, d["cutoffFormatScore"], d["name"], d["formatItems"])' "$CALLS"
+    assert_output "http://x/api/v3/qualityprofile/1 500 p1 []"
+}
+
+@test "ensure_cutoff_format_score: never lowers a profile set higher on purpose" {
+    stub_profiles 1:0 2:10000 3:500
+    run ensure_cutoff_format_score "http://x" "X-Api-Key: k" "Radarr" 500
+    assert_success
+    [ "$(wc -l < "$CALLS")" -eq 1 ]
+    run cut -d' ' -f1 "$CALLS"
+    assert_output "http://x/api/v3/qualityprofile/1"
+}
+
+@test "ensure_cutoff_format_score: every profile already there is one skip and no write" {
+    stub_profiles 1:500 2:10000
+    run ensure_cutoff_format_score "http://x" "X-Api-Key: k" "Sonarr" 500
+    assert_success
+    assert_output "  - Sonarr: upgrade until custom format score 500 (already configured)"
+    [ ! -s "$CALLS" ]
+}
+
+@test "ensure_cutoff_format_score: a refused write is a ✗, not a ✓" {
+    stub_profiles 1:0
+    api_put() { return 1; }
+    run ensure_cutoff_format_score "http://x" "X-Api-Key: k" "Sonarr" 500
+    assert_output --partial "✗ Sonarr: raise profile 1's upgrade-until custom format score to 500"
+    refute_output --partial "✓"
+}
+
+@test "configure_arr_service upgrades until the Dolby Vision 8.1 score, whatever that score is" {
+    # The cutoff must track the 8.1 score: set below it, an 8.1 release never
+    # replaces a file at 0; set above it, a future positive format would let
+    # files upgrade with no end point.
+    run grep -E 'ensure_custom_format .*"DV HDR10 \(Profile 8\.1\)" "\$dv81_score"' "$HELPERS"
+    assert_success
+    run grep -E 'ensure_cutoff_format_score "\$BASE" "\$AUTH" "\$name" "\$dv81_score"' "$HELPERS"
+    assert_success
+}
