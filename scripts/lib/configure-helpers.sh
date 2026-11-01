@@ -362,6 +362,44 @@ print(json.dumps(data))")
     done
 }
 
+# Raise every quality profile's "Upgrade Until Custom Format Score" to at
+# least the given score.
+#
+# Usage:
+#   ensure_cutoff_format_score "$BASE" "$AUTH" "Sonarr" 500
+#
+# Only ever raises. A profile already set higher (configarr's until_score,
+# say) is left alone, so this never fights a deliberate choice.
+ensure_cutoff_format_score() {
+    local BASE="$1" AUTH="$2" name="$3" cutoff="$4"
+
+    local profiles profile_ids
+    profiles=$(api_get "${BASE}/api/v3/qualityprofile" "$AUTH") || true
+    profile_ids=$(json_extract "$profiles" "
+for p in data:
+    print(p['id'])")
+
+    local pid profile updated_profile raised=0
+    for pid in $profile_ids; do
+        profile=$(api_get "${BASE}/api/v3/qualityprofile/${pid}" "$AUTH") || continue
+        if json_extract "$profile" "sys.exit(0 if data.get('cutoffFormatScore', 0) >= ${cutoff} else 1)"; then
+            continue
+        fi
+        raised=1
+        updated_profile=$(json_extract "$profile" "
+data['cutoffFormatScore'] = ${cutoff}
+print(json.dumps(data))")
+        if api_put "${BASE}/api/v3/qualityprofile/${pid}" "application/json" "$updated_profile" "$AUTH" >/dev/null 2>&1; then
+            ok "${name}: profile ${pid} upgrades until custom format score ${cutoff}"
+        else
+            fail "${name}: raise profile ${pid}'s upgrade-until custom format score to ${cutoff}"
+        fi
+    done
+    if [[ $raised -eq 0 ]]; then
+        skip "${name}: upgrade until custom format score ${cutoff}"
+    fi
+}
+
 # ============================================
 # Shared Sonarr/Radarr configuration
 # ============================================
@@ -567,10 +605,33 @@ print(str(xbmc[0].get('enable', False)).lower() if xbmc else 'false')")
     local hdr_no='{"name":"No HDR10 fallback","implementation":"ReleaseTitleSpecification","negate":true,"required":true,"fields":[{"name":"value","value":"\\bhdr|\\bhlg\\b|\\bpq\\b"}]}'
     local disc_no='{"name":"Not a disc source","implementation":"ReleaseTitleSpecification","negate":true,"required":true,"fields":[{"name":"value","value":"\\b(blu-?ray|remux|bdrip|bdremux)\\b"}]}'
 
+    local dv81_score=500
     ensure_custom_format "$BASE" "$AUTH" "$name" "DV (Profile 5)" -1000 \
         "[${dv_token},${hdr_no},${disc_no}]"
-    ensure_custom_format "$BASE" "$AUTH" "$name" "DV HDR10 (Profile 8.1)" 500 \
+    ensure_custom_format "$BASE" "$AUTH" "$name" "DV HDR10 (Profile 8.1)" "$dv81_score" \
         "[${dv_token},${hdr_yes}]"
+
+    # --- Keep upgrading until a file scores as Dolby Vision 8.1 ---
+    #
+    # The score above only ranks releases at grab time. Profiles are created
+    # with an "Upgrade Until Custom Format Score" of 0, so a file that meets
+    # the quality cutoff at score 0 is finished: when a Profile 8.1 release
+    # turns up later, nothing replaces it. That stranded HDR10+-only 4K WEB
+    # files, which a display with HDR10 but no HDR10+ can't direct-play.
+    # Jellyfin transcodes or remuxes them instead, and on a Fire TV playback
+    # froze within seconds, while the same episode as DV + HDR10+
+    # direct-played.
+    #
+    # No custom format can refuse those files up front. Their release titles
+    # say "HDR", not "HDR10+", and the HDR10+ metadata only shows up in the
+    # file's own mediainfo after import. Upgrading on the Dolby Vision score
+    # is the lever that works.
+    #
+    # It can't loop. 8.1 is the only format scored above 0, so the only
+    # upgrade this opens is to an 8.1 release. A file scores at least what its
+    # release did (the formats match the stored release title as well as the
+    # file name), so the upgraded file sits at the cutoff and stays there.
+    ensure_cutoff_format_score "$BASE" "$AUTH" "$name" "$dv81_score"
 
     # --- Delay profile (if SABnzbd running — prefer Usenet) ---
     if $SABNZBD_RUNNING; then

@@ -181,7 +181,10 @@ Searches for TV shows, sends download links to qBittorrent/SABnzbd, and organize
      - Release Title: `\b(dv|dovi|dolby[ .\-_]?vision)\b`
      - Release Title: `\bhdr|\bhlg\b|\bpq\b`
    - Settings → Profiles → your quality profile → `DV (Profile 5)` = `-1000`, `DV HDR10 (Profile 8.1)` = `500`
+   - Same profile → **Upgrade Until Custom Format Score** = `500`
 
+   > The upgrade-until score is what lets a Profile 8.1 release replace a file you already have. Left at `0`, a file that has reached the quality cutoff counts as finished, however good the release that turns up later. That matters most for HDR10+-only 4K WEB releases: their titles say `HDR`, so no custom format can spot them, and a display with HDR10 but no HDR10+ (LG's 2020 OLEDs, for example) makes Jellyfin transcode or remux them instead of direct-playing. With the score at `500`, the only upgrade it opens is to an 8.1 release, and the new file then sits at the cutoff, so nothing loops.
+   >
    > The disc-source exclusion is deliberate. UHD Blu-ray Dolby Vision is **Profile 7**, whose base layer *is* HDR10-compatible, so penalising it would trade good remuxes for worse WEB rips.
    >
    > With **Minimum Custom Format Score** left at `0`, the `-1000` makes Profile 5 a reject rather than a preference — the next-best release is taken instead. If you'd rather rank it down without refusing it outright, lower the profile's minimum score below `-1000`.
@@ -225,7 +228,7 @@ Searches for movies, sends download links to qBittorrent/SABnzbd, and organizes 
    - Add condition: Release Title, value `\.iso$`, check **Regex**
    - Settings → Profiles → your quality profile → set `Reject ISO` to `-10000`
 
-8. **Refuse Dolby Vision Profile 5:** same two custom formats and scores as [Sonarr step 8](#44-sonarr-tv-shows) — Radarr needs them independently, and the disc-source exclusion matters more here, since UHD Blu-ray remuxes are Profile 7 and must not be penalised.
+8. **Refuse Dolby Vision Profile 5:** same two custom formats, scores and upgrade-until score as [Sonarr step 8](#44-sonarr-tv-shows) — Radarr needs them independently, and the disc-source exclusion matters more here, since UHD Blu-ray remuxes are Profile 7 and must not be penalised.
 
 ### Prefer Usenet over Torrents (Optional)
 
