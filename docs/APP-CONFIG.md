@@ -183,11 +183,24 @@ Searches for TV shows, sends download links to qBittorrent/SABnzbd, and organize
    - Settings → Profiles → your quality profile → `DV (Profile 5)` = `-1000`, `DV HDR10 (Profile 8.1)` = `500`
    - Same profile → **Upgrade Until Custom Format Score** = `500`
 
-   > The upgrade-until score is what lets a Profile 8.1 release replace a file you already have. Left at `0`, a file that has reached the quality cutoff counts as finished, however good the release that turns up later. That matters most for HDR10+-only 4K WEB releases: their titles say `HDR`, so no custom format can spot them, and a display with HDR10 but no HDR10+ (LG's 2020 OLEDs, for example) makes Jellyfin transcode or remux them instead of direct-playing. With the score at `500`, the only upgrade it opens is to an 8.1 release, and the new file then sits at the cutoff, so nothing loops.
+   > The upgrade-until score is what lets a Profile 8.1 release replace a file you already have. Left at `0`, a file that has reached the quality cutoff counts as finished, however good the release that turns up later. That matters most for HDR10+-only 4K WEB releases whose titles say only `HDR` (step 9 refuses the rest): a display with HDR10 but no HDR10+ (LG's 2020 OLEDs, for example) makes Jellyfin transcode or remux them instead of direct-playing. With the score at `500`, the only upgrade it opens is to an 8.1 release, and the new file then sits at the cutoff, so nothing loops.
    >
    > The disc-source exclusion is deliberate. UHD Blu-ray Dolby Vision is **Profile 7**, whose base layer *is* HDR10-compatible, so penalising it would trade good remuxes for worse WEB rips.
    >
    > With **Minimum Custom Format Score** left at `0`, the `-1000` makes Profile 5 a reject rather than a preference — the next-best release is taken instead. If you'd rather rank it down without refusing it outright, lower the profile's minimum score below `-1000`.
+
+9. **Refuse HDR10+ without Dolby Vision:** HDR10+ sits on an HDR10 base layer, but a display with HDR10 and no HDR10+ still doesn't get direct play. Jellyfin transcodes it instead, and on a Fire TV Cube driving an LG BX that froze within seconds. With Dolby Vision alongside, the player takes the DV and plays it.
+
+   Titles rarely say so. In one library, 2 of 68 HDR10+-only files came from a title saying `HDR10+`, and 66 from one saying `HDR`. The streaming service is the second signal: Amazon's `HDR` was HDR10+ 36 times in 37, Apple TV+'s and Paramount+'s every time, Netflix's never. Scene titles name no service and split evenly (27 HDR10+, 25 HDR10), so this leaves them alone; refusing them would refuse good HDR10 too. Step 8's upgrade-until score is what replaces those, once a Dolby Vision release appears.
+
+   - Settings → Custom Formats → + → Name: `HDR10+ (no DV)` — check **Regex** and **Required** on both conditions:
+     - Release Title: `(?<!\[)\bhdr10(\+|p\b|[ .\-_]?plus\b)|\b(amzn|atvp|pmtp)\b.*\bhdr\b|\bhdr\b.*\b(amzn|atvp|pmtp)\b`
+     - Release Title: `\b(dv|dovi|dolby[ .\-_]?vision)\b` — also check **Negate**
+   - Settings → Profiles → your quality profile → `HDR10+ (no DV)` = `-1000`
+
+   > Both conditions must be **Required**. A release-title condition left optional counts as matched whenever any other release-title condition in the format matches, so an optional first line would match every release without DV.
+   >
+   > The `(?<!\[)` keeps the file's own name out of it. A custom format matches the file name as well as the release title, and the TRaSH naming scheme writes `[HDR10Plus]` into the name from mediainfo. Without it, a scene `HDR` file would drop to `-1000` once imported, every other release of that episode would look like an upgrade, and each would be downloaded in turn.
 
 ## 4.5 Radarr (Movies)
 
@@ -229,6 +242,7 @@ Searches for movies, sends download links to qBittorrent/SABnzbd, and organizes 
    - Settings → Profiles → your quality profile → set `Reject ISO` to `-10000`
 
 8. **Refuse Dolby Vision Profile 5:** same two custom formats, scores and upgrade-until score as [Sonarr step 8](#44-sonarr-tv-shows) — Radarr needs them independently, and the disc-source exclusion matters more here, since UHD Blu-ray remuxes are Profile 7 and must not be penalised.
+9. **Refuse HDR10+ without Dolby Vision:** the same custom format and score as [Sonarr step 9](#44-sonarr-tv-shows). A UHD Blu-ray with HDR10+ and no Dolby Vision is refused too when its title says so.
 
 ### Prefer Usenet over Torrents (Optional)
 

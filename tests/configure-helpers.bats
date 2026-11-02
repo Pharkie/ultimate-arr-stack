@@ -16,8 +16,25 @@ setup() {
     # Counters the output helpers increment.
     CONFIGURED=0; SKIPPED=0; FAILED=0; WOULD=0
     unset DRY_RUN VERBOSE API_MAX_TIME
+    # The helpers and bats-support both define fail(). Sourced last, the
+    # helpers' one (print ✗, count, return 0) used to win for the assertions
+    # too, so no assert_* or refute_* in this file could ever fail. Keep both
+    # and pick by caller: anything under bats-assert (which fails from inner
+    # helpers such as __assert_stream) gets bats-support's, the code under
+    # test gets its own.
+    eval "$(declare -f fail | sed '1s/^fail /bats_support_fail /')"
     # shellcheck disable=SC1090
     source "$HELPERS"
+    eval "$(declare -f fail | sed '1s/^fail /helpers_fail /')"
+    fail() {
+        local caller
+        for caller in "${FUNCNAME[@]:1}"; do
+            case "$caller" in
+                assert_*|refute_*|__assert_*|__refute_*) bats_support_fail "$@"; return ;;
+            esac
+        done
+        helpers_fail "$@"
+    }
 }
 
 # curl stub: STUB_RC is the exit code, STUB_OUT what curl writes to stdout
@@ -241,4 +258,74 @@ stub_profiles() {
     assert_success
     run grep -E 'ensure_cutoff_format_score "\$BASE" "\$AUTH" "\$name" "\$dv81_score"' "$HELPERS"
     assert_success
+}
+
+# ---- HDR10+ (no DV) --------------------------------------------------------
+
+# Sonarr and Radarr match a release-title condition case-insensitively against
+# the release title or the file name. The constructs the regex uses (\b, a
+# lookbehind, alternation) behave the same in .NET and in Python's re.
+hdr10plus_title() {
+    python3 -c 'import re, sys; print("match" if re.search(sys.argv[1], sys.argv[2], re.I) else "no match")' "$HDR10PLUS_TITLE_RE" "$1"
+}
+
+@test "HDR10+ (no DV): matches a title that names HDR10+, or HDR from a service that streams HDR10+" {
+    local t
+    for t in \
+        "Show.S01E01.2160p.WEB-DL.HDR10+.H265-GRP" \
+        "Show.S01E01.2160p.WEB-DL.DDP5.1.HDR10P.H.265-GRP" \
+        "Film.2025.UHD.BluRay.2160p.DDP.5.1.HDR10Plus.x265-GRP" \
+        "Show.S01E01.2160p.AMZN.WEB-DL.DDP5.1.HDR.H.265-NTb" \
+        "Show.S01E01.2160p.REPACK.HDR.AMZN.WEBRip.DDP5.1.x265-GRP" \
+        "Show S01E02 2026 2160p ATVP WEB-DL DDP5 1 Atmos HDR H 265-GRP" \
+        "Show.S04E04.2160p.PMTP.WEB-DL.DDP5.1.HDR.HEVC-NTb"; do
+        run hdr10plus_title "$t"
+        assert_output "match"
+    done
+}
+
+@test "HDR10+ (no DV): leaves Netflix, scene, explicit HDR10 and SDR titles alone" {
+    local t
+    for t in \
+        "Show.S01E01.2160p.NF.WEB-DL.DDP5.1.HDR.HEVC-NTb" \
+        "show.s01e01.hdr.2160p.web.h265-cakes" \
+        "Show.S01E01.2160p.AMZN.WEB-DL.DDP5.1.HDR10.H.265-GRP" \
+        "Show.S01E01.1080p.AMZN.WEB-DL.DDP5.1.H.264-GRP"; do
+        run hdr10plus_title "$t"
+        assert_output "no match"
+    done
+}
+
+@test "HDR10+ (no DV): a file's own [HDR10Plus] name never matches, so a file never scores below its release" {
+    # If it did, a scene "HDR" file would drop to -1000 once renamed, and
+    # every other release of the episode would look like an upgrade.
+    local t
+    for t in \
+        "Show (2026) - S01E01 - Pilot [WEBDL-2160p][EAC3 5.1][HDR10Plus][h265]-cakes.mkv" \
+        "Show (2026) - S01E01 - Pilot [AMZN][WEBDL-2160p][EAC3 5.1][HDR10Plus][h265]-GRP.mkv" \
+        "Film (2025) - [AMZN][WEBDL-2160p][EAC3 5.1][HDR10][h265]-GRP.mkv"; do
+        run hdr10plus_title "$t"
+        assert_output "no match"
+    done
+}
+
+@test "configure_arr_service sends the HDR10+ regex intact, with Dolby Vision negated, at -1000" {
+    # Run the whole function against stubs and catch what it asks for.
+    wait_for_service() { return 0; }
+    api_get() { echo '[]'; }
+    api_post() { echo '{}'; }
+    api_put() { return 0; }
+    ensure_cutoff_format_score() { :; }
+    ensure_custom_format() { printf '%s\t%s\t%s\n' "$4" "$5" "$6" >> "$CALLS"; }
+    NAS_IP=x SABNZBD_RUNNING=false
+    run configure_arr_service Sonarr 8989 k /data/media/tv tv renameEpisodes "" "{}"
+    run python3 -c '
+import json, sys
+rows = [l.rstrip("\n").split("\t") for l in open(sys.argv[1])]
+name, score, specs = [r for r in rows if r[0] == "HDR10+ (no DV)"][0]
+specs = json.loads(specs)
+hdr, dv = specs
+print(score, hdr["fields"][0]["value"] == sys.argv[2], hdr["required"], hdr["negate"], dv["required"], dv["negate"], dv["fields"][0]["value"])
+' "$CALLS" "$HDR10PLUS_TITLE_RE"
+    assert_output '-1000 True True False True True \b(dv|dovi|dolby[ .\-_]?vision)\b'
 }
