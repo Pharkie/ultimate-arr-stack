@@ -293,6 +293,15 @@ bazarr_settings_post() {
 # Custom formats
 # ============================================
 
+# Release titles that mean HDR10+: an explicit tag, or a bare "HDR" from a
+# service that streams HDR10+ (Amazon, Apple TV+, Paramount+). The (?<!\[)
+# keeps the file's own name out of it. Sonarr and Radarr name a file
+# "[HDR10Plus]" from its mediainfo, and a custom format matches the file name
+# as well as the release title. If the name matched, a scene "HDR" file would
+# score below the release it came from once imported, every other release
+# would then look like an upgrade, and each would be downloaded in turn.
+HDR10PLUS_TITLE_RE='(?<!\[)\bhdr10(\+|p\b|[ .\-_]?plus\b)|\b(amzn|atvp|pmtp)\b.*\bhdr\b|\bhdr\b.*\b(amzn|atvp|pmtp)\b'
+
 # Ensure a custom format exists and is scored in every quality profile.
 #
 # Usage:
@@ -611,6 +620,26 @@ print(str(xbmc[0].get('enable', False)).lower() if xbmc else 'false')")
     ensure_custom_format "$BASE" "$AUTH" "$name" "DV HDR10 (Profile 8.1)" "$dv81_score" \
         "[${dv_token},${hdr_yes}]"
 
+    # --- Custom Format: HDR10+ with no Dolby Vision ---
+    #
+    # HDR10+ sits on an HDR10 base layer, yet a display with HDR10 and no
+    # HDR10+ doesn't get direct play: Jellyfin transcodes it, and on a Fire
+    # TV Cube driving an LG BX that froze within seconds. With Dolby Vision
+    # alongside, the player takes the DV and plays it.
+    #
+    # Titles rarely say so. Of 68 HDR10+-only files in one library, 2 titles
+    # said HDR10+ and 66 said "HDR", so the streaming service is the second
+    # signal: Amazon's "HDR" was HDR10+ 36 times in 37, Apple TV+'s and
+    # Paramount+'s every time, Netflix's never. Scene titles name no service
+    # and split 27 HDR10+ to 25 HDR10, so they are left alone, because
+    # refusing them would refuse good HDR10 too. The Dolby Vision upgrade
+    # below is the way out for those. Against that library this refuses 40 of
+    # the 68 and one HDR10 file (an Amazon WEBRip re-encode), and nothing else.
+    local dv_no='{"name":"No Dolby Vision","implementation":"ReleaseTitleSpecification","negate":true,"required":true,"fields":[{"name":"value","value":"\\b(dv|dovi|dolby[ .\\-_]?vision)\\b"}]}'
+    local hdr10p_yes="{\"name\":\"HDR10+\",\"implementation\":\"ReleaseTitleSpecification\",\"negate\":false,\"required\":true,\"fields\":[{\"name\":\"value\",\"value\":\"${HDR10PLUS_TITLE_RE//\\/\\\\}\"}]}"
+    ensure_custom_format "$BASE" "$AUTH" "$name" "HDR10+ (no DV)" -1000 \
+        "[${hdr10p_yes},${dv_no}]"
+
     # --- Keep upgrading until a file scores as Dolby Vision 8.1 ---
     #
     # The score above only ranks releases at grab time. Profiles are created
@@ -622,10 +651,10 @@ print(str(xbmc[0].get('enable', False)).lower() if xbmc else 'false')")
     # froze within seconds, while the same episode as DV + HDR10+
     # direct-played.
     #
-    # No custom format can refuse those files up front. Their release titles
-    # say "HDR", not "HDR10+", and the HDR10+ metadata only shows up in the
-    # file's own mediainfo after import. Upgrading on the Dolby Vision score
-    # is the lever that works.
+    # The format above refuses the releases whose titles give them away. The
+    # rest say only "HDR", and their HDR10+ metadata shows up in the file's
+    # own mediainfo only after import. For those, upgrading on the Dolby
+    # Vision score is the lever that works.
     #
     # It can't loop. 8.1 is the only format scored above 0, so the only
     # upgrade this opens is to an 8.1 release. A file scores at least what its
