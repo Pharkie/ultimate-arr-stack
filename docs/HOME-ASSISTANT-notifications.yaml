@@ -19,6 +19,14 @@
 # Senders MUST send `Content-Type: application/json`: Home Assistant parses a
 # webhook body as JSON only when the header says so.
 #
+# A VPN outage is ONE notice. While Uptime Kuma's "VPN Check" is down, the
+# notices that only follow from it (the Kuma monitors of the services inside
+# gluetun, Sonarr/Radarr's indexer and download-client health checks, the
+# stuck-request report) are listed in the VPN Check notice instead of getting
+# their own notice or push, and their recoveries take them out again. It needs
+# the sensor in HOME-ASSISTANT-vpn-fold.yaml; without it, everything posts as
+# before. See docs/HOME-ASSISTANT.md.
+#
 # Generated with LLM assistance and human-reviewed, and tested end to end
 # against Sonarr 4, Radarr 6 and the stack's scripts. Read it
 # before you use it.
@@ -194,19 +202,154 @@
       push_data: >-
         {%- set d = {'tag': tag, 'push': {'thread-id': 'arr-stack-' ~ kind}} -%}
         {{ dict(d, url=link) if link else d }}
-  - action: persistent_notification.create
-    data:
-      notification_id: '{{ tag }}'
-      title: '{{ title }}'
-      message: '{{ panel_message }}'
+      # ---- The VPN fold. ---------------------------------------------------
+      # Kuma names its notices "<monitor> is down" / "<monitor> is back up".
+      vpn_name: VPN Check
+      # Kuma monitors of services inside gluetun's network namespace.
+      behind_vpn: [qBittorrent, Prowlarr, SABnzbd, FlareSolverr]
+      # Sonarr/Radarr health checks that fail whenever the indexers or the
+      # download client are unreachable. `type` in the payload, lower-cased.
+      vpn_checks: [indexerstatuscheck, indexerlongtermstatuscheck, indexerrsscheck,
+        indexersearchcheck, downloadclientcheck, downloadclientstatuscheck]
+      # Generic senders' tags whose notice only restates the outage and has no
+      # recovery of its own: the daily stuck-request report runs again tomorrow.
+      vpn_reports: [stuck-requests]
+      role: >-
+        {%- set ev = j.get('eventType') -%}
+        {%- set t = title if kind == 'generic' else '' -%}
+        {%- set check = (j.get('type') or '') | string | lower -%}
+        {%- if t == vpn_name ~ ' is down' -%}vpn_down
+        {%- elif t == vpn_name ~ ' is back up' -%}vpn_up
+        {%- elif t.endswith(' is down') and t[:-8] in behind_vpn -%}problem
+        {%- elif t.endswith(' is back up') and t[:-11] in behind_vpn -%}recovery
+        {%- elif kind == 'generic' and (j.tag | default('', true) | string) in vpn_reports -%}report
+        {%- elif kind == 'arr' and ev == 'Health' and check in vpn_checks -%}problem
+        {%- elif kind == 'arr' and ev == 'HealthRestored' and check in vpn_checks -%}recovery
+        {%- endif -%}
+      fold_ready: "{{ states.sensor.arr_stack_vpn_fold is not none }}"
+      fold_state: "{{ states('sensor.arr_stack_vpn_fold') }}"
+      fold_rev: "{{ state_attr('sensor.arr_stack_vpn_fold', 'rev') | int(0) }}"
+      fold_tag: "{{ state_attr('sensor.arr_stack_vpn_fold', 'vpn_tag') or '' }}"
+      fold_message: "{{ state_attr('sensor.arr_stack_vpn_fold', 'message') or '' }}"
+      now_ts: "{{ as_timestamp(now()) | int }}"
+      held: >-
+        {%- set h = state_attr('sensor.arr_stack_vpn_fold', 'held') -%}
+        {{- (h if h is sequence and h is not string else []) | select('mapping') | list -}}
+      # Follow-on problems posted in the last 30 minutes while the VPN looked
+      # fine. Kuma's qBittorrent monitor goes down ~4 min into an outage and
+      # VPN Check 5-10 min in, so the first follow-on usually beats the VPN
+      # notice; when the VPN notice opens, these are pulled into it.
+      recent: >-
+        {%- set r = state_attr('sensor.arr_stack_vpn_fold', 'recent') -%}
+        {{- (r if r is sequence and r is not string else []) | select('mapping')
+              | selectattr('at', 'ge', now_ts - 1800) | list -}}
+      # post: a notice of its own, as before. open/close: the VPN Check notice
+      # itself. hold/release: folded into it, or taken out of it. A recovery
+      # while the VPN is down is released too: whatever it recovers from is
+      # either held or out of date.
+      fold_action: >-
+        {%- if not fold_ready or not role -%}post
+        {%- elif role == 'vpn_down' -%}open
+        {%- elif role == 'vpn_up' -%}close
+        {%- elif role in ['problem', 'report'] and fold_state == 'down' -%}hold
+        {%- elif role == 'recovery' and (fold_state == 'down' or tag in (held | map(attribute='tag') | list)) -%}release
+        {%- else -%}post
+        {%- endif -%}
+      # How a held notice reads in the VPN notice: Sonarr's title ("Sonarr
+      # needs attention") says nothing, so its health message stands in.
+      fold_label: >-
+        {%- if kind == 'arr' -%}{{ app }}: {{ (j.get('message') or 'health check failed') | string | truncate(100) }}
+        {%- else -%}{{ title }}
+        {%- endif -%}
+      fold_item: "{{ {'tag': tag, 'label': fold_label, 'recovers': role == 'problem', 'at': now_ts} }}"
+      new_held: >-
+        {%- set rest = held | rejectattr('tag', 'eq', tag) | list -%}
+        {%- if fold_action == 'open' -%}{{ recent }}
+        {%- elif fold_action == 'hold' -%}{{ rest + [fold_item] }}
+        {%- elif fold_action == 'release' -%}{{ rest }}
+        {%- elif fold_action == 'close' -%}{{ held | selectattr('recovers') | list }}
+        {%- else -%}{{ held }}
+        {%- endif -%}
+      new_recent: >-
+        {%- set rest = recent | rejectattr('tag', 'eq', tag) | list -%}
+        {%- if fold_action == 'open' -%}{{ [] }}
+        {%- elif fold_action == 'post' and role == 'problem' -%}{{ rest + [fold_item] }}
+        {%- elif fold_action == 'post' and role == 'recovery' -%}{{ rest }}
+        {%- else -%}{{ recent }}
+        {%- endif -%}
+      fold_write: "{{ fold_ready and (fold_action != 'post' or new_recent != recent) }}"
+      new_state: >-
+        {{- 'down' if fold_action == 'open' else 'up' if fold_action == 'close' else fold_state -}}
+      new_tag: "{{ tag if fold_action in ['open', 'close'] else fold_tag }}"
+      new_message: "{{ panel_message if fold_action in ['open', 'close'] else fold_message }}"
+      vpn_notice_title: "{{ vpn_name }} {{ 'is down' if new_state == 'down' else 'is back up' }}"
+      vpn_notice_message: >-
+        {%- set labels = new_held | map(attribute='label') | list -%}
+        {{- new_message -}}
+        {%- if new_state == 'down' and labels -%}
+          {{ '\n\n' }}Held here, because they follow from it: {{ labels | join('; ') }}.
+        {%- elif new_state == 'down' -%}
+          {{ '\n\n' }}Notices that follow from it ({{ behind_vpn | join(', ') }} down; Sonarr and Radarr indexer and download-client warnings; the stuck-request report) are held here until it is back.
+        {%- elif labels -%}
+          {{ '\n\n' }}Still waiting to recover: {{ labels | join('; ') }}.
+        {%- elif held -%}
+          {{ '\n\n' }}Nothing held while it was down is still failing.
+        {%- endif -%}
+  - if: "{{ fold_action == 'post' }}"
+    then:
+    - action: persistent_notification.create
+      data:
+        notification_id: '{{ tag }}'
+        title: '{{ title }}'
+        message: '{{ panel_message }}'
+  # A held notice may already be in the panel: posted before the VPN went down,
+  # or a "back up" from an earlier flap.
+  - if: "{{ fold_action in ['hold', 'release'] }}"
+    then:
+    - action: persistent_notification.dismiss
+      data:
+        notification_id: '{{ tag }}'
+  - if: "{{ fold_action == 'open' and new_held | count > 0 }}"
+    then:
+    - repeat:
+        for_each: "{{ new_held | map(attribute='tag') | list }}"
+        sequence:
+        - action: persistent_notification.dismiss
+          data:
+            notification_id: '{{ repeat.item }}'
+  # The sensor takes the whole new state; wait until it shows it, so the next
+  # queued run reads this one's write and not the one before.
+  - if: "{{ fold_write }}"
+    then:
+    - event: arr_stack_vpn_fold
+      event_data:
+        rev: '{{ fold_rev + 1 }}'
+        state: '{{ new_state }}'
+        vpn_tag: '{{ new_tag }}'
+        message: '{{ new_message }}'
+        held: '{{ new_held }}'
+        recent: '{{ new_recent }}'
+    - wait_template: "{{ state_attr('sensor.arr_stack_vpn_fold', 'rev') | int(0) == fold_rev + 1 }}"
+      timeout: 5
+  - if: "{{ fold_action != 'post' and new_tag != '' }}"
+    then:
+    - action: persistent_notification.create
+      data:
+        notification_id: '{{ new_tag }}'
+        title: '{{ vpn_notice_title }}'
+        message: '{{ vpn_notice_message }}'
+  # A push for a notice of its own, and for the VPN notice when it opens; a
+  # held notice never pushes, and the VPN notice changing does not push again.
   - if:
     - condition: template
-      value_template: "{{ level in ['warning', 'critical'] }}"
+      value_template: "{{ level in ['warning', 'critical'] and fold_action in ['post', 'open'] }}"
     then:
     - action: notify.mobile_app_CHANGE-ME  # your phone's companion-app notify service
       data:
         title: '{{ title }}'
-        message: '{{ push_message }}'
+        message: >-
+          {%- set m = (vpn_notice_message if fold_action == 'open' else message) | string -%}
+          {{- m if m | length <= 900 else m[:900] ~ ' …' -}}
         data: '{{ push_data }}'
   # Several senders share this, and HA keeps only 5 traces by default.
   trace:

@@ -23,6 +23,19 @@ The automation accepts two shapes of JSON and turns each into one notice:
 
 `info` goes to the notification panel only; `warning` and `critical` also push to the phone (a normal push, so Focus modes still apply). A notice with the same `tag` replaces the earlier one.
 
+### Step 1b: Make a VPN outage one notice (recommended)
+
+When the VPN goes down, a lot else goes down with it, and each one sends its own notice. On one install, a lapsed subscription produced *VPN Check is down*, *qBittorrent is down* (then up and down again a dozen times), Sonarr's *All indexers are unavailable*, Sonarr's and Radarr's *Unable to communicate with qBittorrent*, and a stuck-request report blaming indexer backoff. All of them were the VPN.
+
+With [HOME-ASSISTANT-vpn-fold.yaml](HOME-ASSISTANT-vpn-fold.yaml) added (a package, or the `template:` entry in `configuration.yaml`), the automation folds those into the *VPN Check is down* notice:
+
+- While Kuma's `VPN Check` is down, a follow-on notice gets no notice or push of its own. It is listed in the VPN notice instead, and its own notice is dismissed if one was already there. The follow-ons are Kuma's `qBittorrent`, `Prowlarr`, `SABnzbd` and `FlareSolverr` monitors (the services inside gluetun), Sonarr and Radarr's indexer and download-client health checks, and the stuck-request report.
+- A follow-on posted in the 30 minutes **before** the VPN notice is pulled in when that notice opens. A service monitor goes down a few minutes into an outage, sooner than `VPN Check`.
+- A recovery takes its line out silently. That includes the ones that arrive just after the VPN is back: *VPN Check is back up* says "Still waiting to recover: …" until the last one clears.
+- Anything else posts and pushes as before.
+
+The names it matches are variables at the end of the automation's `variables:` (`vpn_name`, `behind_vpn`, `vpn_checks`, `vpn_reports`). Change them if your monitors are named differently. Recoveries need Sonarr and Radarr's **On Health Restored** (Step 2); without it, a held health warning waits for ever. Without the sensor, the automation posts everything as before.
+
 ## Step 2: Point every sender at it
 
 The URL is Home Assistant's **LAN address**, not a `.lan` name through Traefik and not Nabu Casa, because the automation only accepts requests from your network (`local_only`):

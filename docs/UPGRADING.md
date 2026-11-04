@@ -96,6 +96,8 @@ Seven image bumps arrive with the same `git pull` and need nothing beyond a pull
 echo 'VPN_CHECK_PUSH_URL=http://localhost:3001/api/push/YOUR_TOKEN' >> $NAS_STACK_DIR/.env
 ```
 
+Home Assistant can fold a VPN outage's follow-on notices into the *VPN Check is down* notice ([HOME-ASSISTANT.md, Step 1b](HOME-ASSISTANT.md#step-1b-make-a-vpn-outage-one-notice-recommended)). Replace your automation with `docs/HOME-ASSISTANT-notifications.yaml` (keep your two `CHANGE-ME` values), and add the sensor in `docs/HOME-ASSISTANT-vpn-fold.yaml`. Check that Sonarr and Radarr's webhook has **On Health Restored** ticked: one install had it off in both, so no health warning ever cleared.
+
 ### v1.17.0 → v1.18.0
 
 Eight image bumps. Pi-hole's gravity database migration is one-way and qBittorrent rewrites its config file to a newer layout, so back up those two volumes first, with the services stopped. Jellyfin 12.3 runs no migration; back it up only if you want to, and know that `jellyfin-config` is about 4 GB (almost all `metadata/`), so a gzip takes around 12 minutes on a NAS CPU with Jellyfin down. Use `tar cf` or `--exclude=./metadata`. Check that nothing is playing or downloading first: recreating Pi-hole takes every `.lan` name and LAN DNS down for about 35 seconds, and stopping qBittorrent pauses its downloads.
