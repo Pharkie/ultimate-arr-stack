@@ -20,6 +20,40 @@ docker exec gluetun wget -qO- https://ifconfig.me
 
 If that shows a different IP from your home connection, gluetun is fine — leave the warnings alone. If it shows your real IP (or times out), see the gluetun logs for `tunnel down`, `auth failed`, or the container restarting — those are the actual failure modes worth chasing.
 
+## VPN: No Server Answers (Expired Subscription, Revoked Key or Blocked UDP)
+
+**Symptom:** Several notices arrive at once and none of them names a cause: Uptime Kuma's *VPN Check is down* and *qBittorrent is down*, Sonarr's *All indexers are unavailable*, Sonarr and Radarr's *Unable to communicate with qBittorrent*, and later a stuck-request notice blaming indexer backoff. gluetun is `unhealthy`, and `docker logs gluetun` repeats this every six seconds or so, usually with a different server each time:
+
+```
+INFO [wireguard] Connecting to 81.19.208.109:51820
+INFO [wireguard] Wireguard setup is complete. Note Wireguard is a silent protocol and it may or may not work, without giving any error message. ...
+WARN [vpn] restarting VPN because it failed to pass the healthcheck: startup check: all check tries failed: ... dial tcp4 1.1.1.1:443: i/o timeout ...
+```
+
+`check-vpn.sh` names the cause, and so does Kuma's *VPN Check is down* notice if `VPN_CHECK_PUSH_URL` is set ([UTILITIES.md](UTILITIES.md#the-vpn-check-and-why-it-is-a-push-monitor)):
+
+```
+FAIL  No VPN server has answered for 25 h across 7 servers (14,035 attempts). Most likely the Surfshark subscription has expired or the WireGuard key was revoked: check my.surfshark.com. If the account is active, check that outbound UDP 51820 is not blocked. ...
+```
+
+**Cause:** No server sends anything back. WireGuard returns no error, so from inside the stack an expired subscription, a key the provider has revoked, and outbound UDP blocked somewhere between the NAS and the internet look identical: the tunnel sends and never receives.
+
+```bash
+docker exec gluetun ip -s link show tun0    # RX bytes 0 on the current attempt
+docker logs gluetun 2>&1 | grep -o 'Connecting to [0-9.:]*' | sort | uniq -c   # every server, each failing
+```
+
+That message is from a real outage: the subscription had lapsed, and gluetun tried every server in its country for 25 hours before anyone looked.
+
+**Fix:**
+1. Check the account on the provider's site (Surfshark: my.surfshark.com) and renew it if it has lapsed.
+2. If the account is active, check that nothing between the NAS and the internet blocks outbound UDP to the server port (51820 for WireGuard on most providers): a router firewall change, a new router, the ISP.
+3. If it still fails ten minutes after renewing, the key may not have survived the lapse. Make a new one (Surfshark: VPN → Manual setup → Router → WireGuard), put it in `WIREGUARD_PRIVATE_KEY` in `.env`, and recreate gluetun and its dependents ([After a Gluetun RECREATE](#after-a-gluetun-recreate-not-just-a-restart-docker-restart-cannot-save-you)).
+
+**Leave gluetun retrying. Don't stop it or restart it.** The retry is how it heals: once the account works again, the next attempt gets an answer, and the services behind it keep their network because gluetun's container never restarted. In the outage above, the first attempt after the renewal connected half a second after it started, with the same key. A restart reconnects to the same servers with the same key, so it fixes nothing, and it costs the dependents their network namespace ([below](#apps-unreachable-after-a-vpn-reconnect-stale-network-namespace)).
+
+**Not this:** if the host can't get out either, `check-vpn.sh` says "The NAS's own connection is failing too" instead: look at the internet connection and DNS, not the VPN. If one server has failed for minutes and gluetun has tried no other, the server selection allows only that server; widen it, or bounce gluetun onto another ([Throttled VPN Exit Server](#indexers-all-slow--intermittently-failing-throttled-vpn-exit-server)).
+
 ## Indexers: New Releases Never Grab (VPN Exit Country Blocked)
 
 **Symptom:** A monitored episode/movie that is clearly out (aired days ago) never gets grabbed. Sonarr/Radarr history is empty for it, nothing is in the queue, and an interactive search returns **0 releases**. Prowlarr health shows `Indexers unavailable due to failures for more than 6 hours: EZTV` (or another indexer), and that indexer is auto-disabled.

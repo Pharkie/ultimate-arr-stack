@@ -90,6 +90,12 @@ Seven image bumps arrive with the same `git pull` and need nothing beyond a pull
 - **Uptime Kuma 2.5.8 removes TLS from the TCP Port monitor.** A TCP monitor that had TLS switched on becomes a plain port check and stops checking the certificate. Look at your TCP monitors before upgrading, and replace any you need with an HTTP(S) monitor (which checks certificate expiry). The stack's own monitors are all HTTP or push, so nothing changes for them.
 - **Prowlarr 2.7.0 drops `0.0.0.0` and `[::]` from Allowed Hosts** and logs "Ignoring … in Allowed Hosts, bind addresses are not host names". If those were the only entries, the list is now empty and Prowlarr accepts any Host header, as it does when the setting is left blank (the default here). Put real hostnames there if you meant to filter.
 
+`check-vpn.sh` now says why gluetun can't get out, read from gluetun's log, and can put that into Uptime Kuma's *VPN Check is down* notice. The new lines arrive with the `git pull`; nothing to recreate. The notice is opt-in: add your cron line's push URL to `.env`, without its query, and leave the cron line as it is:
+
+```bash
+echo 'VPN_CHECK_PUSH_URL=http://localhost:3001/api/push/YOUR_TOKEN' >> $NAS_STACK_DIR/.env
+```
+
 ### v1.17.0 → v1.18.0
 
 Eight image bumps. Pi-hole's gravity database migration is one-way and qBittorrent rewrites its config file to a newer layout, so back up those two volumes first, with the services stopped. Jellyfin 12.3 runs no migration; back it up only if you want to, and know that `jellyfin-config` is about 4 GB (almost all `metadata/`), so a gzip takes around 12 minutes on a NAS CPU with Jellyfin down. Use `tar cf` or `--exclude=./metadata`. Check that nothing is playing or downloading first: recreating Pi-hole takes every `.lan` name and LAN DNS down for about 35 seconds, and stopping qBittorrent pauses its downloads.

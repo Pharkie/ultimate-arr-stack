@@ -99,7 +99,7 @@ docker exec gluetun wget -qO- https://ipinfo.io/ip     # Should show VPN IP
 docker exec qbittorrent wget -qO- https://ipinfo.io/ip  # Should match Gluetun's IP
 ```
 
-The `check-vpn.sh` script checks DNS, compares Gluetun's exit IP with the host's own egress (measured from Sonarr, which is off the VPN), and checks that each tunnelled service (qBittorrent, Prowlarr, SABnzbd, FlareSolverr) exits through Gluetun. It exits non-zero on a leak, a DNS failure, or a service it can't measure. You can add it to cron for periodic monitoring:
+The `check-vpn.sh` script checks DNS, compares Gluetun's exit IP with the host's own egress (measured from Sonarr, which is off the VPN), and checks that each tunnelled service (qBittorrent, Prowlarr, SABnzbd, FlareSolverr) exits through Gluetun. It exits non-zero on a leak, a DNS failure, or a service it can't measure. When Gluetun can't reach the internet at all, it also says why, from Gluetun's own log: no server answering for minutes (most likely an expired subscription or a revoked key, see [TROUBLESHOOTING.md](TROUBLESHOOTING.md#vpn-no-server-answers-expired-subscription-revoked-key-or-blocked-udp)), one server failing on its own, or the host's own connection down too. You can add it to cron for periodic monitoring (the Uptime Kuma setup in [UTILITIES.md](UTILITIES.md#the-vpn-check-and-why-it-is-a-push-monitor) also gets you alerted):
 
 ```bash
 # Check every 5 minutes, log failures
