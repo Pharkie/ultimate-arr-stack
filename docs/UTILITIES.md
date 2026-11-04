@@ -82,6 +82,37 @@ does not:
 The monitor interval is 600s against a 300s cron, so one slow or missed run does
 not page you; two consecutive failures do.
 
+**Making the notice say what is wrong.** With only that cron line, Kuma's down
+notice says "No heartbeat in the time window", which names no cause. Put the
+same push URL in `.env`, without its query, and a failing run also pushes
+`status=down` with its first FAIL line:
+
+```bash
+VPN_CHECK_PUSH_URL=http://localhost:3001/api/push/YOUR_TOKEN
+```
+
+When gluetun cannot get out at all, that first line is the cause, read from
+gluetun's own log and the host probe:
+
+| What the check sees | What it says |
+|---|---|
+| gluetun restarting for 5+ min, several servers, none answering, host fine | "No VPN server has answered for 25 h across 7 servers (14,035 attempts). Most likely the Surfshark subscription has expired or the WireGuard key was revoked: check my.surfshark.com. If the account is active, check that outbound UDP 51820 is not blocked." ([TROUBLESHOOTING.md](TROUBLESHOOTING.md#vpn-no-server-answers-expired-subscription-revoked-key-or-blocked-udp)) |
+| the same, under 5 min | "The VPN has not connected for 3 min (…). Too soon to rule out a passing outage; if it lasts, check the Surfshark subscription (my.surfshark.com) first, then outbound UDP 51820" |
+| one server only, 5+ min | "VPN server … has not answered for 30 min (…) and gluetun has tried no other. If the server selection allows only that one, widen it …" |
+| the host can't get out either | "The NAS's own connection is failing too (…), so this is not the VPN: check the internet connection and DNS (Pi-hole) first" |
+
+Why 5 minutes and not longer: Kuma sends its down notice once, on the second
+failing run (`maxretries` 1), 5 to 10 minutes into an outage, and never again
+while the monitor stays down. A longer threshold would leave the notice with
+the hedged line. By 5 minutes gluetun, retrying every ~6 s, has made about 45
+attempts and tried every server in a country several times over. A blip ends
+on its next attempt: in two months of one install's gluetun log, every other
+restart was a single one, with the tunnel working again within seconds.
+`VPN_NO_ANSWER_MINUTES` moves the line.
+
+The success push stays in the cron line, so a check that cannot run at all
+still stops the pings.
+
 > **Installing the crontab needs root on UGOS.** `crontab <file>` writes its temp
 > file into `/var/spool/cron/`, which the admin user cannot write, so it fails
 > with `mkstemp: Permission denied`. Writing
