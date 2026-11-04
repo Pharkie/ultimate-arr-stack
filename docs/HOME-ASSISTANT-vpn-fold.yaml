@@ -1,0 +1,42 @@
+# The arr-stack notification automation's memory of a VPN outage.
+#
+# docs/HOME-ASSISTANT-notifications.yaml folds a VPN outage's follow-on notices
+# into the "VPN Check is down" notice. Between webhooks it needs to remember
+# whether the VPN is down and what it is holding, and this sensor is where:
+#
+#   sensor.arr_stack_vpn_fold   `down` while VPN Check is down, else `up`
+#     vpn_tag   the panel notification_id of the VPN Check notice
+#     message   that notice's own text, as Kuma sent it
+#     held      the follow-on notices folded into it
+#     recent    follow-on problems posted in the last 30 min while the VPN
+#               still looked fine; the VPN notice takes them in when it opens
+#     rev       bumped on every write, so the automation can wait for its own
+#
+# Only the automation writes it, by firing `arr_stack_vpn_fold` with the whole
+# new state. A trigger-based template sensor because an input_text holds 255
+# characters and the VPN notice is longer, and because it keeps its attributes
+# across a restart.
+#
+# Put this in a package (e.g. /config/packages/arr_stack_vpn_fold.yaml, with
+# `homeassistant: packages: !include_dir_named packages`), or merge the
+# `template:` entry into configuration.yaml. Then Developer tools → YAML →
+# Template entities, or restart. It reads `unknown` until the first VPN Check
+# notice; that is fine.
+#
+# Generated with LLM assistance and human-reviewed. Read it before you use it.
+
+template:
+  - triggers:
+      - trigger: event
+        event_type: arr_stack_vpn_fold
+    sensor:
+      - name: Arr stack VPN fold
+        unique_id: arr_stack_vpn_fold
+        icon: mdi:shield-lock-outline
+        state: "{{ trigger.event.data.state | default('up') }}"
+        attributes:
+          rev: "{{ trigger.event.data.rev | default(0) | int(0) }}"
+          vpn_tag: "{{ trigger.event.data.vpn_tag | default('') }}"
+          message: "{{ trigger.event.data.message | default('') }}"
+          held: "{{ trigger.event.data.held | default([]) }}"
+          recent: "{{ trigger.event.data.recent | default([]) }}"
