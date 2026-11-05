@@ -85,6 +85,8 @@ It only ever raises the score, so a profile you set higher yourself is left alon
 
 The same commands add the `HDR10+ (no DV)` custom format to Sonarr and Radarr and score it `-1000` in every profile, so a 4K HDR10+ release without Dolby Vision is refused instead of grabbed as an upgrade. Nothing to recreate. To add it by hand, follow [Sonarr step 9](APP-CONFIG.md#44-sonarr-tv-shows) in both apps. Files already in the library from a matching release now score `-1000`, so the next same-quality release that scores 0 or more replaces them on its own. If you kept a 1080p file in place of an HDR10+-only 4K one, you can leave it monitored now.
 
+The same commands also set **Propers and Repacks** to `Do not Prefer` in Sonarr and Radarr, and score the `Repack/Proper`, `Repack2` and `Repack3` custom formats `5`, `6` and `7` in every profile (adding them if absent), so a PROPER no longer outranks a Dolby Vision 8.1 release. Nothing to recreate. If you set propers to something else on purpose, the run replaces it: no other mode lets the scores decide. To do it by hand, follow [Sonarr step 10](APP-CONFIG.md#44-sonarr-tv-shows) in both apps.
+
 Seven image bumps arrive with the same `git pull` and need nothing beyond a pull and an `up -d` per compose file. Two of them change behaviour you may rely on:
 
 - **Uptime Kuma 2.5.8 removes TLS from the TCP Port monitor.** A TCP monitor that had TLS switched on becomes a plain port check and stops checking the certificate. Look at your TCP monitors before upgrading, and replace any you need with an HTTP(S) monitor (which checks certificate expiry). The stack's own monitors are all HTTP or push, so nothing changes for them.

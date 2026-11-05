@@ -250,6 +250,119 @@ stub_profiles() {
     refute_output --partial "✓"
 }
 
+# ---- ensure_propers_not_preferred ------------------------------------------
+
+# Media management settings served by a stubbed api_get, and every PUT
+# recorded as "<url> <body>".
+stub_mediamanagement() {
+    MM="$1"
+    api_get() { case "$1" in */config/mediamanagement) printf '%s' "$MM" ;; esac; }
+    api_put() { echo "$1 $3" >> "$CALLS"; }
+}
+
+@test "ensure_propers_not_preferred: switches Prefer and Upgrade to Do not Prefer and sends the rest unchanged" {
+    stub_mediamanagement '{"id":1,"downloadPropersAndRepacks":"preferAndUpgrade","recycleBin":"/r"}'
+    run ensure_propers_not_preferred "http://x" "X-Api-Key: k" "Sonarr"
+    assert_success
+    assert_output "  ✓ Sonarr: propers and repacks ranked by score (Do not Prefer)"
+    [ "$(wc -l < "$CALLS")" -eq 1 ]
+    run python3 -c 'import json,sys; url,body=open(sys.argv[1]).read().split(" ",1); d=json.loads(body); print(url, d["downloadPropersAndRepacks"], d["id"], d["recycleBin"])' "$CALLS"
+    assert_output "http://x/api/v3/config/mediamanagement doNotPrefer 1 /r"
+}
+
+@test "ensure_propers_not_preferred: replaces Do not Upgrade too, which still ranks a PROPER first at grab time" {
+    stub_mediamanagement '{"id":1,"downloadPropersAndRepacks":"doNotUpgrade"}'
+    run ensure_propers_not_preferred "http://x" "X-Api-Key: k" "Radarr"
+    assert_success
+    [ "$(wc -l < "$CALLS")" -eq 1 ]
+}
+
+@test "ensure_propers_not_preferred: already Do not Prefer is one skip and no write" {
+    stub_mediamanagement '{"id":1,"downloadPropersAndRepacks":"doNotPrefer"}'
+    run ensure_propers_not_preferred "http://x" "X-Api-Key: k" "Sonarr"
+    assert_success
+    assert_output "  - Sonarr: propers and repacks ranked by score (Do not Prefer) (already configured)"
+    [ ! -s "$CALLS" ]
+}
+
+@test "ensure_propers_not_preferred: settings it can't read are a ✗ and nothing is written" {
+    stub_mediamanagement ''
+    run ensure_propers_not_preferred "http://x" "X-Api-Key: k" "Sonarr"
+    assert_output "  ✗ Sonarr: read media management settings"
+    [ ! -s "$CALLS" ]
+}
+
+@test "ensure_propers_not_preferred: a refused write is a ✗, not a ✓" {
+    stub_mediamanagement '{"id":1,"downloadPropersAndRepacks":"preferAndUpgrade"}'
+    api_put() { return 1; }
+    run ensure_propers_not_preferred "http://x" "X-Api-Key: k" "Sonarr"
+    assert_output "  ✗ Sonarr: set propers and repacks to Do not Prefer"
+    refute_output --partial "✓"
+}
+
+@test "configure_arr_service scores the repack formats below Dolby Vision 8.1, then stops preferring propers" {
+    # With a repack at or above 8.1, "Do not Prefer" would bring back the
+    # PROPER-over-Dolby-Vision grab it is there to stop. Switching the mode
+    # before the repacks are scored would leave a window with no preference.
+    wait_for_service() { return 0; }
+    api_get() { echo '[]'; }
+    api_post() { echo '{}'; }
+    api_put() { return 0; }
+    ensure_cutoff_format_score() { :; }
+    ensure_custom_format() { printf '%s\t%s\t%s\n' "$4" "$5" "$6" >> "$CALLS"; }
+    ensure_propers_not_preferred() { printf 'PROPERS\t\t\n' >> "$CALLS"; }
+    NAS_IP=x SABNZBD_RUNNING=false
+    run configure_arr_service Sonarr 8989 k /data/media/tv tv renameEpisodes "" "{}"
+    run python3 -c '
+import sys
+rows = [l.rstrip("\n").split("\t") for l in open(sys.argv[1])]
+names = [r[0] for r in rows]
+scores = {r[0]: int(r[1]) for r in rows if r[1]}
+dv81 = scores["DV HDR10 (Profile 8.1)"]
+below = all(s < dv81 for n, s in scores.items() if n != "DV HDR10 (Profile 8.1)")
+after = names.index("PROPERS") > max(names.index(n) for n in ("Repack/Proper", "Repack2", "Repack3"))
+print(scores["Repack/Proper"], scores["Repack2"], scores["Repack3"], below, after)
+' "$CALLS"
+    assert_output "5 6 7 True True"
+}
+
+@test "Repack formats: each revision matches exactly one of Repack/Proper, Repack2 and Repack3" {
+    # Two matching at once would add their scores, and none matching would
+    # leave a PROPER at 0 with "Do not Prefer" set, never replacing its own
+    # release. Every condition is Required, so a format matches when each
+    # condition does (Negate flips one), case-insensitively, as in Sonarr.
+    wait_for_service() { return 0; }
+    api_get() { echo '[]'; }
+    api_post() { echo '{}'; }
+    api_put() { return 0; }
+    ensure_cutoff_format_score() { :; }
+    ensure_propers_not_preferred() { :; }
+    ensure_custom_format() { printf '%s\t%s\n' "$4" "$6" >> "$CALLS"; }
+    NAS_IP=x SABNZBD_RUNNING=false
+    run configure_arr_service Sonarr 8989 k /data/media/tv tv renameEpisodes "" "{}"
+    run python3 -c '
+import json, re, sys
+formats = {}
+for line in open(sys.argv[1]):
+    name, specs = line.rstrip("\n").split("\t")
+    if name.startswith("Repack"):
+        formats[name] = json.loads(specs)
+def matches(specs, title):
+    return all(bool(re.search(s["fields"][0]["value"], title, re.I)) != s["negate"] for s in specs)
+for tag in ["PROPER", "REPACK", "RERIP", "REPACK2", "REAL.PROPER", "PROPER3", "REAL.REAL.REPACK", ""]:
+    title = "Show.S01E01." + (tag + "." if tag else "") + "1080p.WEB.h264-GRP"
+    print(tag or "none", [n for n, specs in formats.items() if matches(specs, title)])
+' "$CALLS"
+    assert_output "PROPER ['Repack/Proper']
+REPACK ['Repack/Proper']
+RERIP ['Repack/Proper']
+REPACK2 ['Repack2']
+REAL.PROPER ['Repack2']
+PROPER3 ['Repack3']
+REAL.REAL.REPACK ['Repack3']
+none []"
+}
+
 @test "configure_arr_service upgrades until the Dolby Vision 8.1 score, whatever that score is" {
     # The cutoff must track the 8.1 score: set below it, an 8.1 release never
     # replaces a file at 0; set above it, a future positive format would let

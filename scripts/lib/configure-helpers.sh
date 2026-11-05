@@ -409,6 +409,38 @@ print(json.dumps(data))")
     fi
 }
 
+# Set Settings → Media Management → "Propers and Repacks" to "Do not Prefer".
+#
+# Usage:
+#   ensure_propers_not_preferred "$BASE" "$AUTH" "Sonarr"
+#
+# Any other mode compares a release's revision before its custom format score,
+# so a PROPER outranks every score. The Repack/Proper formats scored in
+# configure_arr_service rank repacks instead. Any other value is replaced,
+# because no other mode lets those scores decide.
+ensure_propers_not_preferred() {
+    local BASE="$1" AUTH="$2" name="$3"
+
+    local mm updated
+    mm=$(api_get "${BASE}/api/v3/config/mediamanagement" "$AUTH") || true
+    if ! json_extract "$mm" "sys.exit(0 if 'downloadPropersAndRepacks' in data else 1)"; then
+        fail "${name}: read media management settings"
+        return
+    fi
+    if json_extract "$mm" "sys.exit(0 if data['downloadPropersAndRepacks'] == 'doNotPrefer' else 1)"; then
+        skip "${name}: propers and repacks ranked by score (Do not Prefer)"
+        return
+    fi
+    updated=$(json_extract "$mm" "
+data['downloadPropersAndRepacks'] = 'doNotPrefer'
+print(json.dumps(data))")
+    if api_put "${BASE}/api/v3/config/mediamanagement" "application/json" "$updated" "$AUTH" >/dev/null 2>&1; then
+        ok "${name}: propers and repacks ranked by score (Do not Prefer)"
+    else
+        fail "${name}: set propers and repacks to Do not Prefer"
+    fi
+}
+
 # ============================================
 # Shared Sonarr/Radarr configuration
 # ============================================
@@ -656,11 +688,33 @@ print(str(xbmc[0].get('enable', False)).lower() if xbmc else 'false')")
     # own mediainfo only after import. For those, upgrading on the Dolby
     # Vision score is the lever that works.
     #
-    # It can't loop. 8.1 is the only format scored above 0, so the only
-    # upgrade this opens is to an 8.1 release. A file scores at least what its
-    # release did (the formats match the stored release title as well as the
-    # file name), so the upgraded file sits at the cutoff and stays there.
+    # It can't loop. An upgrade must raise the score, and the only formats
+    # scored above 0 are 8.1 and the repack formats below, which score less
+    # than 8.1 does. So a file climbs at most a few steps, and an 8.1 file sits
+    # at the cutoff and stays there. A file scores at least what its release
+    # did (the formats match the stored release title as well as the file
+    # name), so importing never drops it back below a release it came from.
     ensure_cutoff_format_score "$BASE" "$AUTH" "$name" "$dv81_score"
+
+    # --- Propers and repacks: ranked by score, below Dolby Vision 8.1 ---
+    #
+    # The default "Prefer and Upgrade" compares a release's revision before
+    # any custom format score. For an episode of an Apple TV+ show Sonarr
+    # grabbed a scene PROPER titled only "HDR" (score 0: a scene title names
+    # no service, so the HDR10+ format above can't judge it) over seven Dolby
+    # Vision 8.1 releases at 500. Had it imported, no 8.1 release could
+    # replace it: a lower revision is refused before scores are compared, so
+    # the cutoff above never gets a say. "Do not Prefer" with the repacks
+    # scored is the TRaSH set-up: a repack beats its own release and loses to
+    # 8.1. Score the formats first, so repacks are never left with no
+    # preference at all.
+    ensure_custom_format "$BASE" "$AUTH" "$name" "Repack/Proper" 5 \
+        '[{"name":"Repack/Proper/Rerip","implementation":"ReleaseTitleSpecification","negate":false,"required":true,"fields":[{"name":"value","value":"\\b(Repack|Proper|Rerip)\\b"}]},{"name":"Not Higher Version Repack/Proper","implementation":"ReleaseTitleSpecification","negate":true,"required":true,"fields":[{"name":"value","value":"\\b((repack|proper)[23])\\b|\\bREAL\\.(REAL\\.)?(PROPER|REPACK)\\b"}]}]'
+    ensure_custom_format "$BASE" "$AUTH" "$name" "Repack2" 6 \
+        '[{"name":"Repack/Proper 2 or REAL.PROPER/REPACK","implementation":"ReleaseTitleSpecification","negate":false,"required":true,"fields":[{"name":"value","value":"\\b((repack|proper)2)\\b|\\b(REAL\\.(PROPER|REPACK))\\b"}]},{"name":"Not Repack/Proper 3","implementation":"ReleaseTitleSpecification","negate":true,"required":true,"fields":[{"name":"value","value":"\\b((repack|proper)3)\\b|\\bREAL\\.(REAL\\.)(PROPER|REPACK)\\b"}]}]'
+    ensure_custom_format "$BASE" "$AUTH" "$name" "Repack3" 7 \
+        '[{"name":"Repack/Proper 3 or REAL.REAL.PROPER/REPACK","implementation":"ReleaseTitleSpecification","negate":false,"required":true,"fields":[{"name":"value","value":"\\b((repack|proper)3)\\b|\\b(REAL\\.REAL\\.(PROPER|REPACK))\\b"}]}]'
+    ensure_propers_not_preferred "$BASE" "$AUTH" "$name"
 
     # --- Delay profile (if SABnzbd running — prefer Usenet) ---
     if $SABNZBD_RUNNING; then
