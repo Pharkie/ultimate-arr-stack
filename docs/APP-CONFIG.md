@@ -183,7 +183,7 @@ Searches for TV shows, sends download links to qBittorrent/SABnzbd, and organize
    - Settings → Profiles → your quality profile → `DV (Profile 5)` = `-1000`, `DV HDR10 (Profile 8.1)` = `500`
    - Same profile → **Upgrade Until Custom Format Score** = `500`
 
-   > The upgrade-until score is what lets a Profile 8.1 release replace a file you already have. Left at `0`, a file that has reached the quality cutoff counts as finished, however good the release that turns up later. That matters most for HDR10+-only 4K WEB releases whose titles say only `HDR` (step 9 refuses the rest): a display with HDR10 but no HDR10+ (LG's 2020 OLEDs, for example) makes Jellyfin transcode or remux them instead of direct-playing. With the score at `500`, the only upgrade it opens is to an 8.1 release, and the new file then sits at the cutoff, so nothing loops.
+   > The upgrade-until score is what lets a Profile 8.1 release replace a file you already have. Left at `0`, a file that has reached the quality cutoff counts as finished, however good the release that turns up later. That matters most for HDR10+-only 4K WEB releases whose titles say only `HDR` (step 9 refuses the rest): a display with HDR10 but no HDR10+ (LG's 2020 OLEDs, for example) makes Jellyfin transcode or remux them instead of direct-playing. With the score at `500`, the upgrades it opens are to an 8.1 release or to a repack (step 10, which scores repacks well below 500), and an 8.1 file then sits at the cutoff, so nothing loops.
    >
    > The disc-source exclusion is deliberate. UHD Blu-ray Dolby Vision is **Profile 7**, whose base layer *is* HDR10-compatible, so penalising it would trade good remuxes for worse WEB rips.
    >
@@ -201,6 +201,13 @@ Searches for TV shows, sends download links to qBittorrent/SABnzbd, and organize
    > Both conditions must be **Required**. A release-title condition left optional counts as matched whenever any other release-title condition in the format matches, so an optional first line would match every release without DV.
    >
    > The `(?<!\[)` keeps the file's own name out of it. A custom format matches the file name as well as the release title, and the TRaSH naming scheme writes `[HDR10Plus]` into the name from mediainfo. Without it, a scene `HDR` file would drop to `-1000` once imported, every other release of that episode would look like an upgrade, and each would be downloaded in turn.
+
+10. **Rank repacks by score, not ahead of everything:** Sonarr's default *Prefer and Upgrade* compares a release's revision before its custom format score, so a `PROPER` with no Dolby Vision beats an 8.1 release, and once it's on disk an 8.1 release can never replace it.
+    - Settings → Media Management → *File Management* (Show Advanced) → **Propers and Repacks** = `Do not Prefer`
+    - Settings → Custom Formats → add the three [TRaSH repack formats](https://trash-guides.info/Sonarr/sonarr-collection-of-custom-formats/#repackproper): `Repack/Proper`, `Repack2`, `Repack3`
+    - Settings → Profiles → your quality profile → `Repack/Proper` = `5`, `Repack2` = `6`, `Repack3` = `7`
+
+    > A repack then still replaces its own release, but loses to 8.1. Keep every repack score below the 8.1 score, or "Do not Prefer" puts a PROPER back ahead of Dolby Vision.
 
 ## 4.5 Radarr (Movies)
 
@@ -243,6 +250,7 @@ Searches for movies, sends download links to qBittorrent/SABnzbd, and organizes 
 
 8. **Refuse Dolby Vision Profile 5:** same two custom formats, scores and upgrade-until score as [Sonarr step 8](#44-sonarr-tv-shows) — Radarr needs them independently, and the disc-source exclusion matters more here, since UHD Blu-ray remuxes are Profile 7 and must not be penalised.
 9. **Refuse HDR10+ without Dolby Vision:** the same custom format and score as [Sonarr step 9](#44-sonarr-tv-shows). A UHD Blu-ray with HDR10+ and no Dolby Vision is refused too when its title says so.
+10. **Rank repacks by score:** the same setting, formats and scores as [Sonarr step 10](#44-sonarr-tv-shows) (Radarr's [repack formats](https://trash-guides.info/Radarr/Radarr-collection-of-custom-formats/#repackproper) are the same three).
 
 ### Prefer Usenet over Torrents (Optional)
 
