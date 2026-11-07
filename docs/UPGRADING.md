@@ -87,6 +87,15 @@ The same commands add the `HDR10+ (no DV)` custom format to Sonarr and Radarr an
 
 The same commands also set **Propers and Repacks** to `Do not Prefer` in Sonarr and Radarr, and score the `Repack/Proper`, `Repack2` and `Repack3` custom formats `5`, `6` and `7` in every profile (adding them if absent), so a PROPER no longer outranks a Dolby Vision 8.1 release. Nothing to recreate. If you set propers to something else on purpose, the run replaces it: no other mode lets the scores decide. To do it by hand, follow [Sonarr step 10](APP-CONFIG.md#44-sonarr-tv-shows) in both apps.
 
+`configure-apps.sh` now adds a `Foreign dub first` custom format to Radarr and scores it `-1000` in every profile, so a release that names a dub before English (`iTA-ENG`, `Ita.Eng`, `[TR-EN]`) or is marked `DUAL` is refused. Those releases default to the dub. Nothing to recreate:
+
+```bash
+./scripts/configure-apps.sh --only radarr --dry-run
+./scripts/configure-apps.sh --only radarr
+```
+
+To add it by hand, follow [Radarr step 11](APP-CONFIG.md#45-radarr-movies). Films already in the library from a matching release now score `-1000`, so the next English release of the same quality that RSS finds replaces them on its own. To swap one now, open its interactive search and grab a release of the same quality or better. Until then, a film from such a release still starts in the dub. CYBER, NAHOM and TURG were the common groups.
+
 If you use Home Assistant, `configure-apps.sh` now points Bazarr's notifications at `HA_WEBHOOK_URL` in `.env`, the webhook everything else uses. Nothing to recreate:
 
 ```bash

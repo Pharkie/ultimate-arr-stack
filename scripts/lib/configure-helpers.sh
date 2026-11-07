@@ -400,6 +400,14 @@ ensure_bazarr_ha_notifier() {
 # would then look like an upgrade, and each would be downloaded in turn.
 HDR10PLUS_TITLE_RE='(?<!\[)\bhdr10(\+|p\b|[ .\-_]?plus\b)|\b(amzn|atvp|pmtp)\b.*\bhdr\b|\bhdr\b.*\b(amzn|atvp|pmtp)\b'
 
+# Release titles that put a dub ahead of English: the dub is named first
+# ("iTA-ENG", "Ita.Eng", "[TR-EN]") or the release is marked DUAL. Groups
+# name the tracks in their order, so an English-first release ("Eng.Rus",
+# "Eng.Fre.Ger...") is left alone. The (?<!^) keeps a film called "Dual"
+# from matching its own title. A file's own name carries no language, so a
+# file scores what its release did.
+FOREIGN_DUB_TITLE_RE='\b(ita|tr|tur|spa|esp|fre|fra|ger|rus|ukr|hin|pol|por)[ .\-_]+eng?\b|(?<!^)\bdual\b'
+
 # Ensure a custom format exists and is scored in every quality profile.
 #
 # Usage:
@@ -769,6 +777,31 @@ print(str(xbmc[0].get('enable', False)).lower() if xbmc else 'false')")
     local hdr10p_yes="{\"name\":\"HDR10+\",\"implementation\":\"ReleaseTitleSpecification\",\"negate\":false,\"required\":true,\"fields\":[{\"name\":\"value\",\"value\":\"${HDR10PLUS_TITLE_RE//\\/\\\\}\"}]}"
     ensure_custom_format "$BASE" "$AUTH" "$name" "HDR10+ (no DV)" -1000 \
         "[${hdr10p_yes},${dv_no}]"
+
+    # --- Custom Format: foreign dub ahead of the English track (Radarr) ---
+    #
+    # Italian and Turkish groups (CYBER, NAHOM, TURG) re-release English
+    # films with their own dub as the first and default audio track, their
+    # forced subtitles on by default and, at times, English subtitles OCR'd
+    # badly from the disc. A player starts the film in Italian. Against one
+    # library of 192 films the title regex matched 25, every one of them with
+    # a non-English default track, and no English-first release.
+    #
+    # Quality is ranked before score, so without this a dual-audio "BDRemux"
+    # beats every English encode, and ties with a proper English remux at
+    # score 0. With minFormatScore at 0 the -1000 refuses it outright.
+    #
+    # It goes by title, not by Radarr's Language condition. That condition
+    # reads a file's languages from its mediainfo, which takes in the extra
+    # dubs on ordinary English remuxes too (46 of the 192 films), so every
+    # remux would score -1000 against an English-only release and be
+    # upgraded again and again. Sonarr is left out: foreign-language shows
+    # lead with their original track, which is the one wanted.
+    if [[ "$name" == "Radarr" ]]; then
+        local dub_first="{\"name\":\"Dub named before English, or DUAL\",\"implementation\":\"ReleaseTitleSpecification\",\"negate\":false,\"required\":true,\"fields\":[{\"name\":\"value\",\"value\":\"${FOREIGN_DUB_TITLE_RE//\\/\\\\}\"}]}"
+        ensure_custom_format "$BASE" "$AUTH" "$name" "Foreign dub first" -1000 \
+            "[${dub_first}]"
+    fi
 
     # --- Keep upgrading until a file scores as Dolby Vision 8.1 ---
     #
