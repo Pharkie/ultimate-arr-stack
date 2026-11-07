@@ -563,3 +563,72 @@ print(score, hdr["fields"][0]["value"] == sys.argv[2], hdr["required"], hdr["neg
 ' "$CALLS" "$HDR10PLUS_TITLE_RE"
     assert_output '-1000 True True False True True \b(dv|dovi|dolby[ .\-_]?vision)\b'
 }
+
+# ---- Foreign dub first (Radarr) ---------------------------------------------
+
+foreign_dub_title() {
+    python3 -c 'import re, sys; print("match" if re.search(sys.argv[1], sys.argv[2], re.I) else "no match")' "$FOREIGN_DUB_TITLE_RE" "$1"
+}
+
+@test "Foreign dub first: matches a release that names its dub before English, or is marked DUAL" {
+    # Real titles from one library, each with the dub as the default track.
+    local t
+    for t in \
+        "X2.2003.4K.HDR.2160p.BDRemux.Ita.Eng.x265-NAHOM" \
+        "Dune.Parte.Due.2024.iTA-ENG.Bluray.2160p.HEVC.HDR.x265-CYBER" \
+        "Spider-Man.Brand.New.Day.2026.2160p.WEB-DL.x265-TurkSeeD [TR-EN]" \
+        "The.Mongoose.2026.2160p.AMZN.WEB-DL.DUAL.DDP5.1.DoVi.HDR.H.265-TURG" \
+        "X-Men.2.2003.DL.Esp.Eng.DTS.1080p.BDrip-RadeonHD" \
+        "[02] X2 (2003) BDRip 1080p H.265 [UKR_ENG] [Hurtom]"; do
+        run foreign_dub_title "$t"
+        assert_output "match"
+    done
+}
+
+@test "Foreign dub first: leaves English-first releases, remuxes with extra dubs and a film called Dual alone" {
+    local t
+    for t in \
+        "X-Men.2000.Eng.Fre.Ger.Ita.Spa.Cze.Pol.Jpn.2160p.BluRay.Remux.HDR.HEVC.DTS-HD.MA-SGF" \
+        "X-Men.2.2003.1080p.BDRemux.DTSHi-Res.x264.Eng.Rus" \
+        "X2.2003.UHD.BluRay.2160p.DTS-HD.MA.5.1.HEVC.REMUX-FraMeSToR" \
+        "Final.Destination.Bloodlines.2025.2160p.UHD.BluRay.REMUX.DV.P7.HDR.MULTi-BTM" \
+        "Dual.2022.1080p.BluRay.x264-GRP" \
+        "Transformers.2007.2160p.UHD.BluRay.x265-GRP"; do
+        run foreign_dub_title "$t"
+        assert_output "no match"
+    done
+}
+
+@test "Foreign dub first: a file's own name never matches, so a file scores what its release did" {
+    local t
+    for t in \
+        "X2 (2003) - [Remux-2160p][AC3 2.0][HDR10][x265]-NAHOM.mkv" \
+        "Dune Part Two (2024) - [Bluray-2160p][TrueHD Atmos 7.1][DV HDR10][HEVC]-CYBER.mkv"; do
+        run foreign_dub_title "$t"
+        assert_output "no match"
+    done
+}
+
+@test "configure_arr_service scores Foreign dub first at -1000 in Radarr, and not at all in Sonarr" {
+    wait_for_service() { return 0; }
+    api_get() { echo '[]'; }
+    api_post() { echo '{}'; }
+    api_put() { return 0; }
+    ensure_cutoff_format_score() { :; }
+    ensure_propers_not_preferred() { :; }
+    ensure_custom_format() { printf '%s\t%s\t%s\t%s\n' "$3" "$4" "$5" "$6" >> "$CALLS"; }
+    NAS_IP=x SABNZBD_RUNNING=false
+    run configure_arr_service Sonarr 8989 k /data/media/tv tv renameEpisodes "" "{}"
+    run configure_arr_service Radarr 7878 k /data/media/movies movies renameMovies "" "{}"
+    run python3 -c '
+import json, sys
+rows = [l.rstrip("\n").split("\t") for l in open(sys.argv[1])]
+hits = [r for r in rows if r[1] == "Foreign dub first"]
+print([r[0] for r in hits])
+svc, name, score, specs = hits[0]
+spec = json.loads(specs)[0]
+print(score, spec["fields"][0]["value"] == sys.argv[2], spec["required"], spec["negate"])
+' "$CALLS" "$FOREIGN_DUB_TITLE_RE"
+    assert_output "['Radarr']
+-1000 True True False"
+}
