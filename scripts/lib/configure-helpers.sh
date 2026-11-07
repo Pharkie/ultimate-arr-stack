@@ -289,6 +289,104 @@ bazarr_settings_post() {
     return 1
 }
 
+# The apprise URL for Bazarr's JSON notifier that posts to a Home Assistant
+# webhook (HA_WEBHOOK_URL, http[s]://<host>:<port>/api/webhook/<id>) with the
+# body every sender uses: {"title", "message", "level"}, as application/json.
+#
+# The ":" arguments are apprise's payload remaps. ":type=level" renames the
+# message type (Bazarr always sends "info") to `level`; an empty value drops
+# the key, so `version` and `attachments` go. Checked against the apprise
+# 1.11.0 bundled in Bazarr 1.6.2, 2026-11-07: the payload came out as exactly
+# {"title", "message", "level": "info"}.
+#
+# Prints the URL; returns 1 for anything that isn't a webhook URL.
+bazarr_ha_notifier_url() {
+    local url="$1" scheme rest
+    case "$url" in
+        http://*)  scheme=json;  rest="${url#http://}" ;;
+        https://*) scheme=jsons; rest="${url#https://}" ;;
+        *) return 1 ;;
+    esac
+    [[ "$rest" =~ ^[^/?#]+/api/webhook/[^/?#]+$ ]] || return 1
+    echo "${scheme}://${rest}?:type=level&:version=&:attachments="
+}
+
+# Where Bazarr's JSON notifier stands against the URL it should have. Prints
+#   MATCH        enabled, with exactly this URL
+#   OFF          this URL, but switched off (by hand: the script never does)
+#   FOREIGN      a URL that isn't a Home Assistant webhook
+#   NO_JSON      no JSON notifier in this Bazarr at all
+#   <fields>     what differs: "enabled", "url" or both
+# and nothing when the settings don't parse.
+bazarr_notifier_state() {
+    local settings="$1" want="$2"
+    json_extract "$settings" "
+want = '''${want}'''
+rows = [p for p in data['notifications']['providers'] if p.get('name') == 'JSON']
+if not rows:
+    print('NO_JSON'); sys.exit()
+url, enabled = rows[0].get('url') or '', rows[0].get('enabled') is True
+if url and '/api/webhook/' not in url:
+    print('FOREIGN')
+elif url == want:
+    print('MATCH' if enabled else 'OFF')
+else:
+    print(' '.join(([] if enabled else ['enabled']) + ['url']))"
+}
+
+# Point Bazarr's notifications at the stack's Home Assistant webhook.
+#
+# Usage:
+#   ensure_bazarr_ha_notifier "$BASE" "$AUTH" "$settings" "$HA_WEBHOOK_URL"
+#
+# The script owns Bazarr's JSON notifier while it points at a Home Assistant
+# webhook, so a stale one is replaced: on one install it was
+# json://homeassistant.lan:8123/…, which from inside a container is Traefik's
+# macvlan (docs/REFERENCE.md), and every notification was refused. A JSON
+# notifier pointed anywhere else is someone's own, and one switched off by
+# hand stays off; both are left alone rather than fought on every run.
+#
+# Bazarr's settings POST updates the notifier row by name and answers 204
+# whether or not a row matched, so the result is read back, not trusted.
+ensure_bazarr_ha_notifier() {
+    local BASE="$1" AUTH="$2" settings="$3" webhook="$4"
+
+    local want host state
+    if ! want=$(bazarr_ha_notifier_url "$webhook"); then
+        fail "Bazarr: notifications — HA_WEBHOOK_URL is not an http(s)://<host>:<port>/api/webhook/<id> URL"
+        return
+    fi
+    host="${want#*://}"; host="${host%%/*}"
+
+    state=$(bazarr_notifier_state "$settings" "$want")
+    case "$state" in
+        MATCH)   skip "Bazarr: notifications to Home Assistant at ${host}"; return ;;
+        OFF)     info "Bazarr: notifications to Home Assistant are switched off in Bazarr — left off"; return ;;
+        FOREIGN) info "Bazarr: notifications — its JSON notifier points somewhere other than a Home Assistant webhook — left alone"; return ;;
+        NO_JSON) fail "Bazarr: notifications — this Bazarr has no JSON notifier"; return ;;
+        "")      fail "Bazarr: could not compare notification settings"; return ;;
+    esac
+
+    local row
+    row=$(python3 -c 'import json, sys; print(json.dumps({"name": "JSON", "enabled": True, "url": sys.argv[1]}))' "$want")
+    if ! bazarr_settings_post "$BASE" "$AUTH" "notifications-providers=${row}"; then
+        fail "Bazarr: point notifications at Home Assistant"
+        return
+    fi
+    if [[ "${DRY_RUN:-false}" == "true" ]]; then
+        ok "Bazarr: point notifications at Home Assistant at ${host} (${state})"
+        return
+    fi
+
+    local after
+    after=$(bazarr_notifier_state "$(api_get "${BASE}/api/system/settings" "$AUTH" || true)" "$want")
+    if [[ "$after" == "MATCH" ]]; then
+        ok "Bazarr: pointed notifications at Home Assistant at ${host} (${state})"
+    else
+        fail "Bazarr: notifications — the write was accepted but the notifier reads back as '${after:-unreadable}'"
+    fi
+}
+
 # ============================================
 # Custom formats
 # ============================================

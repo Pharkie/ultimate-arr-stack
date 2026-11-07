@@ -1,6 +1,6 @@
 # Home Assistant Integration
 
-Every notification from the stack goes to Home Assistant through **one automation on one webhook**: Sonarr and Radarr, Uptime Kuma, Beszel, the nightly backup's failure alert, the weekly queue-cleanup report and the daily stuck-request check (which also names an imported episode file whose length says it is another show). Each notice says what happened and what, if anything, to do ("Ready to watch: …", "Needs manual import: … Open Radarr → Activity → Queue and import it").
+Every notification from the stack goes to Home Assistant through **one automation on one webhook**: Sonarr and Radarr, Bazarr, Uptime Kuma, Beszel, the nightly backup's failure alert, the weekly queue-cleanup report and the daily stuck-request check (which also names an imported episode file whose length says it is another show). Each notice says what happened and what, if anything, to do ("Ready to watch: …", "Needs manual import: … Open Radarr → Activity → Queue and import it").
 
 ## Prerequisites
 
@@ -18,7 +18,7 @@ The automation accepts two shapes of JSON and turns each into one notice:
 
 | Sender | Shape | Level |
 |---|---|---|
-| The stack's scripts, Uptime Kuma, Beszel, and anything you add | `{"title", "message", "level"?, "url"?, "tag"?}` | as sent: `info`, `warning` (default) or `critical` |
+| The stack's scripts, Bazarr, Uptime Kuma, Beszel, and anything you add | `{"title", "message", "level"?, "url"?, "tag"?}` | as sent: `info`, `warning` (default) or `critical` |
 | Sonarr / Radarr | their own webhook payload | `warning` for health problems and manual imports, `info` otherwise |
 
 `info` goes to the notification panel only; `warning` and `critical` also push to the phone (a normal push, so Focus modes still apply). A notice with the same `tag` replaces the earlier one.
@@ -50,6 +50,14 @@ http://192.168.1.20:8123/api/webhook/arr-stack-notify-CHANGE-ME
   ```bash
   HA_WEBHOOK_URL=http://192.168.1.20:8123/api/webhook/arr-stack-notify-CHANGE-ME
   ```
+
+- **Bazarr:** `./scripts/configure-apps.sh --only bazarr` points it at `HA_WEBHOOK_URL`. By hand: Settings → Notifications → **JSON**, enabled, URL
+
+  ```
+  json://192.168.1.20:8123/api/webhook/arr-stack-notify-CHANGE-ME?:type=level&:version=&:attachments=
+  ```
+
+  The `:` arguments make apprise send the generic shape: `title`, `message`, and its message type renamed to `level` (always `info` from Bazarr, so a new subtitle is a panel notice, not a push). Use `json://` with the IP, never `homeassistant.lan`: from inside a container a `.lan` name is Traefik's address, which refuses the connection ([REFERENCE.md](REFERENCE.md#service-connection-guide)).
 
 - **Uptime Kuma:** use a **Webhook** notification, not Kuma's *Home Assistant* type. That type calls a notify action directly (every device, unless you name one), so Kuma's alerts skip this automation: no consistent wording, no levels, and nothing replaces a "down" notice when the monitor recovers. In Kuma, Settings → Notifications → **Setup Notification**:
   1. **Notification Type:** Webhook. **Friendly Name:** anything, e.g. `Home Assistant webhook`.
@@ -85,6 +93,7 @@ Home Assistant answers `200 OK` to *any* webhook ID, including one with no autom
 | Fire | Expect |
 |---|---|
 | Sonarr and Radarr: Settings → Connect → the webhook → **Test** | Panel only: "Radarr: test notification / Radarr can reach Home Assistant. Nothing to do." |
+| Bazarr: Settings → Notifications → **JSON** → **Test** | Panel only: "Bazarr test notification / Test notification" |
 | Uptime Kuma: Settings → Notifications → the webhook → **Test** | Push: "Uptime Kuma test / Kuma can reach Home Assistant. Nothing to do." |
 | `./scripts/arr-backup.sh --tar --usb no-such-dir` (fails before touching anything) | Push: "Arr Stack: Backup Failed / Failed during: finding USB device…" |
 | `./scripts/check-stuck-requests.sh --test` | Panel only: "Stuck-request check: test / The daily stuck-request check can reach Home Assistant. Nothing to do." |

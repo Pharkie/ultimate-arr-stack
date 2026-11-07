@@ -362,6 +362,7 @@ Automatically downloads subtitles for your media.
    - **Movies Score Threshold:** On (default 70) — auto-syncs movie subs scoring below this
 
    > **Why:** Jellyfin's web player has no manual subtitle delay control. If subs are out of sync, the only fix is re-timing the subtitle file itself — which is exactly what this does.
+8. **Notifications (optional):** if you use [Home Assistant](HOME-ASSISTANT.md), Settings → Notifications → **JSON**, pointed at the same webhook as everything else ([HOME-ASSISTANT.md, Step 2](HOME-ASSISTANT.md#step-2-point-every-sender-at-it) has the URL). `configure-apps.sh` sets it from `HA_WEBHOOK_URL` in `.env`.
 
 ## 4.9 Pi-hole (DNS)
 
