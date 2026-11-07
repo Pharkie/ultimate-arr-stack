@@ -183,6 +183,127 @@ stub_curl() {
     [ ! -s "$CALLS" ]
 }
 
+# ---- ensure_bazarr_ha_notifier ---------------------------------------------
+
+HA_HOOK="http://192.0.2.20:8123/api/webhook/arr-stack-notify-test"
+HA_JSON="json://192.0.2.20:8123/api/webhook/arr-stack-notify-test?:type=level&:version=&:attachments="
+
+# Bazarr settings with one other notifier and a JSON one with this url
+# ("null" for none) and enabled flag.
+bazarr_notifiers() {
+    python3 -c '
+import json, sys
+url = None if sys.argv[1] == "null" else sys.argv[1]
+print(json.dumps({"notifications": {"providers": [
+    {"name": "Discord", "enabled": False, "url": None},
+    {"name": "JSON", "enabled": sys.argv[2] == "true", "url": url}]}}))' "$1" "$2"
+}
+
+# Each settings POST's arguments recorded one per line; the read-back
+# serves READBACK.
+stub_notifier_write() {
+    READBACK="$1"
+    bazarr_settings_post() { shift 2; printf '%s\n' "$@" >> "$CALLS"; }
+    api_get() { printf '%s' "$READBACK"; }
+}
+
+@test "bazarr_ha_notifier_url: the webhook becomes a JSON notifier that sends title, message and level" {
+    run bazarr_ha_notifier_url "$HA_HOOK"
+    assert_success
+    assert_output "$HA_JSON"
+    run bazarr_ha_notifier_url "https://ha.example.invalid/api/webhook/abc"
+    assert_output "jsons://ha.example.invalid/api/webhook/abc?:type=level&:version=&:attachments="
+}
+
+@test "bazarr_ha_notifier_url: refuses anything that isn't a webhook URL" {
+    local bad
+    for bad in "" "192.0.2.20:8123/api/webhook/x" "http://192.0.2.20:8123/api/webhook/" \
+        "http://192.0.2.20:8123/api/services/x" "http://192.0.2.20:8123/api/webhook/x?y=1"; do
+        run bazarr_ha_notifier_url "$bad"
+        assert_failure
+        assert_output ""
+    done
+}
+
+@test "ensure_bazarr_ha_notifier: replaces a stale .lan webhook, and reads it back" {
+    stub_notifier_write "$(bazarr_notifiers "$HA_JSON" true)"
+    run ensure_bazarr_ha_notifier "http://x" "X-API-KEY: k" \
+        "$(bazarr_notifiers "json://homeassistant.lan:8123/api/webhook/old" true)" "$HA_HOOK"
+    assert_success
+    assert_output "  ✓ Bazarr: pointed notifications at Home Assistant at 192.0.2.20:8123 (url)"
+    [ "$(wc -l < "$CALLS")" -eq 1 ]
+    run python3 -c '
+import json, sys
+key, _, row = open(sys.argv[1]).read().strip().partition("=")
+row = json.loads(row)
+print(key, row["name"], row["enabled"] is True, row["url"] == sys.argv[2])' "$CALLS" "$HA_JSON"
+    assert_output "notifications-providers JSON True True"
+}
+
+@test "ensure_bazarr_ha_notifier: a fresh Bazarr's notifier (off, no URL) is switched on" {
+    stub_notifier_write "$(bazarr_notifiers "$HA_JSON" true)"
+    run ensure_bazarr_ha_notifier "http://x" "X-API-KEY: k" "$(bazarr_notifiers null false)" "$HA_HOOK"
+    assert_output "  ✓ Bazarr: pointed notifications at Home Assistant at 192.0.2.20:8123 (enabled url)"
+}
+
+@test "ensure_bazarr_ha_notifier: already pointing at the webhook is one skip and no write" {
+    stub_notifier_write ""
+    run ensure_bazarr_ha_notifier "http://x" "X-API-KEY: k" "$(bazarr_notifiers "$HA_JSON" true)" "$HA_HOOK"
+    assert_output "  - Bazarr: notifications to Home Assistant at 192.0.2.20:8123 (already configured)"
+    [ ! -s "$CALLS" ]
+}
+
+@test "ensure_bazarr_ha_notifier: switched off by hand stays off" {
+    stub_notifier_write ""
+    run ensure_bazarr_ha_notifier "http://x" "X-API-KEY: k" "$(bazarr_notifiers "$HA_JSON" false)" "$HA_HOOK"
+    assert_output --partial "switched off in Bazarr — left off"
+    [ ! -s "$CALLS" ]
+}
+
+@test "ensure_bazarr_ha_notifier: a JSON notifier pointed somewhere else is left alone" {
+    stub_notifier_write ""
+    run ensure_bazarr_ha_notifier "http://x" "X-API-KEY: k" \
+        "$(bazarr_notifiers "json://my-own-thing.example.invalid/hook" true)" "$HA_HOOK"
+    assert_output --partial "left alone"
+    refute_output --partial "✓"
+    [ ! -s "$CALLS" ]
+}
+
+@test "ensure_bazarr_ha_notifier: a write that reads back unchanged is a ✗, not a ✓" {
+    local old
+    old=$(bazarr_notifiers "json://homeassistant.lan:8123/api/webhook/old" true)
+    stub_notifier_write "$old"
+    run ensure_bazarr_ha_notifier "http://x" "X-API-KEY: k" "$old" "$HA_HOOK"
+    assert_output "  ✗ Bazarr: notifications — the write was accepted but the notifier reads back as 'url'"
+}
+
+@test "ensure_bazarr_ha_notifier: a refused write is a ✗, not a ✓" {
+    stub_notifier_write "$(bazarr_notifiers "$HA_JSON" true)"
+    bazarr_settings_post() { return 1; }
+    run ensure_bazarr_ha_notifier "http://x" "X-API-KEY: k" "$(bazarr_notifiers null false)" "$HA_HOOK"
+    assert_output "  ✗ Bazarr: point notifications at Home Assistant"
+}
+
+@test "ensure_bazarr_ha_notifier: dry run says what it would change and sends nothing" {
+    stub_curl 0 $'\n204'
+    api_get() { echo "read-back" >> "$CALLS"; }
+    DRY_RUN=true
+    run ensure_bazarr_ha_notifier "http://x" "X-API-KEY: k" "$(bazarr_notifiers null false)" "$HA_HOOK"
+    assert_output "  [dry-run] Would: Bazarr: point notifications at Home Assistant at 192.0.2.20:8123 (enabled url)"
+    [ ! -s "$CALLS" ]
+}
+
+@test "ensure_bazarr_ha_notifier: no JSON notifier, a bad webhook or unreadable settings are a ✗ and nothing is written" {
+    stub_notifier_write ""
+    run ensure_bazarr_ha_notifier "http://x" "X-API-KEY: k" '{"notifications": {"providers": []}}' "$HA_HOOK"
+    assert_output "  ✗ Bazarr: notifications — this Bazarr has no JSON notifier"
+    run ensure_bazarr_ha_notifier "http://x" "X-API-KEY: k" "$(bazarr_notifiers null false)" "http://homeassistant.lan:8123/"
+    assert_output --partial "HA_WEBHOOK_URL is not an http(s)://"
+    run ensure_bazarr_ha_notifier "http://x" "X-API-KEY: k" '{}' "$HA_HOOK"
+    assert_output "  ✗ Bazarr: could not compare notification settings"
+    [ ! -s "$CALLS" ]
+}
+
 # ---- timeout knobs ---------------------------------------------------------
 
 @test "sourcing the helpers refuses a timeout knob that is not a positive integer" {

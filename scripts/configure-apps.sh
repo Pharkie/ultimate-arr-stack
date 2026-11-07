@@ -21,6 +21,9 @@
 #                      throwaway instance is enough; BAZARR_PORT forces the port.
 #                      Pair with `--only bazarr` or the rest of the live stack is
 #                      configured too.
+#   HA_WEBHOOK_URL     The Home Assistant webhook Bazarr's notifications are
+#                      pointed at (docs/HOME-ASSISTANT.md). Read from .env
+#                      when unset; with neither, they are left alone.
 #   API_TIMEOUT        Seconds any one API request may take (default 60).
 #   BAZARR_SCAN_TIMEOUT  For the Bazarr language-profile write, which rescans
 #                      the whole library inside the request (default 600).
@@ -933,6 +936,21 @@ print(' '.join(missing) if missing else 'MATCH')")
         else
             fail "Bazarr: enable Sub-Zero mods"
         fi
+    fi
+
+    # --- Notifications to Home Assistant ---
+    #
+    # The one webhook every sender posts to (docs/HOME-ASSISTANT.md), read the
+    # way the stack's scripts read it: the environment, else .env. See
+    # ensure_bazarr_ha_notifier in lib/configure-helpers.sh.
+    local ha_webhook="${HA_WEBHOOK_URL:-}"
+    if [[ -z "$ha_webhook" && -f .env ]]; then
+        ha_webhook=$(sed -n 's/^HA_WEBHOOK_URL=//p' .env | tail -n 1 | tr -d "\"'")
+    fi
+    if [[ -z "$ha_webhook" ]]; then
+        info "Bazarr: notifications — HA_WEBHOOK_URL is not set, none configured (docs/HOME-ASSISTANT.md)"
+    else
+        ensure_bazarr_ha_notifier "$BASE" "$AUTH" "$settings" "$ha_webhook"
     fi
 }
 
