@@ -336,9 +336,11 @@ services:
       - arr-stack
     volumes:
       - ./configarr/config.yml:/app/config/config.yml:ro
+      - ./configarr/custom/cfs:/app/custom/cfs:ro
       - configarr-repos:/app/repos
     environment:
       - TZ=${TZ}
       - SONARR_API_KEY=${SONARR_API_KEY}
       - RADARR_API_KEY=${RADARR_API_KEY}
+      - LIDARR_API_KEY=${LIDARR_API_KEY}
     logging: *default-logging

@@ -44,6 +44,8 @@ volumes:
     name: arr-stack_prowlarr-config
   radarr-config:
     name: arr-stack_radarr-config
+  lidarr-config:
+    name: arr-stack_lidarr-config
   jellyfin-config:
     name: arr-stack_jellyfin-config
   jellyfin-cache:
@@ -386,6 +388,39 @@ services:
       start_period: 60s
 
   # ═══════════════════════════════════════════════════════════════════════════
+  # LIDARR - Music monitor and library manager.
+  # Access: NAS_IP:8686
+  # Runs on the arr-stack bridge, NOT behind the VPN — same pattern as
+  # Sonarr/Radarr. Reaches VPN-side download/indexer services via gluetun.
+  # ═══════════════════════════════════════════════════════════════════════════
+  lidarr:
+    image: lscr.io/linuxserver/lidarr:latest
+    container_name: lidarr
+    <<: *lsio-security
+    environment:
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - TZ=${TZ}
+    ports:
+      - "8686:8686"   # Direct local access (http://NAS_IP:8686)
+    networks:
+      arr-stack:
+        ipv4_address: 172.20.0.12
+    volumes:
+      - lidarr-config:/config
+      - ${MEDIA_ROOT}:/data
+    labels:
+      - deunhealth.restart.on.unhealthy=true
+    restart: always
+    logging: *default-logging
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8686/"]
+      interval: 2m
+      timeout: 15s
+      retries: 3
+      start_period: 60s
+
+  # ═══════════════════════════════════════════════════════════════════════════
   # JELLYFIN - Media server. Stream your movies and TV shows like Netflix.
   # Access: jellyfin.lan | jellyfin.yourdomain.com | NAS_IP:8096
   # ═══════════════════════════════════════════════════════════════════════════
@@ -399,7 +434,7 @@ services:
     ports:
       - "8096:8096"     # Web UI
       - "7359:7359/udp" # Client discovery (auto-detect on LAN)
-      - "1900:1900/udp" # DLNA
+#      - "1900:1900/udp" # DLNA
     environment:
       - TZ=${TZ}
     # Hardware transcoding (Intel Quick Sync) - remove these 4 lines if no Intel GPU
