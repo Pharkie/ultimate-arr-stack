@@ -96,6 +96,23 @@ The same commands also set **Propers and Repacks** to `Do not Prefer` in Sonarr 
 
 To add it by hand, follow [Radarr step 11](APP-CONFIG.md#45-radarr-movies). Films already in the library from a matching release now score `-1000`, so the next English release of the same quality that RSS finds replaces them on its own. To swap one now, open its interactive search and grab a release of the same quality or better. Until then, a film from such a release still starts in the dub. CYBER, NAHOM and TURG were the common groups.
 
+`configure-apps.sh` now keeps UHD Blu-ray remuxes (Dolby Vision Profile 7) out of the `DV HDR10 (Profile 8.1)` score, adds a `DTS 6.1` custom format scored `-1000`, and brings any format it owns back in line with the repo when its conditions differ. Nothing to recreate:
+
+```bash
+./scripts/configure-apps.sh --only sonarr --dry-run
+./scripts/configure-apps.sh --only sonarr
+./scripts/configure-apps.sh --only radarr
+```
+
+The dry run lists each format whose conditions it would replace. If you edited one of the script's formats by hand, that edit goes. To change the 8.1 format by hand instead, follow [Sonarr step 8](APP-CONFIG.md#44-sonarr-tv-shows) (its third condition) and [step 11](APP-CONFIG.md#44-sonarr-tv-shows) in both apps. A Profile 7 remux already in the library drops from 500 to 0. It stays, and is replaced only if a converted 8.1 remux of the same film turns up in RSS.
+
+`scripts/check-playback-formats.sh` is new: it reads Sonarr's and Radarr's mediainfo for files the Jellyfin Android TV client can't play (Dolby Vision Profile 5, DTS 6.1) and posts one panel notice. Run it once by hand, then add the weekly cron line from [MAINTENANCE.md](MAINTENANCE.md#playback-formats):
+
+```bash
+./scripts/check-playback-formats.sh -v
+./scripts/check-playback-formats.sh --test
+```
+
 If you use Home Assistant, `configure-apps.sh` now points Bazarr's notifications at `HA_WEBHOOK_URL` in `.env`, the webhook everything else uses. Nothing to recreate:
 
 ```bash

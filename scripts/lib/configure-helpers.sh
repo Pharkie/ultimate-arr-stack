@@ -408,15 +408,42 @@ HDR10PLUS_TITLE_RE='(?<!\[)\bhdr10(\+|p\b|[ .\-_]?plus\b)|\b(amzn|atvp|pmtp)\b.*
 # file scores what its release did.
 FOREIGN_DUB_TITLE_RE='\b(ita|tr|tur|spa|esp|fre|fra|ger|rus|ukr|hin|pol|por)[ .\-_]+eng?\b|(?<!^)\bdual\b'
 
-# Ensure a custom format exists and is scored in every quality profile.
+# Remux titles, except those marked as converted to Dolby Vision Profile 8
+# (HYBRID, P8, "For LG TVs"). A UHD Blu-ray remux keeps the disc's Profile 7:
+# in one library 18 of 22 Dolby Vision remuxes were Profile 7 and this
+# scores 20 of the 22 right (the misses: a file with no release name, and a
+# Profile 8 BDRemux that Foreign dub first refuses anyway), while 46 of 47
+# Dolby Vision Blu-ray encodes were Profile 8 or 10. The Jellyfin Android TV client on a Fire TV can't
+# play Profile 7, so Jellyfin transcodes it and tone-maps the picture to SDR.
+# The trailing (?![^\[]*\]) skips a "Remux" inside brackets, which is the
+# file's own name ("[Remux-2160p]", "[Bluray-2160p Remux]"). A condition
+# matches the release title or the file name, so without it a HYBRID remux
+# would lose the 8.1 score once renamed and every other 8.1 release of the
+# film would look like an upgrade.
+REMUX_P7_TITLE_RE='^(?!.*\b(hybrid|p8|dvp8|for[ .\-_]?lg[ .\-_]?tvs?)\b).*\b(bd)?remux\b(?![^\[]*\])'
+
+# Release titles with a DTS 6.1 track: DTS-HD MA 6.1, DTS 6.1 or DTS-ES. The
+# track's core is 6.1 too, and the Jellyfin Android TV client on a Fire TV
+# stopped at 0 ms on one (it passes DTS through as the core), where a 7.1
+# track with a 5.1 core played. The (?<!\[) keeps a file's own "[DTS-HD MA
+# 6.1]" name out of it, as with HDR10+, so a file scores what its release did
+# and a 6.1 file arriving under a title that hid it can't set off a run of
+# re-downloads. check-playback-formats.sh finds those files instead.
+DTS_61_TITLE_RE='(?<!\[)\bdts([ .\-_]?(hd|ma|es))*[ .\-_]?6[ .]1\b|(?<!\[)\bdts[ .\-_]?es\b'
+
+# Ensure a custom format exists, with these conditions, and is scored in
+# every quality profile.
 #
 # Usage:
 #   ensure_custom_format "$BASE" "$AUTH" "Sonarr" "Reject ISO" -10000 "$specs_json"
 #
-# Idempotent on both halves: the format is created only when absent, and a
-# quality profile is only PUT when its score for that format is missing or
-# wrong. Existing specifications are left alone — if you change a regex here,
-# update it in the running service too, or repo and live silently diverge.
+# Idempotent on all three: the format is created when absent, its conditions
+# are replaced when they differ from these (compared by name, type, negate,
+# required and value), and a quality profile is only PUT when its score for
+# the format is missing or wrong. The script owns the formats it names, so a
+# condition edited by hand in the app is put back. Until conditions were
+# compared, a regex changed here never reached a running service, and repo
+# and live diverged without a word.
 ensure_custom_format() {
     local BASE="$1" AUTH="$2" name="$3" cf_name="$4" cf_score="$5" cf_specs="$6"
 
@@ -427,7 +454,29 @@ ids = [c['id'] for c in data if c.get('name') == '''${cf_name}''']
 print(ids[0] if ids else '')")
 
     if [[ -n "$cf_id" ]]; then
-        skip "${name}: ${cf_name} custom format"
+        local updated_cf
+        updated_cf=$(CF_SPECS="$cf_specs" json_extract "$formats" "
+import os
+want = json.loads(os.environ['CF_SPECS'])
+cf = [c for c in data if c.get('id') == ${cf_id}][0]
+def value(spec):
+    fields = spec.get('fields') or []
+    if isinstance(fields, dict):
+        return fields.get('value')
+    return next((f.get('value') for f in fields if f.get('name') == 'value'), None)
+def norm(specs):
+    return sorted(repr((s.get('name'), s.get('implementation'), bool(s.get('negate')),
+                        bool(s.get('required')), value(s))) for s in specs)
+if norm(cf.get('specifications') or []) != norm(want):
+    cf['specifications'] = want
+    print(json.dumps(cf))")
+        if [[ -z "$updated_cf" ]]; then
+            skip "${name}: ${cf_name} custom format"
+        elif api_put "${BASE}/api/v3/customformat/${cf_id}" "application/json" "$updated_cf" "$AUTH" >/dev/null 2>&1; then
+            ok "${name}: updated ${cf_name} custom format's conditions"
+        else
+            fail "${name}: update ${cf_name} custom format's conditions"
+        fi
     else
         local cf_payload cf_result
         cf_payload="{\"name\":\"${cf_name}\",\"includeCustomFormatWhenRenaming\":false,\"specifications\":${cf_specs}}"
@@ -747,16 +796,24 @@ print(str(xbmc[0].get('enable', False)).lower() if xbmc else 'false')")
     # With minFormatScore at 0 the -1000 is a functional reject, not just a
     # preference: Profile 5 releases are refused and the next-best release is
     # taken instead.
+    #
+    # Profile 7 isn't penalised, but nor does it earn the 8.1 score: a remux
+    # title says "DV HDR10" too, and with the bonus every Profile 7 remux
+    # outscored a plain HDR10 one. Played on a Fire TV in the Jellyfin client,
+    # the HDR10 remux direct-plays in HDR while the Profile 7 remux is
+    # transcoded and tone-mapped to SDR (Coraline, Zootopia, The Lighthouse,
+    # 2026-11-10). A remux marked as converted to 8.1 keeps the score.
     local dv_token='{"name":"Dolby Vision","implementation":"ReleaseTitleSpecification","negate":false,"required":true,"fields":[{"name":"value","value":"\\b(dv|dovi|dolby[ .\\-_]?vision)\\b"}]}'
     local hdr_yes='{"name":"HDR10 base layer","implementation":"ReleaseTitleSpecification","negate":false,"required":true,"fields":[{"name":"value","value":"\\bhdr|\\bhlg\\b|\\bpq\\b"}]}'
     local hdr_no='{"name":"No HDR10 fallback","implementation":"ReleaseTitleSpecification","negate":true,"required":true,"fields":[{"name":"value","value":"\\bhdr|\\bhlg\\b|\\bpq\\b"}]}'
     local disc_no='{"name":"Not a disc source","implementation":"ReleaseTitleSpecification","negate":true,"required":true,"fields":[{"name":"value","value":"\\b(blu-?ray|remux|bdrip|bdremux)\\b"}]}'
+    local remux_p7_no="{\"name\":\"Not a Profile 7 remux\",\"implementation\":\"ReleaseTitleSpecification\",\"negate\":true,\"required\":true,\"fields\":[{\"name\":\"value\",\"value\":\"${REMUX_P7_TITLE_RE//\\/\\\\}\"}]}"
 
     local dv81_score=500
     ensure_custom_format "$BASE" "$AUTH" "$name" "DV (Profile 5)" -1000 \
         "[${dv_token},${hdr_no},${disc_no}]"
     ensure_custom_format "$BASE" "$AUTH" "$name" "DV HDR10 (Profile 8.1)" "$dv81_score" \
-        "[${dv_token},${hdr_yes}]"
+        "[${dv_token},${hdr_yes},${remux_p7_no}]"
 
     # --- Custom Format: HDR10+ with no Dolby Vision ---
     #
@@ -777,6 +834,18 @@ print(str(xbmc[0].get('enable', False)).lower() if xbmc else 'false')")
     local hdr10p_yes="{\"name\":\"HDR10+\",\"implementation\":\"ReleaseTitleSpecification\",\"negate\":false,\"required\":true,\"fields\":[{\"name\":\"value\",\"value\":\"${HDR10PLUS_TITLE_RE//\\/\\\\}\"}]}"
     ensure_custom_format "$BASE" "$AUTH" "$name" "HDR10+ (no DV)" -1000 \
         "[${hdr10p_yes},${dv_no}]"
+
+    # --- Custom Format: DTS 6.1 ---
+    #
+    # X-Men: The Last Stand as a DTS-HD MA 6.1 remux stopped at 0 ms in the
+    # Jellyfin Android TV client on a Fire TV, every time, though ffmpeg
+    # decoded the whole track clean. The client passes DTS through as the
+    # core, and this core is 6.1. A DTS-HD MA 7.1 film, with a 5.1 core,
+    # played. With minFormatScore at 0 the -1000 refuses the release, and the
+    # next one is taken: for that film, a DD 5.1 encode of the same disc.
+    local dts61="{\"name\":\"DTS 6.1\",\"implementation\":\"ReleaseTitleSpecification\",\"negate\":false,\"required\":true,\"fields\":[{\"name\":\"value\",\"value\":\"${DTS_61_TITLE_RE//\\/\\\\}\"}]}"
+    ensure_custom_format "$BASE" "$AUTH" "$name" "DTS 6.1" -1000 \
+        "[${dts61}]"
 
     # --- Custom Format: foreign dub ahead of the English track (Radarr) ---
     #
