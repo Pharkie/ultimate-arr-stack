@@ -1,0 +1,38 @@
+{
+  "trash_id": "lidarr-preferred-groups",
+  "trash_scores": {
+    "default": 100
+  },
+  "trash_description": "Servarr Lidarr guide - Preferred Groups",
+  "name": "Preferred Groups",
+  "includeCustomFormatWhenRenaming": false,
+  "specifications": [
+    {
+      "name": "DeVOiD",
+      "implementation": "ReleaseGroupSpecification",
+      "negate": false,
+      "required": false,
+      "fields": {
+        "value": "\\bDeVOiD\\b"
+      }
+    },
+    {
+      "name": "PERFECT",
+      "implementation": "ReleaseGroupSpecification",
+      "negate": false,
+      "required": false,
+      "fields": {
+        "value": "\\bPERFECT\\b"
+      }
+    },
+    {
+      "name": "ENRiCH",
+      "implementation": "ReleaseGroupSpecification",
+      "negate": false,
+      "required": false,
+      "fields": {
+        "value": "\\bENRiCH\\b"
+      }
+    }
+  ]
+}
