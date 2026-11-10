@@ -53,10 +53,11 @@ For each part of the stack: which check covers it, where that check runs, whethe
 | Workflows (actionlint), devcontainer Dockerfile (hadolint) | | | blocks | devcontainer must build | | | |
 | **Scripts** | | | | | | | |
 | `arr-backup.sh` naming, encryption, rotation, exit status on a failed volume, Sonarr/Radarr/Jellyfin database copies and their integrity check (docker, gpg stubbed; real SQLite files) | | fails | blocks | | | | |
-| `configure-apps.sh` HTTP helpers, Bazarr plan, command line, custom-format scores (HDR10+ regex, repacks below the Dolby Vision 8.1 score and each revision matching one repack format), upgrade-until score, propers mode, Bazarr's Home Assistant notifier | | fails | blocks | | | | |
+| `configure-apps.sh` HTTP helpers, Bazarr plan, command line, custom-format scores (HDR10+, DTS 6.1 and Profile 7 remux regexes, a custom format's conditions brought into line with the repo's, repacks below the Dolby Vision 8.1 score and each revision matching one repack format), upgrade-until score, propers mode, Bazarr's Home Assistant notifier | | fails | blocks | | | | |
 | Duplicate `.lan` detection: hook check 8 and `check-dns-duplicates.sh` (SSH, docker and a grep without `-P` faked) | | fails | blocks | | | | |
 | `queue-cleanup.sh` leaves downloads matched by ID for a manual import and names them in the weekly notice, still removing other blocked imports (docker, curl stubbed) | | fails | blocks | | | | |
 | `check-stuck-requests.sh` finds a request whose season number isn't in TVDB's list, Seerr's own FAILED state, a monitored series with no monitored season, and never-grabbed episodes and movies sorted by the app's own release search (a release it would take → `--apply` queues the search; all rejected → the reasons; nothing while an indexer is in backoff → not trusted; nothing → a Prowlarr title search tells the TV-broadcast trap from "no indexer carries it"), and an imported file whose length is 40%+ off TVDB's runtime for its episode when another series shares the plain title (the real Queer as Folk numbers; a two-episode file, missing media info and a zero runtime are skipped; no same-named series → `-v` only); a film still in cinemas is left alone; one `info` notice, nothing posted on a clean run, search cap honoured, dry run sends no command (docker, curl stubbed) | | fails | blocks | | | | |
+| `check-playback-formats.sh` reports Dolby Vision Profile 5 (mediainfo `DV`) and DTS 6.1 files from Sonarr's and Radarr's mediainfo, leaves 8.1, HDR10+, TrueHD and DTS 5.1/7.1 alone, skips files with no mediainfo and series with no files; `--apply` searches Profile 5 only; one `info` notice, nothing posted on a clean run (docker, curl stubbed) | | fails | blocks | | | | |
 | **Live stack** | | | | | | | |
 | App settings and health through their APIs⁸ | | | | | fails | | |
 | UIs log in and render | | | | | fails | | |
@@ -67,6 +68,7 @@ For each part of the stack: which check covers it, where that check runs, whethe
 | No executables under `/data` | | | | | fails | | cron `scan-executables.sh` |
 | Requests stuck between Seerr, Sonarr/Radarr and the indexers | | | | | | | cron `check-stuck-requests.sh` |
 | An imported episode file that is another same-named show (runtime against TVDB's) | | | | | | | cron `check-stuck-requests.sh` |
+| A file in a format the Jellyfin Android TV client can't play (Dolby Vision Profile 5, DTS 6.1), by mediainfo | | | | | | | cron `check-playback-formats.sh` |
 | Every container healthy | | | | | | | by hand |
 | **Supply chain** | | | | | | | |
 | npm dependency CVEs; secrets and misconfiguration in the tree (trivy, HIGH/CRITICAL) | | | blocks | | | | |

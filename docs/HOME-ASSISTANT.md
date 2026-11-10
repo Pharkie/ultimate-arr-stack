@@ -97,6 +97,7 @@ Home Assistant answers `200 OK` to *any* webhook ID, including one with no autom
 | Uptime Kuma: Settings → Notifications → the webhook → **Test** | Push: "Uptime Kuma test / Kuma can reach Home Assistant. Nothing to do." |
 | `./scripts/arr-backup.sh --tar --usb no-such-dir` (fails before touching anything) | Push: "Arr Stack: Backup Failed / Failed during: finding USB device…" |
 | `./scripts/check-stuck-requests.sh --test` | Panel only: "Stuck-request check: test / The daily stuck-request check can reach Home Assistant. Nothing to do." |
+| `./scripts/check-playback-formats.sh --test` | Panel only: "Playback-format check: test / The weekly playback-format check can reach Home Assistant. Nothing to do." |
 
 A notice titled "Arr stack: unrecognised notification" means the body wasn't understood. Most often the sender didn't send `Content-Type: application/json`, which Home Assistant needs before it parses a body at all.
 

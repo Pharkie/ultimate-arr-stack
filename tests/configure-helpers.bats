@@ -632,3 +632,189 @@ print(score, spec["fields"][0]["value"] == sys.argv[2], spec["required"], spec["
     assert_output "['Radarr']
 -1000 True True False"
 }
+
+# ---- Dolby Vision 8.1 score: not for Profile 7 remuxes ----------------------
+
+remux_p7_title() {
+    python3 -c 'import re, sys; print("match" if re.search(sys.argv[1], sys.argv[2], re.I) else "no match")' "$REMUX_P7_TITLE_RE" "$1"
+}
+
+@test "Profile 7 remux: matches remux titles, which keep the disc's Profile 7" {
+    # Real titles from one library, every one Profile 7 by its file's
+    # Dolby Vision configuration record.
+    local t
+    for t in \
+        "Coraline.2009.2160p.UHD.BluRay.DV.REMUX.HDR10.HEVC.TrueHD.7.1.Atmos-UnKn0wn" \
+        "Final.Destination.Bloodlines.2025.2160p.UHD.BluRay.REMUX.DV.P7.HDR.MULTi-BTM" \
+        "Pressure.2026.2160p.UHD.Blu-ray.Remux.HEVC.DoVi.HDR10.TrueHD.Atmos.7.1-SPHD" \
+        "The.Lighthouse.2019.4K.HDR.DV.2160p.BDRemux.Ita.Eng.x265-NAHOM" \
+        "Stranger.Things.S03E05.BluRay.2160p.DTS-HD.MA.5.1.DV.HDR10.REMUX-Seedpool [AsRequested]" \
+        "Film 2020 2160p UHD BluRay REMUX DV HDR10 TrueHD-GRP"; do
+        run remux_p7_title "$t"
+        assert_output "match"
+    done
+}
+
+@test "Profile 7 remux: leaves converted remuxes, encodes and WEB releases alone" {
+    local t
+    for t in \
+        "Up.2009.UHD.BluRay.2160p.TrueHD.Atmos.7.1.DV.HEVC.HYBRID.REMUX-FraMeSToR" \
+        "Pirates.Of.The.Caribbean.On.Stranger.Tides.2011.2160p.REMUX.For.LGTVs.Dolby.Vision.HDR.ENG.RUS" \
+        "Film.2024.2160p.UHD.BluRay.REMUX.DV.P8.HDR10.TrueHD-GRP" \
+        "Hoppers.2026.UHD.BluRay.2160p.DDP.Atmos.5.1.DV.HDR.x265-hallowed" \
+        "Predator.Badlands.2025.2160p.UHD.BDRip.HEVC.10bit.DV.HDR.TrueHD.7.1.Atmos-MUSHR00M" \
+        "Stranger.Things.S05E08.Chapter.Eight.The.Rightside.Up.2160p.NF.WEB-DL.DDP5.1.DV.HDR.H.265-NTb"; do
+        run remux_p7_title "$t"
+        assert_output "no match"
+    done
+}
+
+@test "Profile 7 remux: a file's own [Remux] name never matches, so a converted remux keeps its score once renamed" {
+    # A condition matches the release title or the file name. If the name
+    # matched, a HYBRID remux would drop to 0 on import, and every other 8.1
+    # release of the film would look like an upgrade.
+    local t
+    for t in \
+        "Up (2009) - [Remux-2160p][TrueHD Atmos 7.1][DV HDR10][HEVC]-FraMeSToR.mkv" \
+        "Stranger Things (2016) - S03E05 - Chapter Five [Bluray-2160p Remux][DTS-HD MA 5.1][DV HDR10][HEVC].mkv"; do
+        run remux_p7_title "$t"
+        assert_output "no match"
+    done
+}
+
+# ---- DTS 6.1 ----------------------------------------------------------------
+
+dts61_title() {
+    python3 -c 'import re, sys; print("match" if re.search(sys.argv[1], sys.argv[2], re.I) else "no match")' "$DTS_61_TITLE_RE" "$1"
+}
+
+@test "DTS 6.1: matches DTS-HD MA 6.1, DTS 6.1 and DTS-ES titles" {
+    # The first is the remux that stopped at 0 ms; the rest are what the
+    # same film's search turned up.
+    local t
+    for t in \
+        "X-Men.The.Last.Stand.2006.UHD.BluRay.2160p.DTS-HD.MA.6.1.HEVC.REMUX-FraMeSToR" \
+        "X-Men.The.Last.Stand.2006.2160p.BluRay.x265.10bit.SDR.DTS-HD.MA.6.1-SWTYBLZ" \
+        "X-Men The Last Stand 2006 2160p UHD BDRip HEVC 10bit HDR DTS-HD.MA.6.1 MUSHR00M" \
+        "X-Men The Last Stand 2006 1080p BluRay DTS-ES x264-RARBG" \
+        "X.Men.The.Last.Stand.2006.BluRay.1080p.DTS-ES.x264-PRoDJi" \
+        "Film.2001.1080p.BluRay.DTS.6.1.x264-GRP"; do
+        run dts61_title "$t"
+        assert_output "match"
+    done
+}
+
+@test "DTS 6.1: leaves DTS 5.1 and 7.1, DTS:X and other codecs' 6.1 alone" {
+    local t
+    for t in \
+        "X-Men-The.Last.Stand.2006.UHD.BluRay.HDR10.2160p.Dts-HD.Ma5.1.H265-d3g" \
+        "Lincoln.2012.1080p.BluRay.DTS-HD.MA.7.1.x264-GRP" \
+        "Film.2020.2160p.UHD.BluRay.DTS-X.7.1.HEVC.REMUX-FraMeSToR" \
+        "X-Men.The.Last.Stand.2006.2160p.BDRip.HDR10.10bit.x265.AAC.6.1-PredikaT"; do
+        run dts61_title "$t"
+        assert_output "no match"
+    done
+}
+
+@test "DTS 6.1: a file's own [DTS-HD MA 6.1] name never matches, so a file scores what its release did" {
+    local t
+    for t in \
+        "X-Men The Last Stand (2006) - [Remux-2160p][DTS-HD MA 6.1][HDR10][HEVC]-FraMeSToR.mkv" \
+        "Film (2004) - [Bluray-1080p][DTS-ES 6.1][x264]-GRP.mkv"; do
+        run dts61_title "$t"
+        assert_output "no match"
+    done
+}
+
+@test "configure_arr_service scores DTS 6.1 at -1000 in both apps, and keeps Profile 7 remuxes out of the 8.1 score" {
+    wait_for_service() { return 0; }
+    api_get() { echo '[]'; }
+    api_post() { echo '{}'; }
+    api_put() { return 0; }
+    ensure_cutoff_format_score() { :; }
+    ensure_propers_not_preferred() { :; }
+    ensure_custom_format() { printf '%s\t%s\t%s\t%s\n' "$3" "$4" "$5" "$6" >> "$CALLS"; }
+    NAS_IP=x SABNZBD_RUNNING=false
+    run configure_arr_service Sonarr 8989 k /data/media/tv tv renameEpisodes "" "{}"
+    run configure_arr_service Radarr 7878 k /data/media/movies movies renameMovies "" "{}"
+    run python3 -c '
+import json, sys
+rows = [l.rstrip("\n").split("\t") for l in open(sys.argv[1])]
+dts = [r for r in rows if r[1] == "DTS 6.1"]
+print([r[0] for r in dts])
+spec = json.loads(dts[0][3])[0]
+print(dts[0][2], spec["fields"][0]["value"] == sys.argv[2], spec["required"], spec["negate"])
+dv81 = [r for r in rows if r[1] == "DV HDR10 (Profile 8.1)"][0]
+remux = json.loads(dv81[3])[2]
+print(dv81[2], remux["fields"][0]["value"] == sys.argv[3], remux["required"], remux["negate"])
+' "$CALLS" "$DTS_61_TITLE_RE" "$REMUX_P7_TITLE_RE"
+    assert_output "['Sonarr', 'Radarr']
+-1000 True True False
+500 True True True"
+}
+
+# ---- ensure_custom_format: conditions follow the repo -----------------------
+
+# A Sonarr with one custom format (id 7) whose conditions are $LIVE_SPECS, and
+# one quality profile already scoring it at 500. api_put records what it sends.
+stub_one_format() {
+    LIVE_SPECS="$1"
+    api_get() {
+        case "$1" in
+            */api/v3/customformat) printf '[{"id": 7, "name": "DV HDR10 (Profile 8.1)", "includeCustomFormatWhenRenaming": false, "specifications": %s}]' "$LIVE_SPECS" ;;
+            */api/v3/qualityprofile) echo '[{"id": 1}]' ;;
+            */api/v3/qualityprofile/1) echo '{"id": 1, "formatItems": [{"format": 7, "name": "DV HDR10 (Profile 8.1)", "score": 500}]}' ;;
+        esac
+    }
+    api_post() { echo '{}'; }
+    api_put() { printf 'PUT %s %s\n' "$1" "$3" >> "$CALLS"; }
+}
+
+# Conditions as the API returns them: fields as a list with extra keys,
+# implementationName and the like added.
+api_spec() {
+    printf '{"name": "%s", "implementation": "ReleaseTitleSpecification", "implementationName": "Release Title", "negate": %s, "required": true, "fields": [{"order": 0, "name": "value", "label": "Regular Expression", "value": "%s", "type": "textbox", "advanced": false}]}' "$1" "$2" "$3"
+}
+repo_spec() {
+    printf '{"name": "%s", "implementation": "ReleaseTitleSpecification", "negate": %s, "required": true, "fields": [{"name": "value", "value": "%s"}]}' "$1" "$2" "$3"
+}
+
+@test "ensure_custom_format: conditions that differ from the repo's are replaced, and the rest of the format kept" {
+    stub_one_format "[$(api_spec "Dolby Vision" false 'dv'),$(api_spec "HDR10 base layer" false 'hdr')]"
+    run ensure_custom_format http://x k Sonarr "DV HDR10 (Profile 8.1)" 500 \
+        "[$(repo_spec "Dolby Vision" false 'dv'),$(repo_spec "HDR10 base layer" false 'hdr'),$(repo_spec "Not a Profile 7 remux" true 'remux')]"
+    assert_output --partial "✓ Sonarr: updated DV HDR10 (Profile 8.1) custom format's conditions"
+    run grep -c '^PUT http://x/api/v3/customformat/7 ' "$CALLS"
+    assert_output "1"
+    run python3 -c '
+import json, sys
+line = open(sys.argv[1]).readline()
+body = json.loads(line.split(" ", 2)[2])
+print(body["id"], body["name"], body["includeCustomFormatWhenRenaming"], [s["name"] for s in body["specifications"]])
+' "$CALLS"
+    assert_output "7 DV HDR10 (Profile 8.1) False ['Dolby Vision', 'HDR10 base layer', 'Not a Profile 7 remux']"
+}
+
+@test "ensure_custom_format: the same conditions in another order, with the API's extra fields, are a skip and no write" {
+    stub_one_format "[$(api_spec "HDR10 base layer" false 'hdr'),$(api_spec "Dolby Vision" false 'dv')]"
+    run ensure_custom_format http://x k Sonarr "DV HDR10 (Profile 8.1)" 500 \
+        "[$(repo_spec "Dolby Vision" false 'dv'),$(repo_spec "HDR10 base layer" false 'hdr')]"
+    assert_output --partial "- Sonarr: DV HDR10 (Profile 8.1) custom format (already configured)"
+    [ ! -s "$CALLS" ]
+}
+
+@test "ensure_custom_format: a negate flipped by hand is put back" {
+    stub_one_format "[$(api_spec "Not a Profile 7 remux" false 'remux')]"
+    run ensure_custom_format http://x k Sonarr "DV HDR10 (Profile 8.1)" 500 \
+        "[$(repo_spec "Not a Profile 7 remux" true 'remux')]"
+    assert_output --partial "updated DV HDR10 (Profile 8.1) custom format's conditions"
+}
+
+@test "ensure_custom_format: a refused condition update is a ✗, not a ✓" {
+    stub_one_format "[$(api_spec "Dolby Vision" false 'dv')]"
+    api_put() { return 1; }
+    run ensure_custom_format http://x k Sonarr "DV HDR10 (Profile 8.1)" 500 \
+        "[$(repo_spec "Dolby Vision" false 'dovi')]"
+    assert_output --partial "✗ Sonarr: update DV HDR10 (Profile 8.1) custom format's conditions"
+    refute_output --partial "✓"
+}
