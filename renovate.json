@@ -6,6 +6,11 @@
   ],
   "forkProcessing": "enabled",
   "timezone": "Europe/London",
+  "schedule": [
+    "* * * * 1-2"
+  ],
+  "minimumReleaseAge": "7 days",
+  "minimumReleaseAgeBehaviour": "timestamp-optional",
   "labels": [
     "dependencies"
   ],
