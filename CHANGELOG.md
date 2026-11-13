@@ -2,7 +2,9 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased]
+## [1.19.0] - 2026-11-13
+
+Seerr 3.5.2's security fixes, Sonarr and Radarr scoring by what the Fire TV client actually plays, and a VPN outage that arrives as one notice and says why.
 
 ### Added
 - **A weekly check names the library files the Jellyfin Android TV client can't play.** The custom formats judge a release by its title, once, at grab time. They never look at a file already on disk, and they can't see a format the title doesn't name. One library held twelve Dolby Vision Profile 5 episodes, green and magenta on a Fire TV for the whole episode. Eleven were grabbed before the Profile 5 format existed. The twelfth was a Simpsons episode grabbed the day it was found, from a release titled `1080p.web.h264` that held 2160p Profile 5. `scripts/check-playback-formats.sh` reads Sonarr's and Radarr's own mediainfo for every file. It reports Dolby Vision Profile 5 (mediainfo `DV`) and DTS 6.1, the two formats that failed on a Fire TV Cube when one file of each format in the library was played. It posts one panel-only notice (tag `playback-formats`) naming each file and what to do. With `--apply` it queues the app's own search for Profile 5 files, which score `-1000` and so are replaced by any release of the same quality without it. A DTS 6.1 file still scores 0, so the notice says to replace it by hand. Run it weekly from cron; see `docs/MAINTENANCE.md`. 10 bats tests, each of four deliberate breaks of the check failing at least one of them.
