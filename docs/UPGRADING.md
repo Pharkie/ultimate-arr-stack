@@ -40,7 +40,35 @@ docker compose -f docker-compose.arr-stack.yml up -d  # Restarts containers with
 
 When upgrading across versions, check below for any action required.
 
-### v1.18.0 → Unreleased
+### v1.18.0 → v1.19.0
+
+Eight images change, dnscrypt-proxy gets its config from the repo, and `configure-apps.sh` has new settings for Sonarr, Radarr and Bazarr. None of the images migrates a database. In order:
+
+1. **Recreate the changed services**, each through its own compose file, and never with `--remove-orphans`. Seerr 3.5.2 fixes three security vulnerabilities whose details Seerr publishes on 15 November 2026, so don't leave it. Recreating Pi-hole takes LAN DNS and every `.lan` name down for about 35 seconds. If you keep a customised `docker-compose.arr-stack.yml`, add dnscrypt-proxy's `group_add` and mount first (below). If a TCP Port monitor of your own in Uptime Kuma has TLS on, read the Kuma note below before recreating it.
+
+   ```bash
+   cd $NAS_STACK_DIR && git pull
+   docker compose -f docker-compose.arr-stack.yml pull seerr jellyfin prowlarr pihole dnscrypt-proxy
+   docker compose -f docker-compose.arr-stack.yml up -d --no-deps seerr jellyfin prowlarr pihole dnscrypt-proxy
+   docker compose -f docker-compose.cloudflared.yml pull cloudflared
+   docker compose -f docker-compose.cloudflared.yml up -d --no-deps cloudflared
+   docker compose -f docker-compose.tailscale.yml pull tailscale
+   docker compose -f docker-compose.tailscale.yml up -d tailscale
+   docker compose -f docker-compose.utilities.yml pull uptime-kuma
+   docker compose -f docker-compose.utilities.yml up -d --no-deps uptime-kuma
+   ```
+
+   Seerr can take a few minutes from container start to `Server ready on port 5055` in `docker logs seerr`; the healthcheck allows for it, so don't recreate it again. configarr is opt-in and is pulled the next time you run it.
+2. **Run `configure-apps.sh`** for Sonarr, Radarr and Bazarr. Read each dry run before the real run:
+
+   ```bash
+   for s in sonarr radarr bazarr; do ./scripts/configure-apps.sh --only $s --dry-run; done
+   for s in sonarr radarr bazarr; do ./scripts/configure-apps.sh --only $s; done
+   ```
+
+3. **Optional:** the weekly playback-format check, the VPN cause in Kuma's notice, and Home Assistant folding a VPN outage into one notice. Each is described below.
+
+The details:
 
 dnscrypt-proxy's config now lives in the repo as `dnscrypt-proxy/dnscrypt-proxy.toml`, bind-mounted read-only over the copy in the `dnscrypt-config` volume. It is the image default plus `disabled_server_names = ['yunzheng-dns64']`, a DNS64 resolver in the public pool whose synthesised `64:ff9b::/96` answers nothing on a dual-stack LAN can route. `git pull` brings the file; recreating the service applies the mount:
 
@@ -122,7 +150,7 @@ If you use Home Assistant, `configure-apps.sh` now points Bazarr's notifications
 
 It replaces a JSON notifier that points at any Home Assistant webhook, such as an old `json://homeassistant.lan:8123/…`, which a container can't reach. It leaves alone a JSON notifier pointed at anything else, and one you switched off. Then send Bazarr's test (Settings → Notifications → **JSON** → **Test**) and look for it in the Home Assistant panel.
 
-Seven image bumps arrive with the same `git pull` and need nothing beyond a pull and an `up -d` per compose file. Two of them change behaviour you may rely on:
+The seven image bumps and Seerr 3.5.2 need nothing beyond step 1. Two of the bumps change behaviour you may rely on:
 
 - **Uptime Kuma 2.5.8 removes TLS from the TCP Port monitor.** A TCP monitor that had TLS switched on becomes a plain port check and stops checking the certificate. Look at your TCP monitors before upgrading, and replace any you need with an HTTP(S) monitor (which checks certificate expiry). The stack's own monitors are all HTTP or push, so nothing changes for them.
 - **Prowlarr 2.7.0 drops `0.0.0.0` and `[::]` from Allowed Hosts** and logs "Ignoring … in Allowed Hosts, bind addresses are not host names". If those were the only entries, the list is now empty and Prowlarr accepts any Host header, as it does when the setting is left blank (the default here). Put real hostnames there if you meant to filter.
