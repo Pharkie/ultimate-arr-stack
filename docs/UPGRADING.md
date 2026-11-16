@@ -40,7 +40,7 @@ docker compose -f docker-compose.arr-stack.yml up -d  # Restarts containers with
 
 When upgrading across versions, check below for any action required.
 
-### v1.19.0 → Unreleased
+### v1.19.0 → v1.20.0
 
 `configure-apps.sh` now adds the `Foreign dub first` custom format to Sonarr as well as Radarr, scored `-1000` in every profile. A release of a show that names a dub before English (`ITA.ENG`, `ita-eng`) or is marked `DUAL` is now refused, even when it has a Dolby Vision 8.1 picture. Nothing to recreate:
 

@@ -2,7 +2,9 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased]
+## [1.20.0] - 2026-11-16
+
+Sonarr now refuses releases that put a dub ahead of English, as Radarr already did, so a newly grabbed episode no longer starts in Turkish or Italian.
 
 ### Fixed
 - **Sonarr grabbed dual-audio releases of English shows, and episodes started in Turkish, Italian or Portuguese.** On one install 59 of 1,408 episodes, across 14 shows, came from releases titled `DUAL`, `ITA.ENG` or `ita-eng` (TURG, MeM, TOSSATO, BiOMA, NAHOM), and every one had the dub as its default track. All 21 episodes of one show played in Turkish. Most were grabbed as upgrades: the group had rebuilt the Dolby Vision 8.1 picture, and `DV HDR10 (Profile 8.1)` scored them +500. Radarr has refused these releases with `Foreign dub first` since 1.19.0. Sonarr was left out, on the grounds that a foreign-language show leads with its original track, but these groups put their own dub first whatever the show's language: a Korean show on that install had a file that started in French. `configure-apps.sh` now adds `Foreign dub first` to Sonarr too, with the same title regex, scored `-1000`. Against that library it matches those 59 files and no others. It refuses the Dolby Vision 8.1 releases too, so a show can stay on an SDR or HDR10 file when the only 8.1 release puts a dub first. Anime releases marked `Dual-Audio` are refused as well. As in Radarr, it misses French `MULTi` releases and Italian groups that don't name the language in the title. Existing installs: see `docs/UPGRADING.md`.
