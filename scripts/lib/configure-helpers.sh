@@ -403,9 +403,9 @@ HDR10PLUS_TITLE_RE='(?<!\[)\bhdr10(\+|p\b|[ .\-_]?plus\b)|\b(amzn|atvp|pmtp)\b.*
 # Release titles that put a dub ahead of English: the dub is named first
 # ("iTA-ENG", "Ita.Eng", "[TR-EN]") or the release is marked DUAL. Groups
 # name the tracks in their order, so an English-first release ("Eng.Rus",
-# "Eng.Fre.Ger...") is left alone. The (?<!^) keeps a film called "Dual"
-# from matching its own title. A file's own name carries no language, so a
-# file scores what its release did.
+# "Eng.Fre.Ger...") is left alone. The (?<!^) keeps a film or show called
+# "Dual" from matching its own title. A file's own name carries no language,
+# so a file scores what its release did.
 FOREIGN_DUB_TITLE_RE='\b(ita|tr|tur|spa|esp|fre|fra|ger|rus|ukr|hin|pol|por)[ .\-_]+eng?\b|(?<!^)\bdual\b'
 
 # Remux titles, except those marked as converted to Dolby Vision Profile 8
@@ -847,30 +847,37 @@ print(str(xbmc[0].get('enable', False)).lower() if xbmc else 'false')")
     ensure_custom_format "$BASE" "$AUTH" "$name" "DTS 6.1" -1000 \
         "[${dts61}]"
 
-    # --- Custom Format: foreign dub ahead of the English track (Radarr) ---
+    # --- Custom Format: foreign dub ahead of the English track ---
     #
-    # Italian and Turkish groups (CYBER, NAHOM, TURG) re-release English
-    # films with their own dub as the first and default audio track, their
-    # forced subtitles on by default and, at times, English subtitles OCR'd
-    # badly from the disc. A player starts the film in Italian. Against one
-    # library of 192 films the title regex matched 25, every one of them with
-    # a non-English default track, and no English-first release.
+    # Italian, Turkish and Brazilian groups (CYBER, NAHOM, MeM, TURG,
+    # TOSSATO, BiOMA) re-release English films and shows with their own dub
+    # as the first and default audio track, their forced subtitles on by
+    # default and, at times, English subtitles OCR'd badly from the disc. A
+    # player starts it in Italian. Against one library the title regex
+    # matched 25 of 192 films and 59 of 1,408 episodes, and every one of
+    # them came with a dub as the default track (12 episodes had since been
+    # fixed by hand).
     #
     # Quality is ranked before score, so without this a dual-audio "BDRemux"
     # beats every English encode, and ties with a proper English remux at
-    # score 0. With minFormatScore at 0 the -1000 refuses it outright.
+    # score 0. In Sonarr most of the 59 were grabbed as upgrades, because the
+    # group had rebuilt the Dolby Vision 8.1 picture and scored +500. With
+    # minFormatScore at 0 the -1000 refuses the release outright, the 8.1
+    # ones too: playing in English counts for more than the picture.
     #
-    # It goes by title, not by Radarr's Language condition. That condition
-    # reads a file's languages from its mediainfo, which takes in the extra
-    # dubs on ordinary English remuxes too (46 of the 192 films), so every
-    # remux would score -1000 against an English-only release and be
-    # upgraded again and again. Sonarr is left out: foreign-language shows
-    # lead with their original track, which is the one wanted.
-    if [[ "$name" == "Radarr" ]]; then
-        local dub_first="{\"name\":\"Dub named before English, or DUAL\",\"implementation\":\"ReleaseTitleSpecification\",\"negate\":false,\"required\":true,\"fields\":[{\"name\":\"value\",\"value\":\"${FOREIGN_DUB_TITLE_RE//\\/\\\\}\"}]}"
-        ensure_custom_format "$BASE" "$AUTH" "$name" "Foreign dub first" -1000 \
-            "[${dub_first}]"
-    fi
+    # It goes by title, not by the Language condition. In Radarr that
+    # condition reads a file's languages from its mediainfo, which takes in
+    # the extra dubs on ordinary English remuxes too (46 of the 192 films),
+    # so every remux would score -1000 against an English-only release and
+    # be upgraded again and again.
+    #
+    # Sonarr gets it too. It was once left out on the grounds that a
+    # foreign-language show leads with its original track, but these groups
+    # put their own dub first whatever the show's language: a Korean show in
+    # that library had a file that started in French.
+    local dub_first="{\"name\":\"Dub named before English, or DUAL\",\"implementation\":\"ReleaseTitleSpecification\",\"negate\":false,\"required\":true,\"fields\":[{\"name\":\"value\",\"value\":\"${FOREIGN_DUB_TITLE_RE//\\/\\\\}\"}]}"
+    ensure_custom_format "$BASE" "$AUTH" "$name" "Foreign dub first" -1000 \
+        "[${dub_first}]"
 
     # --- Keep upgrading until a file scores as Dolby Vision 8.1 ---
     #

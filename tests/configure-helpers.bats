@@ -564,7 +564,7 @@ print(score, hdr["fields"][0]["value"] == sys.argv[2], hdr["required"], hdr["neg
     assert_output '-1000 True True False True True \b(dv|dovi|dolby[ .\-_]?vision)\b'
 }
 
-# ---- Foreign dub first (Radarr) ---------------------------------------------
+# ---- Foreign dub first (Sonarr and Radarr) ----------------------------------
 
 foreign_dub_title() {
     python3 -c 'import re, sys; print("match" if re.search(sys.argv[1], sys.argv[2], re.I) else "no match")' "$FOREIGN_DUB_TITLE_RE" "$1"
@@ -579,7 +579,12 @@ foreign_dub_title() {
         "Spider-Man.Brand.New.Day.2026.2160p.WEB-DL.x265-TurkSeeD [TR-EN]" \
         "The.Mongoose.2026.2160p.AMZN.WEB-DL.DUAL.DDP5.1.DoVi.HDR.H.265-TURG" \
         "X-Men.2.2003.DL.Esp.Eng.DTS.1080p.BDrip-RadeonHD" \
-        "[02] X2 (2003) BDRip 1080p H.265 [UKR_ENG] [Hurtom]"; do
+        "[02] X2 (2003) BDRip 1080p H.265 [UKR_ENG] [Hurtom]" \
+        "The.Body.S01E01.Slutty.God.2160p.NF.WEB-DL.DDP5.1.Atmos.DV.HDR.H.265.DUAL-TOSSATO" \
+        "Coven.Academy.S01E01.1080p.NF.WEB-DL.DUAL.DDP5.1.H.264-TURG" \
+        "12.12.12.S01E01.2160p.ATVP.WEB-DL.DDP5.1.Atmos.DV.HDR.H.265.DUAL-BiOMA" \
+        "Agatha.All.Along.S01E03.Ho.mille.prove.Sfide.nuove.ITA.ENG.2160p.DSNP.WEB-DL.DDP5.1.DV.HDR.H.265-MeM.GP" \
+        "the.boys.3x02.ita-eng.1080p.web.ddp5.1.h264-novarip"; do
         run foreign_dub_title "$t"
         assert_output "match"
     done
@@ -603,13 +608,15 @@ foreign_dub_title() {
     local t
     for t in \
         "X2 (2003) - [Remux-2160p][AC3 2.0][HDR10][x265]-NAHOM.mkv" \
-        "Dune Part Two (2024) - [Bluray-2160p][TrueHD Atmos 7.1][DV HDR10][HEVC]-CYBER.mkv"; do
+        "Dune Part Two (2024) - [Bluray-2160p][TrueHD Atmos 7.1][DV HDR10][HEVC]-CYBER.mkv" \
+        "The Body (2026) - S01E01 - Slutty God [NF][WEBDL-2160p][EAC3 5.1][DV HDR10][h265]-TOSSATO.mkv" \
+        "Coven Academy (2026) - S01E01 - Pilot [NF][WEBDL-1080p][EAC3 5.1][h264]-TURG.mkv"; do
         run foreign_dub_title "$t"
         assert_output "no match"
     done
 }
 
-@test "configure_arr_service scores Foreign dub first at -1000 in Radarr, and not at all in Sonarr" {
+@test "configure_arr_service scores Foreign dub first at -1000 in both Sonarr and Radarr" {
     wait_for_service() { return 0; }
     api_get() { echo '[]'; }
     api_post() { echo '{}'; }
@@ -625,12 +632,13 @@ import json, sys
 rows = [l.rstrip("\n").split("\t") for l in open(sys.argv[1])]
 hits = [r for r in rows if r[1] == "Foreign dub first"]
 print([r[0] for r in hits])
-svc, name, score, specs = hits[0]
-spec = json.loads(specs)[0]
-print(score, spec["fields"][0]["value"] == sys.argv[2], spec["required"], spec["negate"])
+for svc, name, score, specs in hits:
+    spec = json.loads(specs)[0]
+    print(svc, score, spec["fields"][0]["value"] == sys.argv[2], spec["required"], spec["negate"])
 ' "$CALLS" "$FOREIGN_DUB_TITLE_RE"
-    assert_output "['Radarr']
--1000 True True False"
+    assert_output "['Sonarr', 'Radarr']
+Sonarr -1000 True True False
+Radarr -1000 True True False"
 }
 
 # ---- Dolby Vision 8.1 score: not for Profile 7 remuxes ----------------------
