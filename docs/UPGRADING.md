@@ -40,6 +40,25 @@ docker compose -f docker-compose.arr-stack.yml up -d  # Restarts containers with
 
 When upgrading across versions, check below for any action required.
 
+### v1.19.0 → Unreleased
+
+`configure-apps.sh` now adds the `Foreign dub first` custom format to Sonarr as well as Radarr, scored `-1000` in every profile. A release of a show that names a dub before English (`ITA.ENG`, `ita-eng`) or is marked `DUAL` is now refused, even when it has a Dolby Vision 8.1 picture. Nothing to recreate:
+
+```bash
+cd $NAS_STACK_DIR && git pull
+./scripts/configure-apps.sh --only sonarr --dry-run
+./scripts/configure-apps.sh --only sonarr
+```
+
+To add it by hand, follow [Sonarr step 12](APP-CONFIG.md#44-sonarr-tv-shows). Episodes already in the library from a matching release now score `-1000`, so the next release of the same quality that RSS finds replaces them. An old episode rarely gets one. Until then it starts in the dub. To make an episode start in English without downloading it again, move the default flag from the dub to the English track in place (here the dub is the first audio track and English the second; check the order with `ffprobe` first):
+
+```bash
+docker run --rm -v "/path/to/Season 01":/m alpine:3.20 sh -c \
+  'apk add --no-cache -q mkvtoolnix && mkvpropedit "/m/<file>.mkv" --edit track:a1 --set flag-default=0 --edit track:a2 --set flag-default=1'
+```
+
+Don't edit a file that is hardlinked to a torrent that's still seeding (`stat -c %h` above 1). The edit changes the seeding copy too, and peers reject the pieces. Wait until the torrent is removed.
+
 ### v1.18.0 → v1.19.0
 
 Eight images change, dnscrypt-proxy gets its config from the repo, and `configure-apps.sh` has new settings for Sonarr, Radarr and Bazarr. None of the images migrates a database. In order:
