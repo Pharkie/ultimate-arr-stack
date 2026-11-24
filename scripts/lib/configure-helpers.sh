@@ -767,7 +767,25 @@ print(str(xbmc[0].get('enable', False)).lower() if xbmc else 'false')")
     if [[ "$rename_enabled" == "true" ]]; then
         skip "${name}: TRaSH naming (already customised)"
     else
-        if api_put "${BASE}/api/v3/config/naming" "application/json" "$naming_payload" "$AUTH" >/dev/null 2>&1; then
+        # Preserve fields required by the running *arr version (for example
+        # config id, colon replacement settings, and Sonarr specials folder)
+        # while overlaying only the TRaSH naming fields managed by this script.
+        local merged_naming
+        merged_naming=$(python3 - "$naming" "$naming_payload" <<'PYMERGE'
+import json
+import sys
+
+current = json.loads(sys.argv[1])
+desired = json.loads(sys.argv[2])
+current.update(desired)
+
+print(json.dumps(current))
+PYMERGE
+)
+
+        if [[ -z "$merged_naming" ]]; then
+            fail "${name}: merge TRaSH naming scheme with current config"
+        elif api_put "${BASE}/api/v3/config/naming" "application/json" "$merged_naming" "$AUTH" >/dev/null 2>&1; then
             ok "${name}: set TRaSH naming scheme"
         else
             fail "${name}: set TRaSH naming scheme"

@@ -1,0 +1,20 @@
+{
+  "trash_id": "lidarr-cd",
+  "trash_scores": {
+    "default": 10
+  },
+  "trash_description": "Servarr Lidarr guide - CD",
+  "name": "CD",
+  "includeCustomFormatWhenRenaming": false,
+  "specifications": [
+    {
+      "name": "CD",
+      "implementation": "ReleaseTitleSpecification",
+      "negate": false,
+      "required": false,
+      "fields": {
+        "value": "\\bCD\\b"
+      }
+    }
+  ]
+}

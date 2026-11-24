@@ -46,6 +46,11 @@ http:
       entryPoints: [web]
       service: radarr-lan
 
+    lidarr-lan:
+      rule: "Host(`lidarr.lan`)"
+      entryPoints: [web]
+      service: lidarr-lan
+
     prowlarr-lan:
       rule: "Host(`prowlarr.lan`)"
       entryPoints: [web]
@@ -125,6 +130,11 @@ http:
       loadBalancer:
         servers:
           - url: "http://172.20.0.11:7878"
+
+    lidarr-lan:
+      loadBalancer:
+        servers:
+          - url: "http://172.20.0.12:8686"
 
     prowlarr-lan:
       loadBalancer:

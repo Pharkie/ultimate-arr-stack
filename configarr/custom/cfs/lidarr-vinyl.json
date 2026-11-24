@@ -1,0 +1,20 @@
+{
+  "trash_id": "lidarr-vinyl",
+  "trash_scores": {
+    "default": -10000
+  },
+  "trash_description": "Servarr Lidarr guide - Vinyl",
+  "name": "Vinyl",
+  "includeCustomFormatWhenRenaming": false,
+  "specifications": [
+    {
+      "name": "Vinyl",
+      "implementation": "ReleaseTitleSpecification",
+      "negate": false,
+      "required": false,
+      "fields": {
+        "value": "\\bVinyl\\b"
+      }
+    }
+  ]
+}

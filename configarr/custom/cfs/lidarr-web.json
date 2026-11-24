@@ -1,0 +1,20 @@
+{
+  "trash_id": "lidarr-web",
+  "trash_scores": {
+    "default": 5
+  },
+  "trash_description": "Servarr Lidarr guide - WEB",
+  "name": "WEB",
+  "includeCustomFormatWhenRenaming": false,
+  "specifications": [
+    {
+      "name": "WEB",
+      "implementation": "ReleaseTitleSpecification",
+      "negate": false,
+      "required": false,
+      "fields": {
+        "value": "\\bWEB\\b"
+      }
+    }
+  ]
+}

@@ -1,0 +1,20 @@
+{
+  "trash_id": "lidarr-lossless",
+  "trash_scores": {
+    "default": 10
+  },
+  "trash_description": "Servarr Lidarr guide - Lossless",
+  "name": "Lossless",
+  "includeCustomFormatWhenRenaming": false,
+  "specifications": [
+    {
+      "name": "Lossless",
+      "implementation": "ReleaseTitleSpecification",
+      "negate": false,
+      "required": false,
+      "fields": {
+        "value": "\\blossless\\b"
+      }
+    }
+  ]
+}
