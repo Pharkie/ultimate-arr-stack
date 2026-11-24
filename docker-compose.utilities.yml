@@ -99,7 +99,7 @@ services:
   # See TROUBLESHOOTING.md "After a Gluetun RECREATE".
   # ═══════════════════════════════════════════════════════════════════════════
   gluetun-recover:
-    image: docker:29.9-cli
+    image: docker:29.10-cli
     container_name: gluetun-recover
     <<: *default-security
     volumes:
